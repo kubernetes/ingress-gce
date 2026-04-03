@@ -71,14 +71,6 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 		svcPort utils.ServicePort
 	}{
 		{
-			desc: "Link L4 NEGs",
-			svcPort: utils.ServicePort{
-				ID:             utils.ServicePortID{Service: svc},
-				BackendNamer:   defaultL4Namer,
-				VMIPNEGEnabled: true,
-			},
-		},
-		{
 			desc: "Link Ingress NEGs",
 			svcPort: utils.ServicePort{
 				ID:           utils.ServicePortID{Service: svc},
@@ -146,9 +138,6 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 						Name:    tc.svcPort.NEGName(),
 						Version: version,
 					}
-					if tc.svcPort.VMIPNEGEnabled {
-						neg.NetworkEndpointType = string(negtypes.VmIpEndpointType)
-					}
 					err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone, klog.TODO())
 					if err != nil {
 						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", tc.svcPort, err)
@@ -179,12 +168,6 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 						neg := "networkEndpointGroups"
 						if !strings.Contains(be.Group, neg) {
 							t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
-						}
-						if tc.svcPort.VMIPNEGEnabled {
-							// Balancing mode should be connection, rate should be unset
-							if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
-								t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
-							}
 						}
 					}
 				}
@@ -999,50 +982,6 @@ func TestBackendsForNEG(t *testing.T) {
 		sp   *utils.ServicePort
 		want []*composite.Backend
 	}{
-		{
-			name: "vm ip endpoint uses connections balancing mode",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpEndpointType),
-					SelfLink:            "/neg1",
-				},
-			},
-			sp: &utils.ServicePort{
-				VMIPNEGEnabled: true,
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode: "CONNECTION",
-					Group:         "/neg1",
-				},
-			},
-		},
-		{
-			name: "vm ip endpoint (multiple)",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpEndpointType),
-					SelfLink:            "/neg1",
-				},
-				{
-					NetworkEndpointType: string(negtypes.VmIpEndpointType),
-					SelfLink:            "/neg2",
-				},
-			},
-			sp: &utils.ServicePort{
-				VMIPNEGEnabled: true,
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode: "CONNECTION",
-					Group:         "/neg1",
-				},
-				{
-					BalancingMode: "CONNECTION",
-					Group:         "/neg2",
-				},
-			},
-		},
 		{
 			name: "neg endpoint defaults",
 			negs: []*composite.NetworkEndpointGroup{

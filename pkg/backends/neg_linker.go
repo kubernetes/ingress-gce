@@ -25,12 +25,11 @@ import (
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
-// negLinker handles linking backends to NEG's.
+// negLinker handles linking backends to L7 (GCE_VM_IP_PORT) NEGs.
 type negLinker struct {
 	backendPool                    *Pool
 	negGetter                      NEGGetter
@@ -63,6 +62,10 @@ func NewNEGLinker(
 
 // Link implements Link.
 func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+	if sp.VMIPNEGEnabled {
+		return fmt.Errorf("GCE_VM_IP NEGs are not supported by this linker")
+	}
+
 	version := befeatures.VersionFromServicePort(&sp)
 
 	negSelfLinks, err := nl.getNegSelfLinks(sp, groups)
@@ -301,45 +304,24 @@ func (d *backendDiff) toAdd() sets.String    { return d.new.Difference(d.old) }
 func backendsForNEGs(negSelfLinks []string, sp *utils.ServicePort) []*composite.Backend {
 	var backends []*composite.Backend
 	for _, neg := range negSelfLinks {
-		newBackend := &composite.Backend{Group: neg}
-
-		switch getNegType(*sp) {
-		case types.VmIpEndpointType:
-			// Setting MaxConnectionsPerEndpoint is not supported for L4 ILB
-			// https://cloud.google.com/load-balancing/docs/backend-service#target_capacity
-			// hence only mode is being set.
-			newBackend.BalancingMode = string(Connections)
-
-		case types.VmIpPortEndpointType:
-			// This preserves the original behavior, but really we should error
-			// when there is a type we don't understand.
-			fallthrough
-		default:
-			newBackend.BalancingMode = string(Rate)
-			newBackend.MaxRatePerEndpoint = maxRPS
-			newBackend.CapacityScaler = 1.0
-
-			if flags.F.EnableTrafficScaling {
-				if sp.MaxRatePerEndpoint != nil {
-					newBackend.MaxRatePerEndpoint = float64(*sp.MaxRatePerEndpoint)
-				}
-				if sp.CapacityScaler != nil {
-					newBackend.CapacityScaler = *sp.CapacityScaler
-				}
-			}
+		newBackend := &composite.Backend{
+			Group:              neg,
+			BalancingMode:      string(Rate),
+			MaxRatePerEndpoint: maxRPS,
+			CapacityScaler:     1.0,
 		}
 
+		if flags.F.EnableTrafficScaling {
+			if sp.MaxRatePerEndpoint != nil {
+				newBackend.MaxRatePerEndpoint = float64(*sp.MaxRatePerEndpoint)
+			}
+			if sp.CapacityScaler != nil {
+				newBackend.CapacityScaler = *sp.CapacityScaler
+			}
+		}
 		backends = append(backends, newBackend)
 	}
 	return backends
-}
-
-// getNegType returns NEG type based on service port config
-func getNegType(sp utils.ServicePort) types.NetworkEndpointType {
-	if sp.VMIPNEGEnabled {
-		return types.VmIpEndpointType
-	}
-	return types.VmIpPortEndpointType
 }
 
 // getNegUrlsFromSvcneg return NEG urls from svcneg status depending on if it is in

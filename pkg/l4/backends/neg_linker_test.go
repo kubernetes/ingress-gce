@@ -15,11 +15,11 @@ package backends
 
 import (
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/klog/v2"
 
@@ -32,10 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
-	befeatures "k8s.io/ingress-gce/pkg/l4/backends/features"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -106,7 +104,7 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 					t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", tc.svcPort, err)
 				}
 
-				version := befeatures.VersionFromServicePort(&tc.svcPort)
+				version := meta.VersionGA
 
 				if populateSvcNeg {
 					svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
@@ -151,7 +149,7 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 				// validate function validates if the state is expected
 				validate := func() {
 					beName := tc.svcPort.BackendName()
-					scope := befeatures.ScopeFromServicePort(&tc.svcPort)
+					scope := meta.KeyType(meta.Regional)
 					key, err := composite.CreateKey(fakeGCE, beName, scope)
 					if err != nil {
 						t.Fatalf("Failed to create composite key - %v", err)
@@ -222,18 +220,15 @@ func TestLinkWithDifferentSvcPorts(t *testing.T) {
 func TestLinkWithNEGUpdates(t *testing.T) {
 	t.Parallel()
 
-	namespace, svcName, port := "ns", "name", "port"
+	namespace, svcName := "ns", "name"
 	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
 	svcPort := utils.ServicePort{
-		ID:           utils.ServicePortID{Service: svc},
-		Port:         80,
-		Protocol:     annotations.ProtocolHTTP,
-		TargetPort:   intstr.FromString(port),
-		NEGEnabled:   true,
-		BackendNamer: defaultNamer,
+		ID:             utils.ServicePortID{Service: svc},
+		VMIPNEGEnabled: true,
+		BackendNamer:   defaultL4Namer,
 	}
-	scope := befeatures.ScopeFromServicePort(&svcPort)
-	version := befeatures.VersionFromServicePort(&svcPort)
+	scope := meta.KeyType(meta.Regional)
+	version := meta.VersionGA
 
 	negName := svcPort.NEGName()
 	beName := svcPort.BackendName()
@@ -255,8 +250,8 @@ func TestLinkWithNEGUpdates(t *testing.T) {
 			prevBackends: []*composite.Backend{{Group: negUrl1}},
 			currGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
 			currentNegObjRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, negName, ""),
-				createNegRef(testZone2, negName, ""),
+				createNEGRef(testZone1, negName, ""),
+				createNEGRef(testZone2, negName, ""),
 			},
 			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
 		},
@@ -266,7 +261,7 @@ func TestLinkWithNEGUpdates(t *testing.T) {
 			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
 			currGroups:   []GroupKey{{Zone: testZone1}},
 			currentNegObjRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, negName, ""),
+				createNEGRef(testZone1, negName, ""),
 			},
 			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
 		},
@@ -344,18 +339,15 @@ func TestLinkWithNEGUpdates(t *testing.T) {
 }
 
 func TestLinkWithNEGUpdatesWithMultiSubnetCluster(t *testing.T) {
-	namespace, svcName, port := "ns", "name", "port"
+	namespace, svcName := "ns", "name"
 	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
 	svcPort := utils.ServicePort{
-		ID:           utils.ServicePortID{Service: svc},
-		Port:         80,
-		Protocol:     annotations.ProtocolHTTP,
-		TargetPort:   intstr.FromString(port),
-		NEGEnabled:   true,
-		BackendNamer: defaultNamer,
+		ID:             utils.ServicePortID{Service: svc},
+		VMIPNEGEnabled: true,
+		BackendNamer:   defaultL4Namer,
 	}
-	scope := befeatures.ScopeFromServicePort(&svcPort)
-	version := befeatures.VersionFromServicePort(&svcPort)
+	scope := meta.KeyType(meta.Regional)
+	version := meta.VersionGA
 
 	negName := svcPort.NEGName()
 	// TODO(sawsa307): Update NEG name once naming schema for non-default subnet is finalized.
@@ -382,10 +374,10 @@ func TestLinkWithNEGUpdatesWithMultiSubnetCluster(t *testing.T) {
 			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl1ToBeDeleted}, {Group: negUrl2}, {Group: negUrl2ToBeDeleted}},
 			currGroups:   []GroupKey{{Zone: testZone1}, {Zone: testZone2}},
 			currentNegObjRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, negName, ""),
-				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
-				createNegRef(testZone2, negName, ""),
-				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone1, negName, ""),
+				createNEGRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone2, negName, ""),
+				createNEGRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
 			},
 			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
 		},
@@ -395,10 +387,10 @@ func TestLinkWithNEGUpdatesWithMultiSubnetCluster(t *testing.T) {
 			currGroups:   []GroupKey{{Zone: testZone1}},
 			prevBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl1ToBeDeleted}, {Group: negUrl2}, {Group: negUrl2ToBeDeleted}},
 			currentNegObjRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, negName, ""),
-				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
-				createNegRef(testZone2, negName, ""),
-				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone1, negName, ""),
+				createNEGRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone2, negName, ""),
+				createNEGRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
 			},
 			expectedBackends: []*composite.Backend{{Group: negUrl1}, {Group: negUrl2}},
 		},
@@ -478,15 +470,12 @@ func TestGetNegSelfLinks(t *testing.T) {
 	t.Parallel()
 
 	groupKeys := []GroupKey{{Zone: testZone1}, {Zone: testZone2}}
-	namespace, svcName, port := "ns", "name", "port"
+	namespace, svcName := "ns", "name"
 	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
 	svcPort := utils.ServicePort{
-		ID:           utils.ServicePortID{Service: svc},
-		Port:         80,
-		Protocol:     annotations.ProtocolHTTP,
-		TargetPort:   intstr.FromString(port),
-		NEGEnabled:   true,
-		BackendNamer: defaultNamer,
+		ID:             utils.ServicePortID{Service: svc},
+		VMIPNEGEnabled: true,
+		BackendNamer:   defaultL4Namer,
 	}
 	negName := svcPort.NEGName()
 
@@ -501,8 +490,8 @@ func TestGetNegSelfLinks(t *testing.T) {
 			populateSvcNeg: true,
 			// NEG state is empty for NEG created with MultiSubnetClusterPhase1=false
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, negName, ""),
-				createNegRef(testZone2, negName, ""),
+				createNEGRef(testZone1, negName, ""),
+				createNEGRef(testZone2, negName, ""),
 			},
 			expectedNegCount: 2,
 		},
@@ -550,7 +539,7 @@ func TestGetNegSelfLinks(t *testing.T) {
 				for _, groupKey := range groupKeys {
 					neg := &composite.NetworkEndpointGroup{
 						Name:    svcPort.NEGName(),
-						Version: befeatures.VersionFromServicePort(&svcPort),
+						Version: meta.VersionGA,
 					}
 					err := fakeNEG.CreateNetworkEndpointGroup(neg, groupKey.Zone, klog.TODO())
 					if err != nil {
@@ -578,15 +567,12 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 	t.Parallel()
 
 	groupKeys := []GroupKey{{Zone: testZone1}, {Zone: testZone2}}
-	namespace, svcName, port := "ns", "name", "port"
+	namespace, svcName := "ns", "name"
 	svc := types.NamespacedName{Namespace: namespace, Name: svcName}
 	svcPort := utils.ServicePort{
-		ID:           utils.ServicePortID{Service: svc},
-		Port:         80,
-		Protocol:     annotations.ProtocolHTTP,
-		TargetPort:   intstr.FromString(port),
-		NEGEnabled:   true,
-		BackendNamer: defaultNamer,
+		ID:             utils.ServicePortID{Service: svc},
+		VMIPNEGEnabled: true,
+		BackendNamer:   defaultL4Namer,
 	}
 	defaultSubnetNegName := svcPort.NEGName()
 	// TODO(sawsa307): Update NEG name once naming schema for non-default subnet is finalized.
@@ -603,8 +589,8 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and NEGs are from default subnet",
 			populateSvcNeg: true,
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
 			},
 			expectedNegToAdd: 2,
 		},
@@ -612,10 +598,10 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			desc:           "Get NEGs from SvcNeg, all NEGs are in active state, and containing NEGs from non-default subnet",
 			populateSvcNeg: true,
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, nonDefaultSubnetNegName, v1beta1.ActiveState),
 			},
 			expectedNegToAdd: 4,
 		},
@@ -623,8 +609,8 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			desc:           "Get NEGs from SvcNeg, containing one NEG from default subnet in inactive state",
 			populateSvcNeg: true,
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState),
+				createNEGRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState),
 			},
 			expectedNegToAdd: 2,
 		},
@@ -632,10 +618,10 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			desc:           "Get NEGs from SvcNeg, containing NEGs from non-default subnet in inactive state",
 			populateSvcNeg: true,
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState), // zone2 is inactive
-				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.InactiveState),
+				createNEGRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone1, nonDefaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, defaultSubnetNegName, v1beta1.InactiveState), // zone2 is inactive
+				createNEGRef(testZone2, nonDefaultSubnetNegName, v1beta1.InactiveState),
 			},
 			expectedNegToAdd: 4,
 		},
@@ -643,10 +629,10 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			desc:           "Get NEGs from SvcNEG, containing NEGs from non-default subnet in to-be-deleted state",
 			populateSvcNeg: true,
 			testNegRef: []v1beta1.NegObjectReference{
-				createNegRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
-				createNegRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
-				createNegRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone1, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone1, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
+				createNEGRef(testZone2, defaultSubnetNegName, v1beta1.ActiveState),
+				createNEGRef(testZone2, nonDefaultSubnetNegName, v1beta1.ToBeDeletedState),
 			},
 			expectedNegToAdd:    2,
 			expectedNegToRemove: 2,
@@ -687,7 +673,7 @@ func TestGetNegSelfLinksWithMultiSubnetCluster(t *testing.T) {
 			for _, groupKey := range groupKeys {
 				neg := &composite.NetworkEndpointGroup{
 					Name:    svcPort.NEGName(),
-					Version: befeatures.VersionFromServicePort(&svcPort),
+					Version: meta.VersionGA,
 				}
 				err := fakeNEG.CreateNetworkEndpointGroup(neg, groupKey.Zone, klog.TODO())
 				if err != nil {
@@ -976,16 +962,10 @@ func TestDiffBackends(t *testing.T) {
 
 func TestBackendsForNEG(t *testing.T) {
 	// No t.Parallel().
-	oldFlag := flags.F.EnableTrafficScaling
-	flags.F.EnableTrafficScaling = true
-	defer func() { flags.F.EnableTrafficScaling = oldFlag }()
-
-	f64 := func(x float64) *float64 { return &x }
 
 	for _, tc := range []struct {
 		name string
 		negs []*composite.NetworkEndpointGroup
-		sp   *utils.ServicePort
 		want []*composite.Backend
 	}{
 		{
@@ -995,9 +975,6 @@ func TestBackendsForNEG(t *testing.T) {
 					NetworkEndpointType: string(negtypes.VmIpEndpointType),
 					SelfLink:            "/neg1",
 				},
-			},
-			sp: &utils.ServicePort{
-				VMIPNEGEnabled: true,
 			},
 			want: []*composite.Backend{
 				{
@@ -1018,9 +995,6 @@ func TestBackendsForNEG(t *testing.T) {
 					SelfLink:            "/neg2",
 				},
 			},
-			sp: &utils.ServicePort{
-				VMIPNEGEnabled: true,
-			},
 			want: []*composite.Backend{
 				{
 					BalancingMode: "CONNECTION",
@@ -1032,123 +1006,13 @@ func TestBackendsForNEG(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "neg endpoint defaults",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg1",
-				},
-			},
-			sp: &utils.ServicePort{},
-			want: []*composite.Backend{
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: maxRPS,
-					CapacityScaler:     1.0,
-					Group:              "/neg1",
-				},
-			},
-		},
-		{
-			name: "neg endpoint (traffic policy rate)",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg1",
-				},
-			},
-			sp: &utils.ServicePort{
-				MaxRatePerEndpoint: f64(1234),
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: 1234,
-					CapacityScaler:     1.0,
-					Group:              "/neg1",
-				},
-			},
-		},
-		{
-			name: "neg endpoint (traffic policy capacity scaler)",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg1",
-				},
-			},
-			sp: &utils.ServicePort{
-				CapacityScaler: f64(0.5),
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: maxRPS,
-					CapacityScaler:     0.5,
-					Group:              "/neg1",
-				},
-			},
-		},
-		{
-			name: "neg endpoint (traffic policy)",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg1",
-				},
-			},
-			sp: &utils.ServicePort{
-				MaxRatePerEndpoint: f64(1234),
-				CapacityScaler:     f64(0.5),
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: 1234,
-					CapacityScaler:     0.5,
-					Group:              "/neg1",
-				},
-			},
-		},
-		{
-			name: "neg endpoint (multiple, traffic policy)",
-			negs: []*composite.NetworkEndpointGroup{
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg1",
-				},
-				{
-					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
-					SelfLink:            "/neg2",
-				},
-			},
-			sp: &utils.ServicePort{
-				MaxRatePerEndpoint: f64(1234),
-				CapacityScaler:     f64(0.5),
-			},
-			want: []*composite.Backend{
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: 1234,
-					CapacityScaler:     0.5,
-					Group:              "/neg1",
-				},
-				{
-					BalancingMode:      "RATE",
-					MaxRatePerEndpoint: 1234,
-					CapacityScaler:     0.5,
-					Group:              "/neg2",
-				},
-			},
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			negUrls := []string{}
+			var negURLs []string
 			for _, neg := range tc.negs {
-				negUrls = append(negUrls, neg.SelfLink)
+				negURLs = append(negURLs, neg.SelfLink)
 			}
-			got := backendsForNEGs(negUrls, tc.sp)
+			got := backendsForNEGs(negURLs)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("backendForNEGs(_), diff(-tc.want +got) = %s", diff)
 			}
@@ -1156,7 +1020,7 @@ func TestBackendsForNEG(t *testing.T) {
 	}
 }
 
-func createNegRef(zone, negName string, state v1beta1.NegState) v1beta1.NegObjectReference {
+func createNEGRef(zone, negName string, state v1beta1.NegState) v1beta1.NegObjectReference {
 	return v1beta1.NegObjectReference{
 		SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/%s/networkEndpointGroups/%s", zone, negName),
 		State:    state,
