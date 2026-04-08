@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-ini/ini"
+	"gopkg.in/ini.v1"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
