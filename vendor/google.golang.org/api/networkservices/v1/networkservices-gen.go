@@ -506,8 +506,9 @@ func (s AuditLogConfig) MarshalJSON() ([]byte, error) {
 // AuthzExtension: `AuthzExtension` is a resource that allows traffic
 // forwarding to a callout backend service to make an authorization decision.
 type AuthzExtension struct {
-	// Authority: Required. The `:authority` header in the gRPC request sent from
-	// Envoy to the extension service.
+	// Authority: Optional. The `:authority` header in the gRPC request sent from
+	// Envoy to the extension service. It is required when the `service` field
+	// points to a backend service or a wasm plugin.
 	Authority string `json:"authority,omitempty"`
 	// CreateTime: Output only. The timestamp when the resource was created.
 	CreateTime string `json:"createTime,omitempty"`
@@ -524,6 +525,14 @@ type AuthzExtension struct {
 	// headers have been delivered, then the HTTP stream to the downstream client
 	// is reset.
 	FailOpen bool `json:"failOpen,omitempty"`
+	// ForwardAttributes: Optional. List of the Envoy attributes to forward to the
+	// extension server. The attributes provided here are included as part of the
+	// `ProcessingRequest.attributes` field (of type `map`), where the keys are the
+	// attribute names. Refer to the documentation
+	// (https://cloud.google.com/service-extensions/docs/cel-matcher-language-reference#attributes)
+	// for the names of attributes that can be forwarded. If omitted, no attributes
+	// are sent. Each element is a string indicating the attribute name.
+	ForwardAttributes []string `json:"forwardAttributes,omitempty"`
 	// ForwardHeaders: Optional. List of the HTTP headers to forward to the
 	// extension (from the client). If omitted, all headers are sent. Each element
 	// is a string indicating the header name.
@@ -532,9 +541,10 @@ type AuthzExtension struct {
 	// resource. The format must comply with the requirements for labels
 	// (/compute/docs/labeling-resources#requirements) for Google Cloud resources.
 	Labels map[string]string `json:"labels,omitempty"`
-	// LoadBalancingScheme: Required. All backend services and forwarding rules
+	// LoadBalancingScheme: Optional. All backend services and forwarding rules
 	// referenced by this extension must share the same load balancing scheme.
-	// Supported values: `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. For more
+	// Supported values: `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. Can be omitted for
+	// AuthzExtensions that do not reference a backend service. For more
 	// information, refer to Backend services overview
 	// (https://cloud.google.com/load-balancing/docs/backend-service).
 	//
@@ -994,6 +1004,14 @@ type ExtensionChainExtension struct {
 	// headers have been delivered, then the HTTP stream to the downstream client
 	// is reset.
 	FailOpen bool `json:"failOpen,omitempty"`
+	// ForwardAttributes: Optional. List of the Envoy attributes to forward to the
+	// extension server. The attributes provided here are included as part of the
+	// `ProcessingRequest.attributes` field (of type `map`), where the keys are the
+	// attribute names. Refer to the documentation
+	// (https://cloud.google.com/service-extensions/docs/cel-matcher-language-reference#attributes)
+	// for the names of attributes that can be forwarded. If omitted, no attributes
+	// are sent. Each element is a string indicating the attribute name.
+	ForwardAttributes []string `json:"forwardAttributes,omitempty"`
 	// ForwardHeaders: Optional. List of the HTTP headers to forward to the
 	// extension (from the client or backend). If omitted, all headers are sent.
 	// Each element is a string indicating the header name.
@@ -1023,15 +1041,11 @@ type ExtensionChainExtension struct {
 	// 63 characters. Additionally, the first character must be a letter and the
 	// last a letter or a number. This field is required except for AuthzExtension.
 	Name string `json:"name,omitempty"`
-	// ObservabilityMode: Optional. When set to `TRUE`, enables
-	// `observability_mode` on the `ext_proc` filter. This makes `ext_proc` calls
-	// asynchronous. Envoy doesn't check for the response from `ext_proc` calls.
-	// For more information about the filter, see:
-	// https://www.envoyproxy.io/docs/envoy/v1.32.3/api-v3/extensions/filters/http/ext_proc/v3/ext_proc.proto#extensions-filters-http-ext-proc-v3-externalprocessor
-	// This field is helpful when you want to try out the extension in async
-	// log-only mode. Supported by regional `LbTrafficExtension` and
-	// `LbRouteExtension` resources. Only `STREAMED` (default) body processing mode
-	// is supported.
+	// ObservabilityMode: Optional. When set to `true`, the calls to the extension
+	// backend are performed asynchronously, without pausing the processing of the
+	// ongoing request. In this mode, only `STREAMED` (default) body processing is
+	// supported. Responses, if any, are ignored. Supported by regional
+	// `LbTrafficExtension` and `LbRouteExtension` resources.
 	ObservabilityMode bool `json:"observabilityMode,omitempty"`
 	// RequestBodySendMode: Optional. Configures the send mode for request body
 	// processing. The field can only be set if `supported_events` includes
@@ -1183,6 +1197,14 @@ type Gateway struct {
 	// 'SECURE_WEB_GATEWAY'. Gateways of type 'OPEN_MESH' listen on 0.0.0.0 for
 	// IPv4 and :: for IPv6.
 	Addresses []string `json:"addresses,omitempty"`
+	// AllPorts: Optional. If true, the Gateway will listen on all ports. This is
+	// mutually exclusive with the `ports` field. This field only applies to
+	// gateways of type 'SECURE_WEB_GATEWAY'.
+	AllPorts bool `json:"allPorts,omitempty"`
+	// AllowGlobalAccess: Optional. If true, the gateway will allow traffic from
+	// clients outside of the region where the gateway is located. This field is
+	// configurable only for gateways of type SECURE_WEB_GATEWAY.
+	AllowGlobalAccess bool `json:"allowGlobalAccess,omitempty"`
 	// CertificateUrls: Optional. A fully-qualified Certificates URL reference. The
 	// proxy presents a Certificate (selected based on SNI) when establishing a TLS
 	// connection. This feature only applies to gateways of type
@@ -4277,6 +4299,11 @@ type TlsRoute struct {
 	Rules []*TlsRouteRouteRule `json:"rules,omitempty"`
 	// SelfLink: Output only. Server-defined URL of this resource
 	SelfLink string `json:"selfLink,omitempty"`
+	// TargetProxies: Optional. TargetProxies defines a list of TargetTcpProxies
+	// this TlsRoute is attached to, as one of the routing rules to route the
+	// requests served by the TargetTcpProxy. Each TargetTcpProxy reference should
+	// match the pattern: `projects/*/locations/*/targetTcpProxies/`
+	TargetProxies []string `json:"targetProxies,omitempty"`
 	// UpdateTime: Output only. The timestamp when the resource was updated.
 	UpdateTime string `json:"updateTime,omitempty"`
 
@@ -4867,7 +4894,17 @@ type ProjectsLocationsListCall struct {
 	header_      http.Header
 }
 
-// List: Lists information about the supported locations for this service.
+// List: Lists information about the supported locations for this service. This
+// method lists locations based on the resource scope provided in the
+// [ListLocationsRequest.name] field: * **Global locations**: If `name` is
+// empty, the method lists the public locations available to all projects. *
+// **Project-specific locations**: If `name` follows the format
+// `projects/{project}`, the method lists locations visible to that specific
+// project. This includes public, private, or other project-specific locations
+// enabled for the project. For gRPC and client library implementations, the
+// resource name is passed as the `name` field. For direct service calls, the
+// resource name is incorporated into the request path based on the specific
+// service implementation and version.
 //
 // - name: The resource that owns the locations collection, if applicable.
 func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall {
