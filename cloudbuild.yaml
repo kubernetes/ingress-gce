@@ -19,7 +19,7 @@ steps:
   - |
     # Build and push every image except the e2e-test ones 
     make all-push ALL_ARCH="amd64 arm64" \
-      CONTAINER_BINARIES="glbc 404-server 404-server-with-metrics echo fuzzer"
+      CONTAINER_BINARIES="glbc 404-server 404-server-with-metrics echo"
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20250513-9264efb079
   id: push-e2e-test-image
   entrypoint: bash
