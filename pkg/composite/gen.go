@@ -422,6 +422,8 @@ type Backend struct {
 	// For usage guidelines, seeUtilization
 	// balancing mode.
 	MaxUtilization float64 `json:"maxUtilization,omitempty"`
+	// Information about the resource or system that manages the backend.
+	OrchestrationInfo *BackendBackendOrchestrationInfo `json:"orchestrationInfo,omitempty"`
 	// This field indicates whether this backend should be fully utilized
 	// before
 	// sending traffic to backends with default preference. The possible
@@ -451,6 +453,14 @@ type Backend struct {
 	//  for PSC Service Attachment.
 	Service         string   `json:"service,omitempty"`
 	TrafficDuration string   `json:"trafficDuration,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendBackendOrchestrationInfo is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendBackendOrchestrationInfo struct {
+	// The URI of the resource or system that manages the backend.
+	ResourceUri     string   `json:"resourceUri,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -552,7 +562,7 @@ type BackendService struct {
 	//
 	// This field is applicable to either:
 	//
-	//    - A regional backend service with the service_protocol set to
+	//    - A regional backend service with the service protocol set to
 	// HTTP,
 	//    HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
 	//    INTERNAL_MANAGED.
@@ -844,7 +854,7 @@ type BackendService struct {
 	// thecustomMetrics field.
 	//
 	//    This field is applicable to either:
-	//       - A regional backend service with the service_protocol set to
+	//       - A regional backend service with the service protocol set to
 	// HTTP,
 	//       HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
 	//       INTERNAL_MANAGED.
@@ -930,6 +940,9 @@ type BackendService struct {
 	//
 	// networkPassThroughLbTrafficPolicy cannot be specified with haPolicy.
 	NetworkPassThroughLbTrafficPolicy *BackendServiceNetworkPassThroughLbTrafficPolicy `json:"networkPassThroughLbTrafficPolicy,omitempty"`
+	// Information about the resource or system that manages the backend
+	// service.
+	OrchestrationInfo *BackendServiceOrchestrationInfo `json:"orchestrationInfo,omitempty"`
 	// Settings controlling the ejection of unhealthy backend endpoints from
 	// the
 	// load balancing pool of each individual proxy instance that processes
@@ -975,8 +988,8 @@ type BackendService struct {
 	//    - A global backend service with the loadBalancingScheme set to
 	//    INTERNAL_SELF_MANAGED or EXTERNAL_MANAGED.
 	//    - A regional backend
-	//    service with the serviceProtocol set to HTTP, HTTPS, HTTP2 or H2C,
-	// and
+	//    service with the service protocol set to HTTP, HTTPS, HTTP2 or
+	// H2C, and
 	//    loadBalancingScheme set to INTERNAL_MANAGED or EXTERNAL_MANAGED.
 	// Not
 	//    supported for Serverless NEGs.
@@ -1106,21 +1119,7 @@ type BackendService struct {
 	TlsSettings *BackendServiceTlsSettings `json:"tlsSettings,omitempty"`
 	// Output only. [Output Only] List of resources referencing given
 	// backend service.
-	UsedBy []*BackendServiceUsedBy `json:"usedBy,omitempty"`
-	// The network scope of the backends that can be added to the
-	// backend
-	// service. This field can be either GLOBAL_VPC_NETWORK
-	// orREGIONAL_VPC_NETWORK.
-	//
-	// A backend service with the VPC scope set to GLOBAL_VPC_NETWORK
-	// is only allowed to have backends in global VPC networks.
-	//
-	// When the VPC scope is set to REGIONAL_VPC_NETWORK the backend
-	// service is only allowed to have backends in regional networks in the
-	// same
-	// scope as the backend service.
-	// Note: if not specified then GLOBAL_VPC_NETWORK will be used.
-	VpcNetworkScope          string `json:"vpcNetworkScope,omitempty"`
+	UsedBy                   []*BackendServiceUsedBy `json:"usedBy,omitempty"`
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
 	NullFields               []string `json:"-"`
@@ -1470,7 +1469,8 @@ type BackendServiceDynamicForwardingIpPortSelection struct {
 
 // BackendServiceFailoverPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type BackendServiceFailoverPolicy struct {
-	// This can be set to true only if the protocol isTCP.
+	// This can be set to true if the protocol isTCP, UDP, or
+	// UNSPECIFIED.
 	//
 	// The default is false.
 	DisableConnectionDrainOnFailover bool `json:"disableConnectionDrainOnFailover,omitempty"`
@@ -1892,6 +1892,16 @@ type BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity struct {
 	// new
 	// connections to all healthy endpoints across all zones.
 	SpilloverRatio  float64  `json:"spilloverRatio,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceOrchestrationInfo is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceOrchestrationInfo struct {
+	// The resource URI of the resource or system that manages the
+	// backend
+	// service.
+	ResourceUri     string   `json:"resourceUri,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -4204,6 +4214,14 @@ type HttpRouteAction struct {
 	// see Load
 	// balancing: Routing and traffic management features.
 	FaultInjectionPolicy *HttpFaultInjection `json:"faultInjectionPolicy,omitempty"`
+	// Image optimization policy for this URL Map’s route. Available only
+	// for
+	// Global EXTERNAL_MANAGED load balancer schemes.
+	// Either Cloud CDN must be enabled on the backend service or backend
+	// bucket
+	// serving the route, or cache policy must be configured on the same
+	// route
+	ImageOptimizationPolicy *ImageOptimizationPolicy `json:"imageOptimizationPolicy,omitempty"`
 	// Specifies the maximum duration (timeout) for streams on the selected
 	// route.
 	// Unlike the timeout field where the timeout duration starts
@@ -4568,6 +4586,15 @@ type HttpRouteRuleMatch struct {
 	RegexMatch      string   `json:"regexMatch,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
+}
+
+// ImageOptimizationPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ImageOptimizationPolicy struct {
+	// Specifies whether to interpret query parameters for image
+	// optimization.
+	QueryParameterInterpretation string   `json:"queryParameterInterpretation,omitempty"`
+	ForceSendFields              []string `json:"-"`
+	NullFields                   []string `json:"-"`
 }
 
 // Int64RangeMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -6680,6 +6707,8 @@ type UrlMap struct {
 	Region string `json:"region,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// Output only. [Output Only] The status of the URL map.
+	Status *UrlMapStatus `json:"status,omitempty"`
 	// The list of expected URL mapping tests. Request to update theUrlMap
 	// succeeds only if all test cases pass. You can specify a
 	// maximum of 100 tests per UrlMap.
@@ -6691,6 +6720,24 @@ type UrlMap struct {
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
 	NullFields               []string `json:"-"`
+}
+
+// UrlMapQuotaUsage is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type UrlMapQuotaUsage struct {
+	// Output only. The number of forwarding rules that uses this UrlMap.
+	ForwardingRules int64 `json:"forwardingRules,omitempty"`
+	// Output only. The number of quota units calculated for this UrlMap.
+	Units           int64    `json:"units,omitempty,string"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// UrlMapStatus is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type UrlMapStatus struct {
+	// Output only. Summary of quota usage for given UrlMap.
+	QuotaUsage      *UrlMapQuotaUsage `json:"quotaUsage,omitempty"`
+	ForceSendFields []string          `json:"-"`
+	NullFields      []string          `json:"-"`
 }
 
 // UrlMapTest is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
