@@ -412,6 +412,7 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 		l4netlb.svcLogger.Error(err, "Failed to determine L4 logging config")
 		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, l4lbconfig.GetReasonForError(err), "L4LBConfig could not be retrieved: %v", err)
 	}
+	l4netlb.svcLogger.V(2).Info("Determined L4 logging config", "logConfig", logConfig, "loggingCondition", loggingCondition)
 	logConfigControlEnabled := loggingCondition.Status == metav1.ConditionTrue
 	syncResult.MetricsState.LoggingControlEnabled = logConfigControlEnabled
 
