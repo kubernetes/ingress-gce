@@ -137,6 +137,14 @@ func TestBackend(t *testing.T) {
 	}
 }
 
+func TestBackendBackendOrchestrationInfo(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendBackendOrchestrationInfo{})
+	alphaType := reflect.TypeOf(computealpha.BackendBackendOrchestrationInfo{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendCustomMetric(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendCustomMetric{})
 	alphaType := reflect.TypeOf(computealpha.BackendCustomMetric{})
@@ -384,6 +392,14 @@ func TestBackendServiceNetworkPassThroughLbTrafficPolicy(t *testing.T) {
 func TestBackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceOrchestrationInfo(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceOrchestrationInfo{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceOrchestrationInfo{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -980,6 +996,14 @@ func TestHttpRouteRule(t *testing.T) {
 func TestHttpRouteRuleMatch(t *testing.T) {
 	compositeType := reflect.TypeOf(HttpRouteRuleMatch{})
 	alphaType := reflect.TypeOf(computealpha.HttpRouteRuleMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestImageOptimizationPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(ImageOptimizationPolicy{})
+	alphaType := reflect.TypeOf(computealpha.ImageOptimizationPolicy{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -2106,6 +2130,22 @@ func TestUrlMapToGA(t *testing.T) {
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("UrlMap.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
+func TestUrlMapQuotaUsage(t *testing.T) {
+	compositeType := reflect.TypeOf(UrlMapQuotaUsage{})
+	alphaType := reflect.TypeOf(computealpha.UrlMapQuotaUsage{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUrlMapStatus(t *testing.T) {
+	compositeType := reflect.TypeOf(UrlMapStatus{})
+	alphaType := reflect.TypeOf(computealpha.UrlMapStatus{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
 	}
 }
 
