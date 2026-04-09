@@ -12,6 +12,7 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	"k8s.io/ingress-gce/pkg/neg"
@@ -21,6 +22,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -34,7 +36,16 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 
 	logger, _ := ktesting.NewTestContext(t)
 	kubeClient := k8sfake.NewSimpleClientset()
-	informers := multiprojectinformers.NewInformerSet(kubeClient, svcnegfake.NewSimpleClientset(), networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
+	svcNegClient := svcnegfake.NewSimpleClientset()
+
+	test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), "*", &providerconfig.ProviderConfig{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+	test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "*", &svcnegv1.ServiceNetworkEndpointGroup{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	informers := multiprojectinformers.NewInformerSet(kubeClient, svcNegClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
 
 	// Start base informers; they are not strictly required by our stubbed controller,
 	// but mirrors real startup flow and ensures CombinedHasSynced would be true if used.

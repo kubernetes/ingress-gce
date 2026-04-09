@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/test"
 )
 
@@ -254,6 +255,9 @@ func TestFilterByProviderConfig_WrappingAndState(t *testing.T) {
 	for _, r := range resources {
 		test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
 	}
+	test.PrependBookmarkReactor(&svcClient.Fake, svcClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
 
 	inf := NewInformerSet(kubeClient, svcClient, nil, nil, metav1.Duration{Duration: 0})
 

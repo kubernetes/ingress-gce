@@ -314,6 +314,9 @@ func (f *fakePanickingManager) getPanicCount() int {
 func TestPanicRecovery(t *testing.T) {
 	pcClient := fakeproviderconfigclient.NewSimpleClientset()
 	panicManager := &fakePanickingManager{}
+	test.PrependBookmarkReactor(&pcClient.Fake, pcClient.Tracker(), "*", &providerconfigv1.ProviderConfig{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
 	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(pcClient, 0).Cloud().V1().ProviderConfigs().Informer()
 	stopCh := make(chan struct{})
 	defer close(stopCh)
