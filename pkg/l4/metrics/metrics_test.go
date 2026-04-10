@@ -84,13 +84,13 @@ func TestPublishILBSyncMetrics(t *testing.T) {
 		},
 		{
 			labels: prometheus.Labels{
-				"logging_control_enabled": "true",
+				"logging_enabled": "true",
 			},
 			count: 3,
 		},
 		{
 			labels: prometheus.Labels{
-				"logging_control_enabled": "false",
+				"logging_enabled": "false",
 			},
 			count: 5,
 		},
@@ -239,13 +239,13 @@ func TestPublishNetLBSyncMetrics(t *testing.T) {
 		},
 		{
 			labels: prometheus.Labels{
-				"logging_control_enabled": "true",
+				"logging_enabled": "true",
 			},
 			count: 2,
 		},
 		{
 			labels: prometheus.Labels{
-				"logging_control_enabled": "false",
+				"logging_enabled": "false",
 			},
 			count: 6,
 		},

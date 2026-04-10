@@ -35,7 +35,7 @@ const (
 	l4LabelZonalAffinity         = "zonal_affinity"
 	l4LabelBackendType           = "backend_type"
 	l4LabelProtocol              = "protocol" // Either "TCP", "UDP", or "MIXED". The default "" means that there is an error.
-	l4LabelLoggingControlEnabled = "logging_control_enabled"
+	l4LabelLoggingControlEnabled = "logging_enabled"
 	labelDenyFirewall            = "deny_firewall"
 )
 
