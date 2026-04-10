@@ -78,8 +78,8 @@ func TestDenyFirewall(t *testing.T) {
 	ipv6AllowFirewall := &compute.Firewall{
 		Name: allowIPv6Name,
 		Allowed: []*compute.FirewallAllowed{
-			// {IPProtocol: "udp", Ports: []string{"1000"}},
-			{IPProtocol: "TCP", Ports: []string{"80", "1000"}}, // mixed protocol is not yet supported on IPv6
+			{IPProtocol: "udp", Ports: []string{"1000"}},
+			{IPProtocol: "tcp", Ports: []string{"80"}},
 		},
 		Description:       `{"networking.gke.io/service-name":"default/external-lb","networking.gke.io/api-version":"ga"}`,
 		DestinationRanges: []string{ipv6Address},

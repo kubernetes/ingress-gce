@@ -24,9 +24,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -51,10 +51,13 @@ func (l4netlb *L4NetLB) ensureIPv6Resources(syncResult *L4NetLBSyncResult, nodeN
 		return
 	}
 
-	if ipv6fr.IPProtocol == string(corev1.ProtocolTCP) {
+	switch ipv6fr.IPProtocol {
+	case forwardingrules.ProtocolTCP:
 		syncResult.Annotations[annotations.TCPForwardingRuleIPv6Key] = ipv6fr.Name
-	} else {
+	case forwardingrules.ProtocolUDP:
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
+	case forwardingrules.ProtocolL3:
+		syncResult.Annotations[annotations.L3ForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
 	// Google Cloud creates ipv6 forwarding rules with IPAddress in CIDR form with /96 range
@@ -96,7 +99,7 @@ func (l4netlb *L4NetLB) deleteIPv6ResourcesOnDelete(syncResult *L4NetLBSyncResul
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv6 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv6ResourcesAnnotationBased(syncResult *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleIPv6Key) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleIPv6Key) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleIPv6Key) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleIPv6Key) || l4netlb.hasAnnotation(annotations.L3ForwardingRuleIPv6Key) {
 		l4netlb.deleteIPv6ForwardingRule(syncResult)
 	}
 
@@ -122,6 +125,15 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 	svcPorts := l4netlb.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
+	allowed := []*compute.FirewallAllowed{
+		{
+			IPProtocol: string(protocol),
+			Ports:      portRanges,
+		},
+	}
+	if l4netlb.enableMixedProtocol {
+		allowed = firewalls.AllowedForService(svcPorts)
+	}
 
 	ipAddress := strings.Split(ipRange, "/")[0]
 
@@ -139,12 +151,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 	}
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: string(protocol),
-				Ports:      portRanges,
-			},
-		},
+		Allowed:           allowed,
 		SourceRanges:      ipv6SourceRanges,
 		DestinationRanges: []string{ipAddress},
 		Name:              firewallName,

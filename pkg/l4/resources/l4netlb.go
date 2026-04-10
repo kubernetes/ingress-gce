@@ -84,6 +84,7 @@ type L4NetLB struct {
 	networkResolver                  network.Resolver
 	enableWeightedLB                 bool
 	enableMixedProtocol              bool
+	useL3DefaultForMixedProtocol     bool
 	disableNodesFirewallProvisioning bool
 	svcLogger                        klog.Logger
 	useNEGs                          bool
@@ -143,6 +144,7 @@ type L4NetLBParams struct {
 	NetworkResolver                    network.Resolver
 	EnableWeightedLB                   bool
 	EnableMixedProtocol                bool
+	UseL3DefaultForMixedProtocol       bool
 	DisableNodesFirewallProvisioning   bool
 	UseNEGs                            bool
 	UseDenyFirewalls                   bool
@@ -178,6 +180,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		networkResolver:                    params.NetworkResolver,
 		enableWeightedLB:                   params.EnableWeightedLB,
 		enableMixedProtocol:                params.EnableMixedProtocol,
+		useL3DefaultForMixedProtocol:       params.UseL3DefaultForMixedProtocol,
 		disableNodesFirewallProvisioning:   params.DisableNodesFirewallProvisioning,
 		useDenyFirewalls:                   params.UseDenyFirewalls,
 		enableDenyFirewallsRollbackCleanup: params.EnableDenyFirewallsRollbackCleanup,
@@ -920,4 +923,8 @@ func (l4netlb *L4NetLB) determineBackendServiceLocalityPolicy() backends.Localit
 
 func (l4netlb *L4NetLB) isWeightedLBPodsPerNode() bool {
 	return backends.LocalityLBPolicyWeightedMaglev == l4netlb.determineBackendServiceLocalityPolicy()
+}
+
+func (l4netlb *L4NetLB) mixedProtocolUsingL3() bool {
+	return l4netlb.enableMixedProtocol && l4netlb.useL3DefaultForMixedProtocol
 }

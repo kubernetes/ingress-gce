@@ -374,7 +374,7 @@ func (l4 *L4) GetFRName() string {
 	ports := l4.Service.Spec.Ports
 	protocol := string(utils.GetProtocol(ports))
 	if l4.enableMixedProtocol {
-		protocol = forwardingrules.GetILBProtocol(ports)
+		protocol = forwardingrules.GetProtocol(ports)
 	}
 	return l4.getFRNameWithProtocol(protocol)
 }

@@ -128,7 +128,7 @@ func (l4 *L4) deleteIPv6ResourcesAnnotationBased(syncResult *L4ILBSyncResult, sh
 func (l4 *L4) getIPv6FRName() string {
 	protocol := string(utils.GetProtocol(l4.Service.Spec.Ports))
 	if l4.enableMixedProtocol {
-		protocol = forwardingrules.GetILBProtocol(l4.Service.Spec.Ports)
+		protocol = forwardingrules.GetProtocol(l4.Service.Spec.Ports)
 	}
 	return l4.getIPv6FRNameWithProtocol(protocol)
 }

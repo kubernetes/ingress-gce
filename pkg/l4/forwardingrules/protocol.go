@@ -13,9 +13,8 @@ const (
 	ProtocolL3 = "L3_DEFAULT"
 )
 
-// GetILBProtocol returns the protocol to be used for a Forwarding Rule for an ILB.
-// For ELB please use forwardingrules.NeedsTCP or forwardingrules.NeedsUDP functions.
-func GetILBProtocol(svcPorts []api_v1.ServicePort) string {
+// GetProtocol returns the protocol to be used for a Forwarding Rule
+func GetProtocol(svcPorts []api_v1.ServicePort) string {
 	protocolSet := make(map[api_v1.Protocol]struct{})
 	for _, port := range svcPorts {
 		protocol := port.Protocol
