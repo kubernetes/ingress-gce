@@ -8,12 +8,16 @@ import (
 	"testing"
 	"time"
 
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	networkfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
 	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -23,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/multiproject/common/finalizer"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
@@ -31,8 +36,8 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/negannotation"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
-
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	klog "k8s.io/klog/v2"
 )
@@ -213,6 +218,40 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			networkClient := networkfake.NewSimpleClientset()
 			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
+			resources := []struct {
+				res string
+				obj runtime.Object
+			}{
+				{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"endpointslices", &discovery.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			}
+			for _, r := range resources {
+				test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+			}
+
+			test.PrependBookmarkReactor(&pcClient.Fake, pcClient.Tracker(), "providerconfigs", &providerconfigv1.ProviderConfig{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "networks", &networkv1.Network{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&nodeTopologyClient.Fake, nodeTopologyClient.Tracker(), "nodetopologies", &nodetopologyv1.NodeTopology{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "gkenetworkparamsets", &networkv1.GKENetworkParamSet{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
 			// This simulates the automatic labeling that the real environment does.
 			// ProviderConfig name label is set to the namespace of the object.
 			testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
@@ -248,6 +287,11 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					syncMetrics.FakeSyncerMetrics(),
 				)
 			}()
+
+			// Without the time.Sleep the main test goroutine would create resources
+			// before the background goroutine had actually started and registered
+			// event handlers, causing the test to fail to register some event handlers.
+			time.Sleep(2 * time.Second)
 
 			// Create the test's ProviderConfigs.
 			for _, pc := range tc.providerConfigs {
@@ -329,6 +373,40 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	networkClient := networkfake.NewSimpleClientset()
 	nodeTopoClient := nodetopologyfake.NewSimpleClientset()
 
+	resources := []struct {
+		res string
+		obj runtime.Object
+	}{
+		{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+		{"endpointslices", &discovery.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+	}
+	for _, r := range resources {
+		test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+	}
+
+	test.PrependBookmarkReactor(&pcClient.Fake, pcClient.Tracker(), "*", &providerconfigv1.ProviderConfig{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "networks", &networkv1.Network{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "gkenetworkparamsets", &networkv1.GKENetworkParamSet{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	test.PrependBookmarkReactor(&nodeTopoClient.Fake, nodeTopoClient.Tracker(), "nodetopologies", &nodetopologyv1.NodeTopology{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
 	// Simulate webhook: label SvcNEGs with provider-config name == namespace.
 	testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
 
@@ -350,6 +428,11 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 		kubeSystemUID, kubeClient, pcClient,
 		gceCreator, rootNamer, globalStop, syncMetrics.FakeSyncerMetrics(),
 	)
+
+	// Without the time.Sleep: the main test goroutine would create resources
+	// before the background goroutine had actually started and registered
+	// event handlers, causing the test to fail to register some event handlers.
+	time.Sleep(2 * time.Second)
 
 	// --- pc-1: create and validate baseline service ---
 	pc1 := createPC(ctx, t, pcClient, "pc-1", "owner-1", "proj-1", 1111, "net-1", "subnet-1")
@@ -949,6 +1032,40 @@ func TestProviderConfigErrorCases(t *testing.T) {
 			networkClient := networkfake.NewSimpleClientset()
 			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
+			resources := []struct {
+				res string
+				obj runtime.Object
+			}{
+				{"ingresses", &networkingv1.Ingress{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"services", &corev1.Service{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"pods", &corev1.Pod{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"nodes", &corev1.Node{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+				{"endpointslices", &discovery.EndpointSlice{ObjectMeta: test.DefaultBookmarkObjectMeta}},
+			}
+			for _, r := range resources {
+				test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
+			}
+
+			test.PrependBookmarkReactor(&pcClient.Fake, pcClient.Tracker(), "providerconfigs", &providerconfigv1.ProviderConfig{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "networks", &networkv1.Network{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&nodeTopologyClient.Fake, nodeTopologyClient.Tracker(), "nodetopologies", &nodetopologyv1.NodeTopology{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&networkClient.Fake, networkClient.Tracker(), "gkenetworkparamsets", &networkv1.GKENetworkParamSet{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
 			testutil.EmulateProviderConfigLabelingWebhook(&svcNegClient.Fake, "servicenetworkendpointgroups")
 
 			logger := klog.TODO()
@@ -1039,6 +1156,11 @@ func TestProviderConfigErrorCases(t *testing.T) {
 						t.Logf("NEG status not set for service %s/%s: %v", tc.service.Namespace, tc.service.Name, err)
 					}
 				}
+			} else {
+				// For cases without a service, wait a bit to ensure the controller has time to start
+				// and doesn't fail with "stop channel closed before start" due to immediate return.
+				t.Logf("No service provided, waiting for controller to initialize...")
+				time.Sleep(2 * time.Second)
 			}
 		})
 	}
