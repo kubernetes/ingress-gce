@@ -150,14 +150,19 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 		WasUpdated: wasUpdate,
 	}
 
+	isSharedFirewall := sharedHC
+	if !svcNetwork.IsDefault {
+		isSharedFirewall = false
+	}
+
 	if needsIPv4 {
 		hcLogger.V(3).Info("Ensuring IPv4 firewall rule for health check for service")
-		l4hc.ensureIPv4Firewall(svc, namer, hcPort, sharedHC, nodeNames, hcResult, svcNetwork, hcLogger)
+		l4hc.ensureIPv4Firewall(svc, namer, hcPort, isSharedFirewall, nodeNames, hcResult, svcNetwork, hcLogger)
 	}
 
 	if needsIPv6 {
 		hcLogger.V(3).Info("Ensuring IPv6 firewall rule for health check for service")
-		l4hc.ensureIPv6Firewall(svc, namer, hcPort, sharedHC, nodeNames, l4Type, hcResult, svcNetwork, hcLogger)
+		l4hc.ensureIPv6Firewall(svc, namer, hcPort, isSharedFirewall, nodeNames, l4Type, hcResult, svcNetwork, hcLogger)
 	}
 
 	return hcResult
