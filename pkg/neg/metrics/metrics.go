@@ -337,7 +337,7 @@ func (m *NegMetrics) PublishNegControllerErrorCountMetrics(err error, isIgnored 
 	NegControllerErrorCount.WithLabelValues(getErrorLabel(err, isIgnored)).Inc()
 }
 
-// PublishLabelPropagationError publishes error occured during label propagation.
+// PublishLabelPropagationError publishes error occurred during label propagation.
 func PublishLabelPropagationError(errType string) {
 	LabelPropagationError.WithLabelValues(errType).Inc()
 }
