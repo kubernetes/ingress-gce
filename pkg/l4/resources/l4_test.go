@@ -2917,6 +2917,7 @@ func assertDualStackILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames
 
 func buildExpectedAnnotations(l4 *L4) map[string]string {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	sharedHCFW := isSharedHC && l4.network.IsDefault
 	proto := utils.GetProtocol(l4.Service.Spec.Ports)
 
 	backendName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
@@ -2928,7 +2929,7 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 	}
 
 	if utils.NeedsIPv4(l4.Service) {
-		hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+		hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, sharedHCFW)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 		expectedAnnotations[annotations.FirewallRuleKey] = backendName
@@ -2941,7 +2942,7 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 		}
 	}
 	if utils.NeedsIPv6(l4.Service) {
-		ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+		ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, sharedHCFW)
 		ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
@@ -3090,7 +3091,7 @@ func verifyILBIPv6NodesFirewall(l4 *L4, nodeNames []string) error {
 }
 
 func verifyILBIPv4HealthCheckFirewall(l4 *L4, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service) && l4.network.IsDefault
 
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC)

@@ -1792,7 +1792,7 @@ func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 }
 
 func verifyNetLBIPv4HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service) && l4netlb.networkInfo.IsDefault
 
 	hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
 	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
@@ -1968,8 +1968,9 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 		annotations.HealthcheckKey:    hcName,
 	}
 
+	isSharedHCFW := isSharedHC && l4netlb.networkInfo.IsDefault
 	if utils.NeedsIPv4(l4netlb.Service) {
-		hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+		hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHCFW)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 		expectedAnnotations[annotations.FirewallRuleKey] = backendName
@@ -1982,7 +1983,7 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 		}
 	}
 	if utils.NeedsIPv6(l4netlb.Service) {
-		ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+		ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHCFW)
 		ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName

@@ -18,10 +18,12 @@ package healthchecks
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -549,6 +551,9 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			HealthCheckNodePort:   1234,
 		},
 	}
+	svcETPCluster := svc.DeepCopy()
+	svcETPCluster.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyCluster
+	svcETPCluster.Spec.HealthCheckNodePort = 0
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 	fwDescription, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "", meta.VersionGA, false)
 	if err != nil {
@@ -582,12 +587,47 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 		},
 		Priority: 999,
 	}
+	fwSharedDescription, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "", meta.VersionGA, true)
+	if err != nil {
+		t.Errorf("utils.MakeL4LBFirewallDescription() err=%v", err)
+	}
+	expectedSharedFw := &compute.Firewall{
+		Name:         l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, true),
+		Description:  fwSharedDescription,
+		Network:      testClusterValues.NetworkURL,
+		SourceRanges: gce.L4LoadBalancerSrcRanges(),
+		TargetTags:   []string{"k8s-test"},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "TCP",
+				Ports:      []string{strconv.Itoa(int(gce.GetNodesHealthCheckPort()))},
+			},
+		},
+		Priority: 999,
+	}
+
+	secondaryNetwork := &network.NetworkInfo{IsDefault: false, K8sNetwork: "secondary", NetworkURL: "secondaryNetworkURL", SubnetworkURL: "secondarySubnetworkURL"}
+	expectedMultinetFw := &compute.Firewall{
+		Name:         l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false),
+		Description:  fwDescription,
+		Network:      secondaryNetwork.NetworkURL,
+		SourceRanges: gce.L4LoadBalancerSrcRanges(),
+		TargetTags:   []string{"k8s-test"},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "TCP",
+				Ports:      []string{strconv.Itoa(int(gce.GetNodesHealthCheckPort()))},
+			},
+		},
+		Priority: 999,
+	}
 
 	testCases := []struct {
 		desc             string
 		existingHC       *composite.HealthCheck
 		existingFirewall *compute.Firewall
 		svc              *corev1.Service
+		svcNetwork       *network.NetworkInfo
 		wantHC           *composite.HealthCheck
 		wantFirewall     *compute.Firewall
 		needIPv6         bool
@@ -599,6 +639,23 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			svc:          svc,
 			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall: expectedFw,
+			wantUpdate:   utils.ResourceUpdate,
+			wantUpdateFw: utils.ResourceUpdate,
+		},
+		{
+			desc:         "create cluster mode",
+			svc:          svcETPCluster,
+			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, true), namespacedName, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantFirewall: expectedSharedFw,
+			wantUpdate:   utils.ResourceUpdate,
+			wantUpdateFw: utils.ResourceUpdate,
+		},
+		{
+			desc:         "create cluster mode multinet",
+			svc:          svcETPCluster,
+			svcNetwork:   secondaryNetwork,
+			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, true), namespacedName, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantFirewall: expectedMultinetFw,
 			wantUpdate:   utils.ResourceUpdate,
 			wantUpdateFw: utils.ResourceUpdate,
 		},
@@ -663,7 +720,10 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(testClusterValues)
 			nodeNames := []string{"k8s-test-node"}
 			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
-			defaultNetwork := network.DefaultNetwork(fakeGCE)
+			svcNetwork := tc.svcNetwork
+			if svcNetwork == nil {
+				svcNetwork = network.DefaultNetwork(fakeGCE)
+			}
 			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
@@ -677,7 +737,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
 			mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
 
-			result := hcs.EnsureHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.XLB, nodeNames, true, tc.needIPv6, *defaultNetwork, klog.TODO())
+			sharedHC := !helpers.RequestsOnlyLocalTraffic(tc.svc)
+			result := hcs.EnsureHealthCheckWithDualStackFirewalls(svc, l4Namer, sharedHC, meta.Global, utils.XLB, nodeNames, true, tc.needIPv6, *svcNetwork, klog.TODO())
 			if result.Err != nil {
 				t.Errorf("hcs.EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
 			}
