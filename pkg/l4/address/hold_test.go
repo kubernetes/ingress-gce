@@ -213,7 +213,7 @@ func TestHoldExternalIPv4(t *testing.T) {
 				t.Errorf("address.IPv4ToUse(_).IP = %q, want %q", got.IP, tC.want.IP)
 			}
 			if got.Managed != tC.want.Managed {
-				t.Errorf("address.IPv4ToUse(_).Managed = %q, want %q", got.Managed, tC.want.Managed)
+				t.Errorf("address.IPv4ToUse(_).Managed = %v, want %v", got.Managed, tC.want.Managed)
 			}
 
 			// Verify that address exists

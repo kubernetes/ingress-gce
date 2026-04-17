@@ -240,7 +240,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		c.logger.Info("failed to retrieve service attachment from the store", "serviceKey", key.(string), "err", err)
 	} else if exists {
 		svcAttachment := obj.(*sav1.ServiceAttachment)
-		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeWarning, "ProcessServiceAttachmentFailed", eventMsg)
+		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeWarning, "ProcessServiceAttachmentFailed", "error processing service attachment %q: %q", key, err)
 	}
 	c.svcAttachmentQueue.AddRateLimited(key)
 }
@@ -429,7 +429,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	if err == nil {
 		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeNormal, "ServiceAttachmentCreated",
-			fmt.Sprintf("Service Attachment %s was successfully created.", updatedCR.Status.ServiceAttachmentURL))
+			"Service Attachment %s was successfully created.", updatedCR.Status.ServiceAttachmentURL)
 	}
 
 	return err
@@ -491,7 +491,7 @@ func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
 	if err = c.ensureDeleteGCEServiceAttachment(gceName); err != nil {
 		eventMsg := fmt.Sprintf("Failed to Garbage Collect Service Attachment %s/%s: %q", sa.Namespace, sa.Name, err)
 		c.logger.Error(err, eventMsg)
-		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
+		c.recorder(sa.Namespace).Event(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
 		return
 	}
 	c.logger.V(2).Info("Deleted Service Attachment", "attachmentName", gceName)
@@ -500,7 +500,7 @@ func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
 	if err = c.ensureSAFinalizerRemoved(sa); err != nil {
 		eventMsg := fmt.Sprintf("Failed to remove finalizer on ServiceAttachment %s/%s: %q", sa.Namespace, sa.Name, err)
 		c.logger.Error(err, eventMsg)
-		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
+		c.recorder(sa.Namespace).Event(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
 		return
 	}
 	c.logger.V(2).Info("Removed finalizer on Service Attachment", "attachmentName", klog.KRef(sa.Namespace, sa.Name))
