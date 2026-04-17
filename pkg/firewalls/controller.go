@@ -317,7 +317,7 @@ func (fwc *FirewallController) sync(key string) error {
 			if annotations.FromIngress(ing).SuppressFirewallXPNError() {
 				continue
 			}
-			fwc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
+			fwc.ctx.Recorder(ing.Namespace).Event(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
 		}
 	}
 	return nil

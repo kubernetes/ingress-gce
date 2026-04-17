@@ -141,7 +141,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
 			if needsILB || l4c.needsDeletion(addSvc) {
 				svcLogger.V(3).Info("ILB Service added, enqueuing")
-				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+				l4c.ctx.Recorder(addSvc.Namespace).Event(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4c.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, svcLogger)
 				l4c.svcQueue.Enqueue(addSvc)
 				l4c.enqueueTracker.Track()
