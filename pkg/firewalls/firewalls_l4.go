@@ -125,7 +125,7 @@ func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud 
 	updateStatus, err := EnsureL4FirewallRule(cloud, nsName, params, shared, fwLogger)
 	if err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
-			recorder.Eventf(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
+			recorder.Event(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
 			return updateStatus, nil
 		}
 		return updateStatus, err

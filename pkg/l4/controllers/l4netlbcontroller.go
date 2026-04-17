@@ -151,7 +151,7 @@ func NewL4NetLBController(
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			if shouldProcess, _ := l4netLBc.shouldProcessService(addSvc, nil, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service added, enqueuing")
-				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+				l4netLBc.ctx.Recorder(addSvc.Namespace).Event(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, addSvc.ResourceVersion, svcLogger)
 				l4netLBc.svcQueue.Enqueue(addSvc)
 				l4netLBc.enqueueTracker.Track()
@@ -348,7 +348,7 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 		if annotations.HasLoadBalancerClass(newSvc, annotations.RegionalExternalLoadBalancerClass) {
 			if newSvc.Annotations[annotations.ServiceAnnotationLoadBalancerType] == string(annotations.LBTypeInternal) {
 				lc.ctx.Recorder(newSvc.Namespace).Eventf(newSvc, v1.EventTypeWarning, "ConflictingConfiguration",
-					fmt.Sprintf("loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", annotations.ServiceAnnotationLoadBalancerType, string(annotations.LBTypeInternal)))
+					"loadBalancerClass conflicts with %s: %q annotation. External LoadBalancer Service provisioned.", annotations.ServiceAnnotationLoadBalancerType, string(annotations.LBTypeInternal))
 			}
 		} else {
 			svcLogger.Info("Ignoring service managed by another controller", "serviceLoadBalancerClass", *newSvc.Spec.LoadBalancerClass)

@@ -780,7 +780,7 @@ func checkEndpointBatchErr(err error, operation transactionOp) error {
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
 	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
-		s.recorder.Eventf(svc, eventType, reason, eventDesc)
+		s.recorder.Event(svc, eventType, reason, eventDesc)
 	}
 }
 

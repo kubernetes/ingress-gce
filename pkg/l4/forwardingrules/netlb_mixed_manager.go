@@ -336,5 +336,5 @@ func (m *MixedManagerNetLB) nameLegacy() string {
 }
 
 func (m *MixedManagerNetLB) recordEventf(messageFmt string, args ...any) {
-	m.Recorder.Eventf(m.Service, api_v1.EventTypeNormal, events.SyncIngress, messageFmt, args)
+	m.Recorder.Eventf(m.Service, api_v1.EventTypeNormal, events.SyncIngress, messageFmt, args...)
 }

@@ -359,7 +359,7 @@ func (l4 *L4) deleteFirewall(name string, fwLogger klog.Logger) error {
 	err := firewalls.EnsureL4FirewallRuleDeleted(l4.cloud, name, fwLogger)
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-			l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			l4.recorder.Event(l4.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
 			return nil
 		}
 		return err
