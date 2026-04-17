@@ -624,7 +624,7 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 				// svcneg resource. We do not have a good way of detecting what is wrong and believe user
 				// intervention is safer than accidentally deleting a NEG that is being used.
 				eventMsg := fmt.Sprintf("Detected TO_BE_DELETED NEGs, but unable to parse selflink %s. Please manually delete the NEG and remove the corresponding reference from the svcneg resource", negRef.SelfLink)
-				manager.recorder.Eventf(svcNegCR, v1.EventTypeWarning, negtypes.NegGCError, eventMsg)
+				manager.recorder.Event(svcNegCR, v1.EventTypeWarning, negtypes.NegGCError, eventMsg)
 				continue
 			}
 			deleteByZone = true
@@ -706,7 +706,7 @@ func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *
 	}
 	if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, expectedDesc); err != nil {
 		err = fmt.Errorf("failed to delete NEG %s in %s: %s", name, zone, err)
-		manager.recorder.Eventf(svcNegCR, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
+		manager.recorder.Event(svcNegCR, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
 		*errList = append(*errList, err)
 
 		return false

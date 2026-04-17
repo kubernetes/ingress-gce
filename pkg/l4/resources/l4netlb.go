@@ -822,7 +822,7 @@ func (l4netlb *L4NetLB) deleteFirewall(firewallName string, fwLogger klog.Logger
 	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, firewallName, fwLogger)
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			l4netlb.recorder.Event(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
 			return nil
 		}
 		return err

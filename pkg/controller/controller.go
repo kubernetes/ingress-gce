@@ -809,7 +809,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1.Ingress, urlMap *utils.
 	for _, err := range errors {
 		if apierrors.IsNotFound(err) {
 			msg := fmt.Sprintf("Could not find TLS certificate: %v", err)
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
+			lbc.ctx.Recorder(ing.Namespace).Event(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
 		} else {
 			ingLogger.Error(err, "Could not get certificates")
 			return nil, err
