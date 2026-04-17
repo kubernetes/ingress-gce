@@ -36,7 +36,7 @@ spec:
         # Any image is permissible as long as:
         # 1. It serves a 404 page at /
         # 2. It serves 200 on a /healthz endpoint
-        image: [IMAGE_URL]
+        image: registry.k8s.io/defaultbackend-amd64:1.5
         securityContext:
           # go/gke-components/integration-guide#run-containers-as-non-root
           runAsUser: 1000
