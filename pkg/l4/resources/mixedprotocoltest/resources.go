@@ -85,6 +85,12 @@ func VerifyResourcesExist(t *testing.T, cloud *gce.Cloud, want GCEResources) {
 		ignoreFields := cmpopts.IgnoreFields(compute.ForwardingRule{}, "SelfLink")
 		if diff := cmp.Diff(wantFr, fr, ignoreFields); diff != "" {
 			t.Errorf("Forwarding rule mismatch (-want +got):\n%s", diff)
+			if fr == nil {
+				allFrs, err := cloud.ListRegionForwardingRules(cloud.Region())
+				if err == nil {
+					t.Errorf("Have not found forwarding rule %s. Existing forwarding rules: %+v", frName, allFrs)
+				}
+			}
 		}
 	}
 

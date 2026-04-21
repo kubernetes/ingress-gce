@@ -84,6 +84,17 @@ func AnnotationsMixed() map[string]string {
 	}
 }
 
+// AnnotationsMixed returns annotations for mixed protocol NetLB
+func AnnotationsMixedL3() map[string]string {
+	return map[string]string{
+		"service.kubernetes.io/healthcheck":          "k8s2-axyqjz2d-l4-shared-hc",
+		"service.kubernetes.io/firewall-rule-for-hc": "k8s2-axyqjz2d-l4-shared-hc-fw",
+		"service.kubernetes.io/backend-service":      "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		"service.kubernetes.io/l3-forwarding-rule":   "k8s2-l3-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		"service.kubernetes.io/firewall-rule":        "k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+	}
+}
+
 // AnnotationsMixedIPv6 returns annotations for mixed protocol NetLB
 func AnnotationsMixedIPv6() map[string]string {
 	return map[string]string{

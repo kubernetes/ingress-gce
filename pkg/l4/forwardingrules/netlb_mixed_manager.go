@@ -46,11 +46,12 @@ type Provider interface {
 // MixedManagerNetLB is responsible for Ensuring and Deleting Forwarding Rules
 // for mixed protocol NetLBs.
 type MixedManagerNetLB struct {
-	Namer    Namer
-	Provider Provider
-	Recorder record.EventRecorder
-	Logger   logr.Logger
-	Cloud    *gce.Cloud
+	Namer            Namer
+	Provider         Provider
+	Recorder         record.EventRecorder
+	Logger           logr.Logger
+	Cloud            *gce.Cloud
+	L3DefaultEnabled bool
 
 	Service *api_v1.Service
 }
@@ -59,6 +60,7 @@ type MixedManagerNetLB struct {
 type EnsureNetLBResult struct {
 	UDPFwdRule *composite.ForwardingRule
 	TCPFwdRule *composite.ForwardingRule
+	L3FwdRule  *composite.ForwardingRule
 	IPManaged  address.IPAddressType
 	SyncStatus utils.ResourceSyncStatus
 }
@@ -85,7 +87,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		Recorder:              m.Recorder,
 		Logger:                m.Logger,
 		Service:               m.Service,
-		ExistingRules:         []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP},
+		ExistingRules:         []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP, existing.L3},
 		ForwardingRuleDeleter: m.Provider,
 	})
 	if err != nil {
@@ -102,6 +104,32 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	// We need to delete legacy named forwarding rule to avoid port collisions
 	if err := m.deleteLegacy(); err != nil {
 		return res, err
+	}
+
+	if m.L3DefaultEnabled {
+		res.L3FwdRule, res.SyncStatus, err = m.ensure(existing.L3, backendServiceLink, "L3_DEFAULT", addressHandle.IP)
+		if err != nil {
+			return res, err
+		}
+
+		haveToDeleteSplitRules := existing.TCP != nil || existing.UDP != nil
+		if haveToDeleteSplitRules {
+			m.Logger.Info("TCP and UDP forwarding rules are present, deleting them in favor of L3_DEFAULT rule")
+			res.SyncStatus = utils.ResourceUpdate
+			if err := m.deleteExistingSplit(existing); err != nil {
+				return res, err
+			}
+		}
+
+		return res, nil
+	}
+
+	if existing.L3 != nil {
+		m.Logger.Info("L3 forwarding rule is present, deleting it in favor of split TCP and UDP rules")
+		res.SyncStatus = utils.ResourceUpdate
+		if err := m.delete("l3"); err != nil {
+			return res, err
+		}
 	}
 
 	var tcpErr, udpErr error
@@ -210,21 +238,27 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 	const version = meta.VersionGA
 	const scheme = string(cloud.SchemeExternal)
 	protocol = strings.ToUpper(protocol)
-	if protocol != "TCP" && protocol != "UDP" {
-		return nil, fmt.Errorf("Unknown protocol %s, expected TCP or UDP", protocol)
+	if protocol != "TCP" && protocol != "UDP" && protocol != "L3_DEFAULT" {
+		return nil, fmt.Errorf("unknown protocol %s, expected TCP, UDP or L3_DEFAULT", protocol)
 	}
 
 	svcKey := utils.ServiceKeyFunc(m.Service.Namespace, m.Service.Name)
 	desc, err := utils.MakeL4LBServiceDescription(svcKey, ip, version, false, utils.XLB)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", name, err)
+		return nil, fmt.Errorf("failed to compute description for forwarding rule %s, err: %w", name, err)
 	}
 
 	ports := GetPorts(m.Service.Spec.Ports, api_v1.Protocol(protocol))
 	var portRange string
+	var allPorts bool
 	if len(ports) > maxForwardedPorts {
 		portRange = utils.MinMaxPortRange(ports)
 		ports = nil
+	}
+	if protocol == "L3_DEFAULT" {
+		allPorts = true
+		ports = nil
+		portRange = ""
 	}
 
 	netTier, _ := annotations.NetworkTier(m.Service)
@@ -236,6 +270,7 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 		IPProtocol:          protocol,
 		Ports:               ports,
 		PortRange:           portRange,
+		AllPorts:            allPorts,
 		LoadBalancingScheme: scheme,
 		BackendService:      backendServiceLink,
 		NetworkTier:         netTier.ToGCEValue(),
@@ -264,6 +299,8 @@ type NetLBManagedRules struct {
 	TCP *composite.ForwardingRule
 	// UDP forwarding rule with '-udp-' in a name
 	UDP *composite.ForwardingRule
+	// L3 named forwarding rule with '-l3-' in a name
+	L3 *composite.ForwardingRule
 	// Legacy named forwarding rule (staring with 'a')
 	Legacy *composite.ForwardingRule
 }
@@ -271,10 +308,10 @@ type NetLBManagedRules struct {
 // AllRules returns all forwarding rules for a service specified in the manager
 func (m *MixedManagerNetLB) AllRules() (NetLBManagedRules, error) {
 	var wg sync.WaitGroup
-	var tcp, udp, legacy *composite.ForwardingRule
-	var tcpErr, udpErr, legacyErr error
+	var tcp, udp, l3, legacy *composite.ForwardingRule
+	var tcpErr, udpErr, l3Err, legacyErr error
 
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		tcp, tcpErr = m.Provider.Get(m.name("tcp"))
@@ -285,20 +322,24 @@ func (m *MixedManagerNetLB) AllRules() (NetLBManagedRules, error) {
 	}()
 	go func() {
 		defer wg.Done()
+		l3, l3Err = m.Provider.Get(m.name("l3"))
+	}()
+	go func() {
+		defer wg.Done()
 		legacy, legacyErr = m.Provider.Get(m.nameLegacy())
 	}()
 	wg.Wait()
 
 	return NetLBManagedRules{
-		TCP: tcp, UDP: udp, Legacy: legacy,
-	}, errors.Join(tcpErr, udpErr, legacyErr)
+		TCP: tcp, UDP: udp, L3: l3, Legacy: legacy,
+	}, errors.Join(tcpErr, udpErr, l3Err, legacyErr)
 }
 
 // DeleteIPv4 will try to delete forwarding rules for mixed protocol NetLB service.
 func (m *MixedManagerNetLB) DeleteIPv4() error {
 	var wg sync.WaitGroup
-	var tcpErr, udpErr error
-	wg.Add(2)
+	var tcpErr, udpErr, l3Err error
+	wg.Add(3)
 
 	go func() {
 		defer wg.Done()
@@ -307,6 +348,62 @@ func (m *MixedManagerNetLB) DeleteIPv4() error {
 	go func() {
 		defer wg.Done()
 		udpErr = m.delete("udp")
+	}()
+	go func() {
+		defer wg.Done()
+		l3Err = m.delete("l3")
+	}()
+
+	wg.Wait()
+	return errors.Join(tcpErr, udpErr, l3Err)
+}
+
+// DeleteExistingIPv4 will try to delete forwarding rules for mixed protocol NetLB service
+// only if they have been found. This saves a few GCE calls compared to DeleteIPv4.
+func (m *MixedManagerNetLB) DeleteExistingIPv4(haveRules NetLBManagedRules) error {
+	var wg sync.WaitGroup
+	var tcpErr, udpErr, l3Err error
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		if haveRules.TCP != nil {
+			tcpErr = m.delete("tcp")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if haveRules.UDP != nil {
+			udpErr = m.delete("udp")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if haveRules.L3 != nil {
+			l3Err = m.delete("l3")
+		}
+	}()
+
+	wg.Wait()
+	return errors.Join(tcpErr, udpErr, l3Err)
+}
+
+func (m *MixedManagerNetLB) deleteExistingSplit(haveRules NetLBManagedRules) error {
+	var wg sync.WaitGroup
+	var tcpErr, udpErr error
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		if haveRules.TCP != nil {
+			tcpErr = m.delete("tcp")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if haveRules.UDP != nil {
+			udpErr = m.delete("udp")
+		}
 	}()
 
 	wg.Wait()
@@ -326,6 +423,10 @@ func (m *MixedManagerNetLB) deleteLegacy() error {
 }
 
 func (m *MixedManagerNetLB) name(protocol string) string {
+	if strings.EqualFold(protocol, "L3_DEFAULT") {
+		protocol = "l3"
+	}
+
 	return m.Namer.L4ForwardingRule(
 		m.Service.Namespace, m.Service.Name, strings.ToLower(protocol),
 	)
