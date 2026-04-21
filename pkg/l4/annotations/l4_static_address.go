@@ -51,6 +51,9 @@ func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (
 
 	for _, addressName := range addressNames {
 		trimmedAddressName := strings.TrimSpace(addressName)
+		if trimmedAddressName == "" {
+			continue
+		}
 		cloudAddress, err := cloud.GetRegionAddress(trimmedAddressName, cloud.Region())
 		if err != nil {
 			if isNotFoundError(err) {

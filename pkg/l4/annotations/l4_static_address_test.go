@@ -79,6 +79,20 @@ func TestAddressFromAnnotation(t *testing.T) {
 			wantIPv6Address:   "",
 		},
 		{
+			desc:              "Empty annotation",
+			reservedAddresses: []compute.Address{},
+			annotationVal:     "",
+			wantIPv4Address:   "",
+			wantIPv6Address:   "",
+		},
+		{
+			desc:              "Whitespace with comas",
+			reservedAddresses: []compute.Address{},
+			annotationVal:     " , , ,    ,,",
+			wantIPv4Address:   "",
+			wantIPv6Address:   "",
+		},
+		{
 			desc: "Repeated existing IPv4 addresses",
 			reservedAddresses: []compute.Address{
 				ipv4Address,
@@ -102,7 +116,6 @@ func TestAddressFromAnnotation(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
