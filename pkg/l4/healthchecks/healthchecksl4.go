@@ -432,7 +432,7 @@ func (l4hc *l4HealthChecks) deleteFirewall(name string, svc *corev1.Service, fwL
 	}
 	// Suppress Firewall XPN error, as this is no retryable and requires action by security admin
 	if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-		l4hc.recorder.Eventf(svc, corev1.EventTypeNormal, "XPN", fwErr.Message)
+		l4hc.recorder.Event(svc, corev1.EventTypeNormal, "XPN", fwErr.Message)
 		return nil
 	}
 	return err
