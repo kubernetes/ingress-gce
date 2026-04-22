@@ -436,7 +436,7 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 			errMessage := fmt.Sprintf("Panic in L4 ILB sync worker goroutine: %v", r)
 			svcLogger.Error(nil, errMessage)
 			l4metrics.PublishL4ControllerPanicCount(l4ILBControllerName)
-			err = fmt.Errorf(errMessage)
+			err = fmt.Errorf("Panic in L4 ILB sync worker goroutine: %v", r)
 		}
 	}()
 	syncErr := l4c.sync(key, svcLogger)
