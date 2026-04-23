@@ -45,14 +45,15 @@ docker buildx install
 docker buildx create --use
 
 # Download crane cli
-curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.15.2/go-containerregistry_$(uname -s)_$(uname -m).tar.gz" | tar xvzf - krane
+curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.21.5/go-containerregistry_$(uname -s)_$(uname -m).tar.gz" | tar xvzf - krane
 
 for binary in ${BINARIES}
 do
     # "arm64 amd64" ---> "linux/arm64,linux/amd64"
     PLATFORMS="linux/$(echo ${ALL_ARCH} | sed 's~ ~,linux/~g')"
     echo "docker buildx platform parameters: ${PLATFORMS}"
-    MULTIARCH_IMAGE="${REGISTRY}/ingress-gce-${binary}:${VERSION}"
+    BIN_IMG_REGISTRY=${REGISTRY}/ingress-gce-${binary}
+    MULTIARCH_IMAGE="${BIN_IMG_REGISTRY}:${VERSION}"
     echo "building ${MULTIARCH_IMAGE} image.."
 
     tags="--tag ${MULTIARCH_IMAGE}"
@@ -66,6 +67,58 @@ do
         ${tags} \
         -f Dockerfile.${binary} .
     echo "done, pushed $MULTIARCH_IMAGE image"
+
+    # read the manifest to tag all arch specific images
+    # the manifest is parsed to extract the digests of the per arch images plus
+    # the attestation manifests.
+    # the extracted digests are then used to tag the images so that later
+    # cleanup can work reliably
+    MANIFEST_JSON=$(./krane manifest "$MULTIARCH_IMAGE")
+
+    if [[ $? -ne 0 ]]; then
+      echo "Error: Failed to fetch manifest for $MULTIARCH_IMAGE"
+      exit 1
+    fi
+
+    if [[ -z "$MANIFEST_JSON" ]]; then
+      echo "Error: Manifest for $MULTIARCH_IMAGE is empty"
+      exit 1
+    fi
+
+    # --- Extract digests using jq ---
+    # Process substitution is used to feed the variable content to jq
+    AMD64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "amd64").digest' <<< "$MANIFEST_JSON")
+    ARM64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "arm64").digest' <<< "$MANIFEST_JSON")
+
+    # Extract all attestation digests into a bash array
+    readarray -t ATTESTATION_DIGESTS < <(jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest").digest' <<< "$MANIFEST_JSON")
+
+    # Extract attestation digests based on the image they reference
+    ATTESTATION_FOR_AMD64_DIGEST=$(jq -r '.manifests[] | select(.annotations["vnd.docker.reference.digest"] == "'"$AMD64_DIGEST"'").digest' <<< "$MANIFEST_JSON")
+    ATTESTATION_FOR_ARM64_DIGEST=$(jq -r '.manifests[] | select(.annotations["vnd.docker.reference.digest"] == "'"$ARM64_DIGEST"'").digest' <<< "$MANIFEST_JSON")
+
+    # --- Output the variables ---
+    echo "--- Extracted Digests ---"
+    echo "MULTIARCH_IMAGE=$MULTIARCH_IMAGE"
+    echo "AMD64_DIGEST=$AMD64_DIGEST"
+    echo "ARM64_DIGEST=$ARM64_DIGEST"
+
+    echo "ATTESTATION_FOR_AMD64_DIGEST=$ATTESTATION_FOR_AMD64_DIGEST"
+    echo "ATTESTATION_FOR_ARM64_DIGEST=$ATTESTATION_FOR_ARM64_DIGEST"
+
+    if [[ -n "$AMD64_DIGEST" ]]; then
+      ./krane tag "$BIN_IMG_REGISTRY@$AMD64_DIGEST" "${VERSION}-amd64"
+    fi
+    if [[ -n "$ARM64_DIGEST" ]]; then
+      ./krane tag "$BIN_IMG_REGISTRY@$ARM64_DIGEST" "${VERSION}-arm64"
+    fi
+    if [[ -n "$ATTESTATION_FOR_AMD64_DIGEST" ]]; then
+      ./krane tag "$BIN_IMG_REGISTRY@$ATTESTATION_FOR_AMD64_DIGEST" "${VERSION}-amd64-attestation"
+    fi
+    if [[ -n "$ATTESTATION_FOR_ARM64_DIGEST" ]]; then
+      ./krane tag "$BIN_IMG_REGISTRY@$ATTESTATION_FOR_ARM64_DIGEST" "${VERSION}-arm64-attestation"
+    fi
+
 
    # Tag arch specific images for the legacy registries
    for arch in ${ALL_ARCH}
