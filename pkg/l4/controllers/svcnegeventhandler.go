@@ -118,7 +118,7 @@ func (s *svcNEGEventHandler) OnDelete(obj interface{}) {
 }
 
 func getSvcOwnersOfSvcNEG(svcNEG *negv1beta1.ServiceNetworkEndpointGroup, logger klog.Logger) []string {
-	logger.V(3).Info("getSvcOwnerOfSvcNEG", "ownersLen", len(svcNEG.OwnerReferences))
+	logger.V(6).Info("getSvcOwnerOfSvcNEG", "ownersLen", len(svcNEG.OwnerReferences))
 	var resultKeys []string
 	for _, ownersRef := range svcNEG.OwnerReferences {
 		if ownersRef.Kind != "Service" {
