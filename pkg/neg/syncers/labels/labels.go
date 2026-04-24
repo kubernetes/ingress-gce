@@ -90,7 +90,7 @@ func GetPodLabelMap(pod *v1.Pod, lpConfig PodLabelPropagationConfig) (PodLabelMa
 	return labelMap, nil
 }
 
-// publishLabelPropagationTruncationMetrics publishes errors occured during
+// publishLabelPropagationTruncationMetrics publishes errors occurred during
 // label truncation.
 func publishLabelPropagationTruncationMetrics(err error) {
 	if errors.Is(err, ErrLabelTruncated) {
