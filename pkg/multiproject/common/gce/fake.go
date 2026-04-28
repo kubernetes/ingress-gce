@@ -2,6 +2,7 @@ package gce
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -13,6 +14,7 @@ import (
 )
 
 type GCEFake struct {
+	mu                        sync.Mutex
 	defaultTestClusterValues  cloudgce.TestClusterValues
 	clientsForProviderConfigs map[string]*cloudgce.Cloud
 }
@@ -31,6 +33,8 @@ func providerConfigKey(providerConfig *v1.ProviderConfig) string {
 // GCEForProviderConfig returns a new Fake GCE client for the given provider config.
 // It stores the client in the GCEFake and returns it if the same provider config is requested again.
 func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger klog.Logger) (*cloudgce.Cloud, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	pcKey := providerConfigKey(providerConfig)
 	if g.clientsForProviderConfigs[pcKey] != nil {
 		return g.clientsForProviderConfigs[pcKey], nil
