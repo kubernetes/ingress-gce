@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	"k8s.io/ingress-gce/pkg/neg/syncers/resourcemanager"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -241,28 +242,39 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				nonDefaultSubnetNEGNamer = manager.l4Namer
 			}
 
+			negResourceManager := resourcemanager.NewSvcNegResourceManager(
+				string(manager.kubeSystemUID),
+				syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
+				nonDefaultSubnetNEGNamer,
+				syncerKey,
+				portInfo.NetworkInfo,
+				manager.zoneGetter,
+				manager.recorder,
+				manager.cloud,
+				manager.negMetrics,
+				manager.logger,
+				manager.serviceLister,
+				manager.svcNegLister,
+				manager.svcNegClient,
+			)
+
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
 				manager.cloud,
-				manager.zoneGetter,
 				manager.podLister,
 				manager.serviceLister,
 				manager.endpointSliceLister,
-				manager.nodeLister,
-				manager.svcNegLister,
 				manager.reflector,
 				epc,
 				string(manager.kubeSystemUID),
-				manager.svcNegClient,
 				manager.syncerMetrics,
-				syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
 				manager.logger,
 				manager.lpConfig,
 				manager.enableDualStackNEG,
 				portInfo.NetworkInfo,
-				nonDefaultSubnetNEGNamer,
 				manager.negMetrics,
+				negResourceManager,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
