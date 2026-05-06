@@ -39,7 +39,7 @@ Apply [rbac.yaml](../resources/rbac.yaml).
 > [!NOTE]
 > This is only needed if you're deploying the L7 controller for Ingress.
 
-Replace `IMAGE_URL` with your `ingress-gce-404-server-with-metrics-amd64` image (for example, `gcr.io/my-project/ingress-gce-404-server-with-metrics-amd64:latest`) and apply [default-http-backend.yaml](../resources/default-http-backend.yaml).
+Replace the `"IMAGE_URL"` placeholder with your own `ingress-gce-404-server-with-metrics-amd64` image (for example, `gcr.io/my-project/ingress-gce-404-server-with-metrics-amd64:latest`) and apply [default-http-backend.yaml](../resources/default-http-backend.yaml). The ingress-gce project no longer publishes a default multi-arch backend image, so you must build and provide your own.
 
 ## Create Google Service Account and generate a key
 
