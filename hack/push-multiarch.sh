@@ -47,6 +47,22 @@ docker buildx create --use
 # Download crane cli
 curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.21.5/go-containerregistry_$(uname -s)_$(uname -m).tar.gz" | tar xvzf - krane
 
+# function that tags the specified digest with ADDITIONAL_TAGS with suffixes
+tag_image_variant() {
+  local digest="$1"
+  local suffix="$2"
+
+  if [[ -z "$digest" ]]; then
+    return
+  fi
+
+  ./krane tag "$BIN_IMG_REGISTRY@$digest" "${VERSION}-${suffix}"
+  for tag in ${ADDITIONAL_TAGS}
+  do
+    ./krane tag "$BIN_IMG_REGISTRY@$digest" "${tag}-${suffix}"
+  done
+}
+
 for binary in ${BINARIES}
 do
     # "arm64 amd64" ---> "linux/arm64,linux/amd64"
@@ -106,18 +122,10 @@ do
     echo "ATTESTATION_FOR_AMD64_DIGEST=$ATTESTATION_FOR_AMD64_DIGEST"
     echo "ATTESTATION_FOR_ARM64_DIGEST=$ATTESTATION_FOR_ARM64_DIGEST"
 
-    if [[ -n "$AMD64_DIGEST" ]]; then
-      ./krane tag "$BIN_IMG_REGISTRY@$AMD64_DIGEST" "${VERSION}-amd64"
-    fi
-    if [[ -n "$ARM64_DIGEST" ]]; then
-      ./krane tag "$BIN_IMG_REGISTRY@$ARM64_DIGEST" "${VERSION}-arm64"
-    fi
-    if [[ -n "$ATTESTATION_FOR_AMD64_DIGEST" ]]; then
-      ./krane tag "$BIN_IMG_REGISTRY@$ATTESTATION_FOR_AMD64_DIGEST" "${VERSION}-amd64-attestation"
-    fi
-    if [[ -n "$ATTESTATION_FOR_ARM64_DIGEST" ]]; then
-      ./krane tag "$BIN_IMG_REGISTRY@$ATTESTATION_FOR_ARM64_DIGEST" "${VERSION}-arm64-attestation"
-    fi
+    tag_image_variant "$AMD64_DIGEST" "amd64"
+    tag_image_variant "$ARM64_DIGEST" "arm64"
+    tag_image_variant "$ATTESTATION_FOR_AMD64_DIGEST" "amd64-attestation"
+    tag_image_variant "$ATTESTATION_FOR_ARM64_DIGEST" "arm64-attestation"
 
 
    # Tag arch specific images for the legacy registries
