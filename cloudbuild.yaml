@@ -39,7 +39,9 @@ steps:
     # This image is built separately because it has
     # additional dependencies (curl, gcloud-cli), and
     # requires `docker buildx` for multiarch building process
-    gcloud auth configure-docker  \
+    # also install jq for manifest parsing
+    apk add --no-cache jq \
+    && gcloud auth configure-docker  \
     && ./hack/push-multiarch.sh
 substitutions:
   _GIT_TAG: "12345"
