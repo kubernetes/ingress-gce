@@ -3111,7 +3111,11 @@ func verifyILBIPv6HealthCheckFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4.Service, err)
 	}
 
-	return verifyFirewall(l4.cloud, nodeNames, ipv6hcFwName, hcFwDesc, []string{healthchecks.L4ILBIPv6HCRange}, l4.network.NetworkURL)
+	expectedIPv6Ranges := []string{healthchecks.L4ILBIPv6HCRange}
+	if isSharedHC {
+		expectedIPv6Ranges = []string{healthchecks.L4ILBIPv6HCRange, healthchecks.L4NetLBIPv6HCRange}
+	}
+	return verifyFirewall(l4.cloud, nodeNames, ipv6hcFwName, hcFwDesc, expectedIPv6Ranges, l4.network.NetworkURL)
 }
 
 func assertILBResourcesDeleted(t *testing.T, l4 *L4) {

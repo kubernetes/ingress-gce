@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -761,6 +762,199 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantFirewall, firewall, cmpopts.IgnoreFields(compute.Firewall{}, "SelfLink", "SourceRanges")); diff != "" {
 				t.Errorf("created Firewall differs: diff -want +got\n%v\n", diff)
+			}
+		})
+	}
+}
+
+func TestEnsureHealthCheckWithIPv6OnlyFirewalls(t *testing.T) {
+	t.Parallel()
+
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	testClusterValues := gce.DefaultTestClusterValues()
+	hcDefaultPath := "/healthz"
+
+	netlbClass := annotations.RegionalExternalLoadBalancerClass
+	ilbClass := annotations.RegionalInternalLoadBalancerClass
+
+	// NetLB ETP Local service template
+	svcNetLBLocal := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "netlb-local", Namespace: "default", UID: types.UID("1")},
+		Spec: corev1.ServiceSpec{
+			Ports:                 []corev1.ServicePort{{Port: 80, Protocol: corev1.ProtocolTCP}},
+			Type:                  "LoadBalancer",
+			LoadBalancerClass:     &netlbClass,
+			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+			HealthCheckNodePort:   1234,
+		},
+	}
+
+	// NetLB ETP Cluster service template
+	svcNetLBCluster := svcNetLBLocal.DeepCopy()
+	svcNetLBCluster.Name = "netlb-cluster"
+	svcNetLBCluster.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyCluster
+	svcNetLBCluster.Spec.HealthCheckNodePort = 0
+
+	// ILB ETP Local service template
+	svcILBLocal := svcNetLBLocal.DeepCopy()
+	svcILBLocal.Name = "ilb-local"
+	svcILBLocal.Spec.LoadBalancerClass = &ilbClass
+
+	// ILB ETP Cluster service template
+	svcILBCluster := svcNetLBCluster.DeepCopy()
+	svcILBCluster.Name = "ilb-cluster"
+	svcILBCluster.Spec.LoadBalancerClass = &ilbClass
+
+	namespacedNameNetLBLocal := types.NamespacedName{Name: svcNetLBLocal.Name, Namespace: svcNetLBLocal.Namespace}
+	namespacedNameNetLBCluster := types.NamespacedName{Name: svcNetLBCluster.Name, Namespace: svcNetLBCluster.Namespace}
+	namespacedNameILBLocal := types.NamespacedName{Name: svcILBLocal.Name, Namespace: svcILBLocal.Namespace}
+	namespacedNameILBCluster := types.NamespacedName{Name: svcILBCluster.Name, Namespace: svcILBCluster.Namespace}
+
+	sharedFwDescription, _ := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(svcNetLBCluster.Namespace, svcNetLBCluster.Name), "", meta.VersionGA, true)
+	existingSharedFwWithOnlyILBRange := &compute.Firewall{
+		Name:         l4Namer.L4IPv6HealthCheckFirewall(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true),
+		Description:  sharedFwDescription,
+		Network:      testClusterValues.NetworkURL,
+		SourceRanges: []string{L4ILBIPv6HCRange},
+		TargetTags:   []string{"k8s-test"},
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "TCP",
+				Ports:      []string{strconv.Itoa(int(gce.GetNodesHealthCheckPort()))},
+			},
+		},
+		Priority: 999,
+	}
+
+	testCases := []struct {
+		desc             string
+		existingHC       *composite.HealthCheck
+		existingFirewall *compute.Firewall
+		svc              *corev1.Service
+		wantHC           *composite.HealthCheck
+		wantUpdate       utils.ResourceSyncStatus
+		wantUpdateFw     utils.ResourceSyncStatus
+		wantIPv6Ranges   []string
+	}{
+		{
+			desc:           "NetLB ETP Local IPv6-only (Isolated NetLB range)",
+			svc:            svcNetLBLocal,
+			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBLocal.Namespace, svcNetLBLocal.Name, false), namespacedNameNetLBLocal, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantUpdate:     utils.ResourceUpdate,
+			wantUpdateFw:   utils.ResourceUpdate,
+			wantIPv6Ranges: []string{L4NetLBIPv6HCRange},
+		},
+		{
+			desc:           "NetLB ETP Cluster IPv6-only (Merged ranges - Smart Unification)",
+			svc:            svcNetLBCluster,
+			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantUpdate:     utils.ResourceUpdate,
+			wantUpdateFw:   utils.ResourceUpdate,
+			wantIPv6Ranges: []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
+		},
+		{
+			desc:           "ILB ETP Local IPv6-only (Isolated ILB range)",
+			svc:            svcILBLocal,
+			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcILBLocal.Namespace, svcILBLocal.Name, false), namespacedNameILBLocal, false, hcDefaultPath, 1234, utils.ILB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantUpdate:     utils.ResourceUpdate,
+			wantUpdateFw:   utils.ResourceUpdate,
+			wantIPv6Ranges: []string{L4ILBIPv6HCRange},
+		},
+		{
+			desc:           "ILB ETP Cluster IPv6-only (Merged ranges - Smart Unification)",
+			svc:            svcILBCluster,
+			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcILBCluster.Namespace, svcILBCluster.Name, true), namespacedNameILBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.ILB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantUpdate:     utils.ResourceUpdate,
+			wantUpdateFw:   utils.ResourceUpdate,
+			wantIPv6Ranges: []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
+		},
+		{
+			desc:             "Reconcile partial shared rule to merged (NetLB ETP Cluster)",
+			svc:              svcNetLBCluster,
+			existingHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			existingFirewall: existingSharedFwWithOnlyILBRange,
+			wantHC:           newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
+			wantUpdate:       utils.ResourceResync,
+			wantUpdateFw:     utils.ResourceUpdate,
+			wantIPv6Ranges:   []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := gce.NewFakeGCECloud(testClusterValues)
+			nodeNames := []string{"k8s-test-node"}
+			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
+			svcNetwork := network.DefaultNetwork(fakeGCE)
+
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			if tc.existingHC != nil {
+				err := hcs.hcProvider.Create(tc.existingHC)
+				if err != nil {
+					t.Fatalf("hcProvider.Create() err=%v", err)
+				}
+			}
+			if tc.existingFirewall != nil {
+				err := fakeGCE.CreateFirewall(tc.existingFirewall)
+				if err != nil {
+					t.Fatalf("fakeGCE.CreateFirewall() err=%v", err)
+				}
+			}
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
+
+			l4Type := utils.XLB
+			if annotations.GetLoadBalancerAnnotationType(tc.svc) == annotations.LBTypeInternal {
+				l4Type = utils.ILB
+			}
+
+			sharedHC := !helpers.RequestsOnlyLocalTraffic(tc.svc)
+
+			needsIPv4 := false
+			needsIPv6 := true
+			result := hcs.EnsureHealthCheckWithDualStackFirewalls(tc.svc, l4Namer, sharedHC, meta.Global, l4Type, nodeNames, needsIPv4, needsIPv6, *svcNetwork, klog.TODO())
+			if result.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+			}
+			if result.WasUpdated != tc.wantUpdate {
+				t.Errorf("result.WasUpdated want=%v, got=%v", tc.wantUpdate, result.WasUpdated)
+			}
+			if result.WasFirewallUpdated != tc.wantUpdateFw {
+				t.Errorf("result.WasFirewallUpdated want=%v, got=%v", tc.wantUpdateFw, result.WasFirewallUpdated)
+			}
+
+			resultHC, err := hcs.hcProvider.Get(result.HCName, meta.Global)
+			if err != nil {
+				t.Fatalf("hcProvider.Get() err=%v", err)
+			}
+			if diff := cmp.Diff(tc.wantHC, resultHC, cmpopts.IgnoreFields(composite.HealthCheck{}, "SelfLink", "Region", "Scope", "Version")); diff != "" {
+				t.Errorf("created HC differs: diff -want +got\n%v\n", diff)
+			}
+
+			// Verify GCE Firewall Rule exists and has correct name and merged/isolated IPv6 ranges
+			if result.HCFirewallRuleIPv6Name == "" {
+				t.Fatalf("Expected non-empty HCFirewallRuleIPv6Name")
+			}
+			ipv6Fw, err := fakeGCE.GetFirewall(result.HCFirewallRuleIPv6Name)
+			if err != nil {
+				t.Fatalf("fakeGCE.GetFirewall(%s) err=%v", result.HCFirewallRuleIPv6Name, err)
+			}
+
+			expectedIPv6FwName := l4Namer.L4IPv6HealthCheckFirewall(tc.svc.Namespace, tc.svc.Name, sharedHC)
+			if ipv6Fw.Name != expectedIPv6FwName {
+				t.Errorf("Expected IPv6 firewall name %s, got %s", expectedIPv6FwName, ipv6Fw.Name)
+			}
+
+			if !utils.EqualStringSets(tc.wantIPv6Ranges, ipv6Fw.SourceRanges) {
+				t.Errorf("IPv6 Firewall SourceRanges differ: want %v, got %v", tc.wantIPv6Ranges, ipv6Fw.SourceRanges)
+			}
+
+			// Verify that IPv4 firewall rule was NOT created
+			if result.HCFirewallRuleName != "" {
+				t.Errorf("Expected empty HCFirewallRuleName, got %s", result.HCFirewallRuleName)
 			}
 		})
 	}
