@@ -68,6 +68,10 @@ func TestIsUserError(t *testing.T) {
 			err:  &googleapi.Error{Code: 400, Message: "Requested internal IP address is outside the network/subnetwork range"},
 			want: true,
 		},
+		{
+			err:  &googleapi.Error{Code: 403, Message: "Required 'compute.firewalls.get' permission for 'projects/.../global/firewalls/...', forbidden"},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		tC := tC

@@ -273,6 +273,11 @@ func IsConstraintViolationError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusPreconditionFailed) && strings.Contains(err.Error(), "Constraint") && strings.Contains(err.Error(), "violated")
 }
 
+// IsFirewallForbiddenError checks if error is a GCE firewall forbidden error (e.g. missing IAM permission).
+func IsFirewallForbiddenError(err error) bool {
+	return IsHTTPErrorCode(err, http.StatusForbidden) && strings.Contains(strings.ToLower(err.Error()), "compute.firewalls")
+}
+
 // IsIPConfigurationError checks if wrapped error is an IP configuration error.
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError
