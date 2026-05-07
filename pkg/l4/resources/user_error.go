@@ -24,6 +24,7 @@ func IsUserError(err error) bool {
 		l4utils.IsInternalForwardingRuleQuotaExceededError(err) ||
 		l4utils.IsUnsupportedLoadBalancingSchemeError(err) ||
 		l4utils.IsUnsupportedProtocolError(err) ||
+		l4utils.IsFirewallForbiddenError(err) ||
 		errors.As(err, &firewallErr) ||
 		errors.As(err, &userErr)
 }
