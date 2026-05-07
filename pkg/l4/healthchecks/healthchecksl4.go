@@ -270,7 +270,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 				Ports:      []string{strconv.Itoa(int(hcPort))},
 			},
 		},
-		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type),
+		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type, isSharedHC),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
@@ -502,7 +502,10 @@ func needToUpdateHealthChecks(hc, newHC *composite.HealthCheck) bool {
 		hc.HealthyThreshold < newHC.HealthyThreshold
 }
 
-func getIPv6HCFirewallSourceRanges(l4Type utils.L4LBType) []string {
+func getIPv6HCFirewallSourceRanges(l4Type utils.L4LBType, shared bool) []string {
+	if shared {
+		return []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange}
+	}
 	if l4Type == utils.XLB {
 		return []string{L4NetLBIPv6HCRange}
 	}
