@@ -438,7 +438,7 @@ func (s *SvcNegResourceManager) patchSvcNegStatus(oldStatus, newStatus negv1beta
 
 	start := time.Now()
 	neg, err := s.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(s.negSyncerKey.Namespace).Patch(context.Background(), s.negSyncerKey.NegName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	s.negMetrics.PublishK8sRequestCountMetrics(start, metrics.DeleteRequest, err)
+	s.negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	return neg, err
 }
 
