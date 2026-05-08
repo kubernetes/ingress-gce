@@ -40,11 +40,17 @@ func (sh *SystemHealth) HealthCheck() HealthCheckResults {
 	defer sh.hcLock.Unlock()
 
 	healthChecks := make(map[string]error)
+	anyFailed := false
 	for component, f := range sh.healthChecks {
-		sh.logger.Info("Running health check", "component", component)
-		healthChecks[component] = f()
+		sh.logger.V(5).Info("Running health check", "component", component)
+		result := f()
+		healthChecks[component] = result
+		if result != nil {
+			anyFailed = true
+		}
 	}
-
-	sh.logger.Info("Health check results", "results", healthChecks)
+	if anyFailed {
+		sh.logger.Info("Health check results", "results", healthChecks)
+	}
 	return healthChecks
 }

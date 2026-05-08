@@ -788,7 +788,7 @@ func collectLockAvailabilityMetrics(lockName, clusterType string, stopCh <-chan 
 			return
 		case <-ticker.C:
 			app.PublishLockAvailabilityMetrics(lockName, clusterType)
-			lockLogger.Info("Exported resource lock availability metrics")
+			lockLogger.V(6).Info("Exported resource lock availability metrics")
 		}
 	}
 }
