@@ -528,10 +528,20 @@ func TestNegNameMultiNetworking(t *testing.T) {
 	subnetInSecondaryNetwork := "projects/mock-project/regions/test-region/subnetworks/multi-net-secondary-subnet"
 	netInfo := network.NetworkInfo{IsDefault: false, NetworkURL: secondaryNetwork, SubnetworkURL: subnetInSecondaryNetwork}
 
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
 	syncerParams := &customTestTransactionSyncerParams{
-		fakeCloud: fakeCloud,
-		negType:   negtypes.VmIpEndpointType,
-		netInfo:   &netInfo,
+		fakeCloud:            fakeCloud,
+		negType:              negtypes.VmIpEndpointType,
+		netInfo:              &netInfo,
+		nodeInformer:         nodeInformer,
+		nodeTopologyInformer: nodeTopologyInformer,
+		zoneGetter:           fakeZoneGetter,
 	}
 	_, transactionSyncer, _, err := newCustomTestTransactionSyncer(syncerParams)
 	if err != nil {
@@ -2080,11 +2090,19 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetworkURL, testNetworkURL)
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+			fakeZoneGetter, err := zonegetter.NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Errorf("failed to initialize zone getter: %v", err)
+			}
 			syncerParams := &customTestTransactionSyncerParams{
 				fakeCloud:       fakeCloud,
 				negType:         testNegType,
 				negName:         tc.customNEGName,
+				nodeInformer:    nodeInformer,
 				isCustomNegName: tc.customNEGName != "",
+				zoneGetter:      fakeZoneGetter,
 			}
 			_, syncer, _, err := newCustomTestTransactionSyncer(syncerParams)
 			if err != nil {
@@ -3113,7 +3131,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3417,8 +3435,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			(s.syncer.(*syncer)).stopped = false
 			tc.modify(s)
 
-			subnetToNegMapping := map[string]string{defaultTestSubnet: tc.negName}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3431,7 +3448,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(resManager, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
 				if err != nil {
 					return false, nil
 				}
@@ -4116,7 +4133,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			// give a little time for the syncer attach/detach goroutines to finish
 			time.Sleep(50 * time.Millisecond)
 
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, resManager, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(resManager, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}
@@ -4223,6 +4240,7 @@ type customTestTransactionSyncerParams struct {
 	negType              negtypes.NetworkEndpointType
 	negName              string
 	isCustomNegName      bool
+	nodeInformer         cache.SharedIndexInformer
 	nodeTopologyInformer cache.SharedIndexInformer
 	zoneGetter           *zonegetter.ZoneGetter
 	netInfo              *network.NetworkInfo
@@ -4236,10 +4254,12 @@ func (p *customTestTransactionSyncerParams) fillUnsetWithDefaults() error {
 	if p.nodeTopologyInformer == nil {
 		p.nodeTopologyInformer = zonegetter.FakeNodeTopologyInformer()
 	}
+	if p.nodeInformer == nil {
+		p.nodeInformer = zonegetter.FakeNodeInformer()
+		zonegetter.PopulateFakeNodeInformer(p.nodeInformer, false)
+	}
 	if p.zoneGetter == nil {
-		nodeInformer := zonegetter.FakeNodeInformer()
-		zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-		zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, p.nodeTopologyInformer, defaultTestSubnetURL, false)
+		zoneGetter, err := zonegetter.NewFakeZoneGetter(p.nodeInformer, p.nodeTopologyInformer, defaultTestSubnetURL, false)
 		if err != nil {
 			return fmt.Errorf("failed to initialize zone getter: %v", err)
 		}

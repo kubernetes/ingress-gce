@@ -585,11 +585,12 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, negResourceManager resourcemanager.NegResourceManager, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(negResourceManager resourcemanager.NegResourceManager, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
-	for subnet, negName := range subnetToNegMapping {
+	for _, subnetConfig := range negResourceManager.ListSubnets() {
+		subnet := subnetConfig.Name
 		// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 		// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
 		zones, err := negResourceManager.ListZonesForSubnet(subnet, zonegetter.AllNodesFilter)
@@ -602,7 +603,7 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 		}
 		candidateZonesMap := sets.New[string](candidateNodeZones...)
 		for _, zone := range zones {
-			networkEndpointsWithHealthStatus, err := negResourceManager.ListEndpoints(negName, zone, retrieveDrainStatus, candidateZonesMap)
+			networkEndpointsWithHealthStatus, err := negResourceManager.ListEndpoints(subnet, zone, retrieveDrainStatus, candidateZonesMap)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap.UnsortedList(), err)
 			}

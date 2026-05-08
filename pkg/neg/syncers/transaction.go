@@ -263,14 +263,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	subnetConfigs := s.negResourceManager.ListSubnets()
-	subnetToNegMapping, err := s.negResourceManager.GenerateSubnetToNegNameMap(subnetConfigs)
-	if err != nil {
-		s.logger.Error(err, "failed to generate subnet to neg name mapping")
-		return err
-	}
-
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.negResourceManager, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(s.negResourceManager, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -487,13 +480,6 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	for _, subnetConfig := range subnetConfigs {
-		negName, err := s.negResourceManager.GetNegNameForSubnet(subnetConfig.Name)
-		if err != nil {
-			s.logger.Error(err, "Unable to get the name of the NEGs based on the subnet name", "subnetName", subnetConfig.Name)
-			errList = append(errList, err)
-			continue
-		}
-
 		networkInfo := s.networkInfo
 		if subnetConfig.Name != defaultSubnet {
 			// Determine the networkInfo for the non-default subnet NEGs.
@@ -513,7 +499,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		}
 
 		for _, zone := range zones {
-			negObj, err := s.negResourceManager.EnsureNeg(negName, zone, networkInfo)
+			negObj, err := s.negResourceManager.EnsureNeg(subnetConfig.Name, zone, networkInfo)
 			if err != nil {
 				errList = append(errList, err)
 				// Do not modify NEG Status if there is conflict within the same cluster

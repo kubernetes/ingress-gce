@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
@@ -41,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/resourcemanager"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -586,31 +588,12 @@ func TestIpsForPod(t *testing.T) {
 }
 
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
-	nodeInformer := zonegetter.FakeNodeInformer()
-	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
-	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
-	if err != nil {
-		t.Fatalf("failed to initialize zone getter: %v", err)
-	}
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	flags.F.NodeTopologyCRName = "default"
+	defer func() { flags.F.NodeTopologyCRName = prevNodeTopologyCRName }()
 	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
-	svcNegResourceManager := resourcemanager.NewSvcNegResourceManager(
-		"",
-		false,
-		nil,
-		negtypes.NegSyncerKey{},
-		network.NetworkInfo{},
-		zoneGetter,
-		nil,
-		negCloud,
-		metrics.NewNegMetrics(),
-		klog.TODO(),
-		nil,
-		nil,
-		nil,
-	)
-	defaultSubnetNegName := "test-neg-name"
-	nonDefaultSubnetNegName := "non-default-neg-name"
-	irrelevantNegName := "irrelevant"
+
+	clusterNamer := namer.NewNamer("clusterid", "", klog.TODO())
 	testIP1 := "1.2.3.4"
 	testIP2 := "1.2.3.5"
 	testIP3 := "1.2.3.6"
@@ -632,6 +615,9 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	endpoint8 := negtypes.NetworkEndpoint{IP: testIP8, Node: negtypes.TestInstance5, Port: strconv.Itoa(int(testPort))}
 	endpoint9 := negtypes.NetworkEndpoint{IP: testIP9, Node: negtypes.TestInstance6, Port: strconv.Itoa(int(testPort))}
 
+	defaultSubnetNegName := "test-neg-name"
+	nonDefaultSubnetNegName := clusterNamer.NonDefaultSubnetNEG(testServiceNamespace, testServiceName, additionalTestSubnet, int32(testPort))
+	irrelevantNegName := "irrelevant"
 	mappingWithDefaultSubnetOnly := map[string]string{defaultTestSubnet: defaultSubnetNegName}
 	mappingWithAdditionalSubnet := map[string]string{
 		defaultTestSubnet:    defaultSubnetNegName,
@@ -1182,8 +1168,59 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
+
+		nodeInformer := zonegetter.FakeNodeInformer()
+		zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+		nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
+		zoneGetter, err := zonegetter.NewFakeZoneGetterWithNodeTopologyHasSynced(nodeInformer, nodeTopologyInformer, defaultTestSubnetURL, false)
+		if err != nil {
+			t.Fatalf("failed to initialize zone getter: %v", err)
+		}
+
+		negNameForDefaultSubnet := testNegName
+		if name, ok := tc.subnetToNegMapping[defaultTestSubnet]; ok {
+			negNameForDefaultSubnet = name
+		}
+
+		var subnets []nodetopologyv1.SubnetConfig
+		for subnetName := range tc.subnetToNegMapping {
+			subnets = append(subnets, nodetopologyv1.SubnetConfig{Name: subnetName})
+		}
+
+		nodeTopologyInformer.GetIndexer().Add(&nodetopologyv1.NodeTopology{
+			ObjectMeta: metav1.ObjectMeta{Name: "default"},
+			Status: nodetopologyv1.NodeTopologyStatus{
+				Subnets: subnets,
+			},
+		})
+
+		svcNegResourceManager := resourcemanager.NewSvcNegResourceManager(
+			"",
+			false,
+			clusterNamer,
+			negtypes.NegSyncerKey{
+				Namespace: testServiceNamespace,
+				Name:      testServiceName,
+				NegName:   negNameForDefaultSubnet,
+				PortTuple: negtypes.SvcPortTuple{Port: int32(testPort)},
+			},
+			network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+				NetworkURL:    "https://www.googleapis.com/compute/v1/projects/mock-project/global/networks/test-network",
+			},
+			zoneGetter,
+			nil,
+			negCloud,
+			metrics.NewNegMetrics(),
+			klog.TODO(),
+			nil,
+			nil,
+			nil,
+		)
+
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
-		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, svcNegResourceManager, negCloud, meta.VersionGA, tc.mode, tc.enableDualStackNEG, klog.TODO(), metrics.NewNegMetrics(), false)
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(svcNegResourceManager, negCloud, meta.VersionGA, tc.mode, tc.enableDualStackNEG, klog.TODO(), metrics.NewNegMetrics(), false)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1321,12 +1358,18 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize zone getter: %v", err)
 			}
+			negName := "testNEG"
 			svcNegResourceManager := resourcemanager.NewSvcNegResourceManager(
 				"",
 				false,
 				nil,
-				negtypes.NegSyncerKey{},
-				network.NetworkInfo{},
+				negtypes.NegSyncerKey{
+					NegName: negName,
+				},
+				network.NetworkInfo{
+					IsDefault:     true,
+					SubnetworkURL: defaultTestSubnetURL,
+				},
 				zoneGetter,
 				nil,
 				fakeCloud,
@@ -1336,8 +1379,6 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 				nil,
 				nil,
 			)
-
-			negName := "testNEG"
 
 			// ensure a NEG exists in each zone with relevant nodes
 			candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode), klog.TODO())
@@ -1369,9 +1410,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 				negtypes.GetNetworkEndpointStore(fakeCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), entriesWithHealth)
 			}
 
-			subnetToNegMapping := map[string]string{defaultTestSubnet: negName}
-
-			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, svcNegResourceManager, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus)
+			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(svcNegResourceManager, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus)
 			if err != nil {
 				t.Fatalf("retrieveExistingZoneNetworkEndpointMap: %v", err)
 			}

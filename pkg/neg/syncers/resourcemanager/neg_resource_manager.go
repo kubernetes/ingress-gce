@@ -28,7 +28,7 @@ import (
 
 type NegResourceManager interface {
 	UpdateStatusNegsEnsured(negObjs []*composite.NetworkEndpointGroup, errList []error)
-	UpdateStatusSyncCompleted(syncErr error) (needInint bool)
+	UpdateStatusSyncCompleted(syncErr error) (needInit bool)
 
 	LocationsChanged() bool
 	GetNegNameForSubnet(subnet string) (string, error)
@@ -36,8 +36,8 @@ type NegResourceManager interface {
 	ListZonesForSubnet(subnet string, filter zonegetter.Filter) ([]string, error)
 	GenerateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error)
 
-	EnsureNeg(negName, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error)
-	ListEndpoints(negName, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error)
+	EnsureNeg(subnet, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error)
+	ListEndpoints(subnet, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error)
 
 	ComputeEPSStaleness([]*discovery.EndpointSlice)
 }

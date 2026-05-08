@@ -276,9 +276,16 @@ func (s *SvcNegResourceManager) getNonDefaultSubnetNEGName(subnet string) (strin
 }
 
 func (s *SvcNegResourceManager) ListSubnets() []nodetopologyv1.SubnetConfig {
+	if !s.networkInfo.IsDefault {
+		subnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+		if err != nil {
+			s.logger.Error(err, "Failed to get subnet from NetworkInfo", "subnetworkURL", s.networkInfo.SubnetworkURL)
+			return nil
+		}
+		return []nodetopologyv1.SubnetConfig{{Name: subnet}}
+	}
 	return s.zoneGetter.ListSubnets(s.logger)
 }
-
 func (s *SvcNegResourceManager) ListZonesForSubnet(subnet string, filter zonegetter.Filter) ([]string, error) {
 	return s.zoneGetter.ListZones(filter, s.logger)
 }
@@ -313,7 +320,29 @@ func (s *SvcNegResourceManager) GenerateSubnetToNegNameMap(subnetConfigs []nodet
 	return subnetToNegMapping, nil
 }
 
-func (s *SvcNegResourceManager) EnsureNeg(negName, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error) {
+func (s *SvcNegResourceManager) EnsureNeg(subnet, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error) {
+	negName, err := s.GetNegNameForSubnet(subnet)
+	if err != nil {
+		return nil, err
+	}
+
+	subnetURL := networkInfo.SubnetworkURL
+	if networkInfo.IsDefault {
+		// For default network, we might have multiple subnets (MSC).
+		// We use the provided subnet name to construct the URL, using networkInfo.SubnetworkURL as template.
+		id, err := cloud.ParseResourceURL(networkInfo.SubnetworkURL)
+		if err != nil {
+			s.logger.Error(err, "Failed to parse subnetwork URL from networkInfo", "subnetworkURL", networkInfo.SubnetworkURL)
+			return nil, err
+		}
+		id.Key.Name = subnet
+		subnetURL = cloud.SelfLink(gcpmeta.VersionGA, id.ProjectID, id.Resource, id.Key)
+	}
+
+	// Update networkInfo to use the resolved subnet URL
+	resolvedNetworkInfo := networkInfo
+	resolvedNetworkInfo.SubnetworkURL = subnetURL
+
 	return ensureNetworkEndpointGroup(
 		s.negSyncerKey.Namespace,
 		s.negSyncerKey.Name,
@@ -326,15 +355,19 @@ func (s *SvcNegResourceManager) EnsureNeg(negName, zone string, networkInfo netw
 		s.cloud,
 		s.serviceLister,
 		s.recorder,
-		s.negSyncerKey.GetAPIVersion(),
+		s.version,
 		s.customName,
-		networkInfo,
+		resolvedNetworkInfo,
 		s.logger,
 		s.negMetrics,
 	)
 }
 
-func (s *SvcNegResourceManager) ListEndpoints(negName, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error) {
+func (s *SvcNegResourceManager) ListEndpoints(subnet, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error) {
+	negName, err := s.GetNegNameForSubnet(subnet)
+	if err != nil {
+		return nil, err
+	}
 	networkEndpointsWithHealthStatus, err := s.cloud.ListNetworkEndpoints(negName, zone, showHealthStatus, s.version, s.logger)
 	if err != nil {
 		// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
