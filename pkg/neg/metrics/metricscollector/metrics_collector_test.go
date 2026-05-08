@@ -350,49 +350,49 @@ func TestComputeNegCounts(t *testing.T) {
 		{
 			desc: "Single syncers for each type",
 			syncerNegCount: map[negtypes.NegSyncerKey]map[string]int{
-				l7Syncer1: map[string]int{
+				l7Syncer1: {
 					"zone1": 1,
 					"zone2": 1,
 				},
-				l4Syncer1: map[string]int{
+				l4Syncer1: {
 					"zone1": 1,
 					"zone3": 1,
 				},
 			},
 			expect: map[negLocTypeKey]int{
-				negLocTypeKey{location: "zone1", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
-				negLocTypeKey{location: "zone2", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
-				negLocTypeKey{location: "zone1", endpointType: string(negtypes.VmIpEndpointType)}:     1,
-				negLocTypeKey{location: "zone3", endpointType: string(negtypes.VmIpEndpointType)}:     1,
+				{location: "zone1", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
+				{location: "zone2", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
+				{location: "zone1", endpointType: string(negtypes.VmIpEndpointType)}:     1,
+				{location: "zone3", endpointType: string(negtypes.VmIpEndpointType)}:     1,
 			},
 		},
 		{
 			desc: "Multiple syncers per type",
 			syncerNegCount: map[negtypes.NegSyncerKey]map[string]int{
-				l7Syncer1: map[string]int{
+				l7Syncer1: {
 					"zone1": 1,
 					"zone2": 1,
 				},
-				l7Syncer2: map[string]int{
+				l7Syncer2: {
 					"zone1": 1,
 					"zone4": 1,
 				},
-				l4Syncer1: map[string]int{
+				l4Syncer1: {
 					"zone1": 1,
 					"zone3": 1,
 				},
-				l4Syncer2: map[string]int{
+				l4Syncer2: {
 					"zone2": 1,
 					"zone3": 1,
 				},
 			},
 			expect: map[negLocTypeKey]int{
-				negLocTypeKey{location: "zone1", endpointType: string(negtypes.VmIpPortEndpointType)}: 2,
-				negLocTypeKey{location: "zone2", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
-				negLocTypeKey{location: "zone4", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
-				negLocTypeKey{location: "zone1", endpointType: string(negtypes.VmIpEndpointType)}:     1,
-				negLocTypeKey{location: "zone2", endpointType: string(negtypes.VmIpEndpointType)}:     1,
-				negLocTypeKey{location: "zone3", endpointType: string(negtypes.VmIpEndpointType)}:     2,
+				{location: "zone1", endpointType: string(negtypes.VmIpPortEndpointType)}: 2,
+				{location: "zone2", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
+				{location: "zone4", endpointType: string(negtypes.VmIpPortEndpointType)}: 1,
+				{location: "zone1", endpointType: string(negtypes.VmIpEndpointType)}:     1,
+				{location: "zone2", endpointType: string(negtypes.VmIpEndpointType)}:     1,
+				{location: "zone3", endpointType: string(negtypes.VmIpEndpointType)}:     2,
 			},
 		},
 	} {

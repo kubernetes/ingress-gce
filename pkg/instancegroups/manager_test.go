@@ -87,7 +87,7 @@ func newNodePoolWithReadOnly(f Provider, maxIGSize int, readOnly bool) (Manager,
 
 func getNodeNames(nodes map[string]string) []string {
 	names := make([]string, 0)
-	for name, _ := range nodes {
+	for name := range nodes {
 		names = append(names, name)
 	}
 	return names

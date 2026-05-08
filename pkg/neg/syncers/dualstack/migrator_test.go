@@ -395,7 +395,7 @@ func TestPause(t *testing.T) {
 	// any migration-detachments when paused.
 	migrator.Filter(addEndpoints, removeEndpoints, map[types.NEGLocation]types.NetworkEndpointSet{})
 	wantRemoveEndpoints := map[types.NEGLocation]types.NetworkEndpointSet{
-		types.NEGLocation{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
+		{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet([]types.NetworkEndpoint{
 			// Since we don't expect any migration-detachments, this set should be
 			// missing all migration endpoints.
 			{IP: "e", IPv6: "E"},

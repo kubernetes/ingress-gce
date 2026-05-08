@@ -186,7 +186,7 @@ func TestSync(t *testing.T) {
 
 func verifyExpectedSyncerCount(t *testing.T, syncedNodes [][]string, expectedCount int) {
 	if len(syncedNodes) != expectedCount {
-		t.Errorf("verifyExpectedSyncerCount(): synced unexpected amount of times (gotCount, expectedCount), (%d, %d)", len(syncedNodes), expectedCount)
+		t.Errorf("verifyExpectedSyncerCount(): synced unexpected amount of times (gotCount, expectedCount), (%d, %d). Synced nodes: %v", len(syncedNodes), expectedCount, syncedNodes)
 	}
 }
 
