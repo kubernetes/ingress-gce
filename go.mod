@@ -1,6 +1,6 @@
 module k8s.io/ingress-gce
 
-go 1.25.9
+go 1.26.3
 
 require (
 	github.com/GoogleCloudPlatform/gke-networking-api v0.2.1-0.20250318085121-e88f4ed9f50a
