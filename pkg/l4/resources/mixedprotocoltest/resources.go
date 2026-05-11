@@ -200,7 +200,7 @@ func HealthCheckFirewallIPv6() *compute.Firewall {
 		Name:    HealthCheckFirewallIPv6Name,
 		Allowed: []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{"10256"}}},
 		// GCE defined health check ranges
-		SourceRanges: []string{"2600:2d00:1:b029::/64"},
+		SourceRanges: []string{"2600:2d00:1:b029::/64", "2600:1901:8001::/48"},
 		TargetTags:   []string{TestNode},
 		Description:  `{"networking.gke.io/service-name":"","networking.gke.io/api-version":"ga","networking.gke.io/resource-description":"This resource is shared by all L4  Services using ExternalTrafficPolicy: Cluster."}`,
 		Priority:     999,

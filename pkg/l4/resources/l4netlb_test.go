@@ -1812,7 +1812,11 @@ func verifyNetLBIPv6HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) er
 		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4netlb.Service, err)
 	}
 
-	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6hcFwName, hcFwDesc, []string{healthchecks.L4NetLBIPv6HCRange}, l4netlb.networkInfo.NetworkURL)
+	expectedIPv6Ranges := []string{healthchecks.L4NetLBIPv6HCRange}
+	if isSharedHC {
+		expectedIPv6Ranges = []string{healthchecks.L4ILBIPv6HCRange, healthchecks.L4NetLBIPv6HCRange}
+	}
+	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6hcFwName, hcFwDesc, expectedIPv6Ranges, l4netlb.networkInfo.NetworkURL)
 }
 
 func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, error) {
