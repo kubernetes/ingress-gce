@@ -37,6 +37,7 @@ import (
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -47,11 +48,25 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
-	"k8s.io/ingress-gce/pkg/neg/syncers/resourcemanager"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
+
+type NegResourceManager interface {
+	UpdateStatusNegsEnsured(negObjs []*composite.NetworkEndpointGroup, errList []error)
+	UpdateStatusSyncCompleted(syncErr error) (needInit bool)
+
+	LocationsChanged() bool
+	GetNegNameForSubnet(subnet string) (string, error)
+	ListSubnets() []nodetopologyv1.SubnetConfig
+	ListZonesForSubnet(subnet string, filter zonegetter.Filter) ([]string, error)
+
+	EnsureNeg(subnet, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error)
+	ListEndpoints(subnet, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error)
+
+	ComputeEPSStaleness([]*discovery.EndpointSlice)
+}
 
 type transactionSyncer struct {
 	// metadata
@@ -124,7 +139,7 @@ type transactionSyncer struct {
 	// negMetrics is used to collect metrics per NEG instance
 	negMetrics *metrics.NegMetrics
 
-	negResourceManager resourcemanager.NegResourceManager
+	negResourceManager NegResourceManager
 }
 
 func NewTransactionSyncer(
@@ -143,7 +158,7 @@ func NewTransactionSyncer(
 	enableDualStackNEG bool,
 	networkInfo network.NetworkInfo,
 	negMetrics *metrics.NegMetrics,
-	negResourceManager resourcemanager.NegResourceManager,
+	negResourceManager NegResourceManager,
 
 ) negtypes.NegSyncer {
 

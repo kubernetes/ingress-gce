@@ -4270,7 +4270,7 @@ func (p *customTestTransactionSyncerParams) fillUnsetWithDefaults() error {
 	return nil
 }
 
-func newCustomTestTransactionSyncer(params *customTestTransactionSyncerParams) (negtypes.NegSyncer, *transactionSyncer, resourcemanager.NegResourceManager, error) {
+func newCustomTestTransactionSyncer(params *customTestTransactionSyncerParams) (negtypes.NegSyncer, *transactionSyncer, NegResourceManager, error) {
 	if err := params.fillUnsetWithDefaults(); err != nil {
 		return nil, nil, nil, err
 	}
