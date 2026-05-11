@@ -166,3 +166,18 @@ echo "Generating openapi for L4LBConfig v1"
   --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1" \
   --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
   k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1
+
+  echo "Performing code generation for NetworkEndpointGroupBinding CRD"
+"${CODEGEN_PKG}"/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/negbinding/client k8s.io/ingress-gce/pkg/apis \
+  "negbinding:v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt
+
+echo "Generating openapi for NetworkEndpointGroupBinding v1beta1"
+"${OPENAPI_PKG}"/openapi-gen \
+  --output-file zz_generated.openapi.go \
+  --output-pkg k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1 \
+  --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
+  k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1
