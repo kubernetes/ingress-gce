@@ -290,36 +290,6 @@ func (s *SvcNegResourceManager) ListZonesForSubnet(subnet string, filter zoneget
 	return s.zoneGetter.ListZones(filter, s.logger)
 }
 
-func (s *SvcNegResourceManager) GenerateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error) {
-	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
-	if err != nil {
-		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when generating subnet to NEG name map")
-		return nil, err
-	}
-
-	subnetToNegMapping := make(map[string]string)
-	// If networkInfo is not on the default subnet, then this service is using
-	// multi-networking which cannot be used with multi subnet clusters. Even though
-	// multi-networking subnet is using a non default subnet name, we use the default
-	// neg naming which differs from how multi subnet cluster non default NEG names are
-	// handled.
-	if !s.networkInfo.IsDefault {
-		subnetToNegMapping[defaultSubnet] = s.negSyncerKey.NegName
-		return subnetToNegMapping, nil
-	}
-
-	for _, subnetConfig := range subnetConfigs {
-		negName, err := s.GetNegNameForSubnet(subnetConfig.Name)
-		if err != nil {
-			s.logger.Error(err, "Errored when generating subnet to NEG name map")
-			return nil, err
-		}
-		subnetToNegMapping[subnetConfig.Name] = negName
-	}
-
-	return subnetToNegMapping, nil
-}
-
 func (s *SvcNegResourceManager) EnsureNeg(subnet, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error) {
 	negName, err := s.GetNegNameForSubnet(subnet)
 	if err != nil {

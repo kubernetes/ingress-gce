@@ -2712,18 +2712,14 @@ func TestLocationChangedSubnetChange(t *testing.T) {
 
 func generateNonDefaultSubnetNegNameMap(t *testing.T, ts *transactionSyncer, subnetConfigs []nodetopologyv1.SubnetConfig) map[nodetopologyv1.SubnetConfig]string {
 	t.Helper()
-	subnetToNegNameMap, err := ts.negResourceManager.GenerateSubnetToNegNameMap(subnetConfigs)
-	if err != nil {
-		t.Fatalf("failed to generate generate subnet to NEG name map")
-	}
-	negNameSubnetMap := make(map[nodetopologyv1.SubnetConfig]string)
 
-	for _, subnet := range subnetConfigs {
-		negName, ok := subnetToNegNameMap[subnet.Name]
-		if !ok {
-			t.Fatalf("failed to generate non default subnet name: %v", err)
+	negNameSubnetMap := make(map[nodetopologyv1.SubnetConfig]string)
+	for _, subnetConfig := range subnetConfigs {
+		negName, err := ts.negResourceManager.GetNegNameForSubnet(subnetConfig.Name)
+		if err != nil {
+			t.Fatalf("failed to generate generate subnet to NEG name map")
 		}
-		negNameSubnetMap[subnet] = negName
+		negNameSubnetMap[subnetConfig] = negName
 	}
 	return negNameSubnetMap
 }

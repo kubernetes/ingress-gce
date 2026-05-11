@@ -34,7 +34,6 @@ type NegResourceManager interface {
 	GetNegNameForSubnet(subnet string) (string, error)
 	ListSubnets() []nodetopologyv1.SubnetConfig
 	ListZonesForSubnet(subnet string, filter zonegetter.Filter) ([]string, error)
-	GenerateSubnetToNegNameMap(subnetConfigs []nodetopologyv1.SubnetConfig) (map[string]string, error)
 
 	EnsureNeg(subnet, zone string, networkInfo network.NetworkInfo) (*composite.NetworkEndpointGroup, error)
 	ListEndpoints(subnet, zone string, showHealthStatus bool, candidateZonesMap sets.Set[string]) ([]*composite.NetworkEndpointWithHealthStatus, error)
