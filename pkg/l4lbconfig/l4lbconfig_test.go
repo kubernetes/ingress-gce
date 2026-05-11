@@ -32,6 +32,13 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+type fakeStore struct {
+	*cache.FakeCustomStore
+}
+
+func (f *fakeStore) Bookmark(rv string)                   {}
+func (f *fakeStore) LastStoreSyncResourceVersion() string { return "" }
+
 func TestGetL4LBConfigForService(t *testing.T) {
 	t.Parallel()
 
@@ -122,9 +129,10 @@ func TestGetL4LBConfigForService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			fakeStore := &cache.FakeCustomStore{
+			customStore := &cache.FakeCustomStore{
 				GetFunc: tc.getFunc,
 			}
+			fakeStore := &fakeStore{customStore}
 			config, err := GetL4LBConfigForService(fakeStore, tc.svc)
 			if !errors.Is(err, tc.expectedErr) {
 				t.Fatalf("Expected error %v, got %v", tc.expectedErr, err)

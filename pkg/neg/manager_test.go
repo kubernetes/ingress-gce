@@ -1733,7 +1733,7 @@ func TestSyncNodesConditions(t *testing.T) {
 			expectSync: true,
 			negType:    negtypes.VmIpPortEndpointType,
 			addZones: map[string][]string{
-				"zoneA": []string{"added-instance"},
+				"zoneA": {"added-instance"},
 			},
 		},
 		{
@@ -1757,7 +1757,7 @@ func TestSyncNodesConditions(t *testing.T) {
 			expectSync: true,
 			negType:    negtypes.VmIpEndpointType,
 			addZones: map[string][]string{
-				"zoneA": []string{"added-instance"},
+				"zoneA": {"added-instance"},
 			},
 		},
 		{

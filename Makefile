@@ -46,7 +46,7 @@ OS ?= linux
 ALL_ARCH := amd64
 
 # Image to use for building.
-BUILD_IMAGE ?= golang:1.25.9
+BUILD_IMAGE ?= golang:1.26.3
 # Containers will be named: $(CONTAINER_PREFIX)-$(BINARY)-$(ARCH):$(VERSION).
 CONTAINER_PREFIX ?= ingress-gce
 

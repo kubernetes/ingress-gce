@@ -217,7 +217,7 @@ func testCompositeURLMap() *composite.UrlMap {
 
 func TestSecrets(t *testing.T) {
 	secretsMap := map[string]*api_v1.Secret{
-		"first-secret": &api_v1.Secret{
+		"first-secret": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "first-secret",
 			},
@@ -227,7 +227,7 @@ func TestSecrets(t *testing.T) {
 				api_v1.TLSPrivateKeyKey: []byte("private key"),
 			},
 		},
-		"second-secret": &api_v1.Secret{
+		"second-secret": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "second-secret",
 			},
@@ -236,7 +236,7 @@ func TestSecrets(t *testing.T) {
 				api_v1.TLSPrivateKeyKey: []byte("private key"),
 			},
 		},
-		"third-secret": &api_v1.Secret{
+		"third-secret": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "third-secret",
 			},
@@ -245,7 +245,7 @@ func TestSecrets(t *testing.T) {
 				api_v1.TLSPrivateKeyKey: []byte("private key"),
 			},
 		},
-		"secret-no-cert": &api_v1.Secret{
+		"secret-no-cert": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "secret-no-cert",
 			},
@@ -253,7 +253,7 @@ func TestSecrets(t *testing.T) {
 				api_v1.TLSPrivateKeyKey: []byte("private key"),
 			},
 		},
-		"secret-no-key": &api_v1.Secret{
+		"secret-no-key": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "secret-no-key",
 			},
@@ -664,60 +664,60 @@ func TestToCompositeSSLCertificates(t *testing.T) {
 			desc:    "One pre-shared cert",
 			tlsName: "pre-shared-1",
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
 			},
 		},
 		{
 			desc:    "Two pre-shared cert",
 			tlsName: "pre-shared-1,pre-shared-2",
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
-				&composite.SslCertificate{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
+				{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
 			},
 		},
 		{
 			desc: "One tls cert",
 			tlsCerts: []*TLSCerts{
-				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
 			},
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
 			},
 		},
 		{
 			desc: "Two tls cert",
 			tlsCerts: []*TLSCerts{
-				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
-				&TLSCerts{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
+				{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
 			},
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
-				&composite.SslCertificate{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
+				{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
 			},
 		},
 		{
 			desc: "One pre-shared, one tls cert",
 			tlsCerts: []*TLSCerts{
-				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
 			},
 			tlsName: "pre-shared-1",
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
-				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
 			},
 		},
 		{
 			desc: "Two pre-shared, two tls cert",
 			tlsCerts: []*TLSCerts{
-				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
-				&TLSCerts{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
+				{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
 			},
 			tlsName: "pre-shared-1,pre-shared-2",
 			want: []*composite.SslCertificate{
-				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
-				&composite.SslCertificate{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
-				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
-				&composite.SslCertificate{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
+				{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
+				{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
 			},
 		},
 	}
