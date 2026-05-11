@@ -39,7 +39,7 @@ func CRDMeta() *crd.CRDMeta {
 		"frontendconfig",
 		"frontendconfigs",
 		[]*crd.Version{
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig", frontendconfigv1beta1.GetOpenAPIDefinitions, false),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig", frontendconfigv1beta1.GetOpenAPIDefinitions, nil, false),
 		},
 	)
 	return meta

@@ -63,7 +63,7 @@ func CRDMeta() *crd.CRDMeta {
 		"l4lbconfig",
 		"l4lbconfigs",
 		[]*crd.Version{
-			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", l4lbconfigv1.GetOpenAPIDefinitions, false),
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1.L4LBConfig", l4lbconfigv1.GetOpenAPIDefinitions, nil, false),
 		},
 	)
 	return meta
