@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	metrics "k8s.io/ingress-gce/pkg/instancegroups/metrics"
@@ -40,6 +41,9 @@ import (
 const (
 	// State string required by gce library to list all instances.
 	allInstances = "ALL"
+
+	// igNotFoundTTL is the duration to cache the non-existence of an instance group.
+	igNotFoundTTL = 1 * time.Minute
 )
 
 // manager implements Manager.
@@ -51,6 +55,10 @@ type manager struct {
 	instanceLinkFormat string
 	maxIGSize          int
 	readOnlyMode       bool
+	enableIGTTLCache   bool
+
+	mu             sync.Mutex
+	igNotFoundTime map[string]time.Time // key: zone, value: last 404 time
 }
 
 type recorderSource interface {
@@ -60,13 +68,14 @@ type recorderSource interface {
 // ManagerConfig is used for Manager constructor.
 type ManagerConfig struct {
 	// Cloud implements Provider, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
-	Cloud        Provider
-	Namer        namer.BackendNamer
-	Recorders    recorderSource
-	BasePath     string
-	ZoneGetter   *zonegetter.ZoneGetter
-	MaxIGSize    int
-	ReadOnlyMode bool
+	Cloud            Provider
+	Namer            namer.BackendNamer
+	Recorders        recorderSource
+	BasePath         string
+	ZoneGetter       *zonegetter.ZoneGetter
+	MaxIGSize        int
+	ReadOnlyMode     bool
+	EnableIGTTLCache bool
 }
 
 // NewManager creates a new node pool using ManagerConfig.
@@ -79,7 +88,44 @@ func NewManager(config *ManagerConfig) Manager {
 		ZoneGetter:         config.ZoneGetter,
 		maxIGSize:          config.MaxIGSize,
 		readOnlyMode:       config.ReadOnlyMode,
+		enableIGTTLCache:   config.EnableIGTTLCache,
+		igNotFoundTime:     make(map[string]time.Time),
 	}
+}
+
+func (m *manager) isIGNotFoundCached(zone string) bool {
+	if !m.enableIGTTLCache {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.igNotFoundTime[zone]
+	if !ok {
+		return false
+	}
+	if time.Since(t) > igNotFoundTTL {
+		delete(m.igNotFoundTime, zone)
+		return false
+	}
+	return true
+}
+
+func (m *manager) setIGNotFoundCache(zone string) {
+	if !m.enableIGTTLCache {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.igNotFoundTime[zone] = time.Now()
+}
+
+func (m *manager) clearIGNotFoundCache(zone string) {
+	if !m.enableIGTTLCache {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.igNotFoundTime, zone)
 }
 
 // InstanceGroupsExist checks if IGs with given name exist in all cluster zones
@@ -371,14 +417,25 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 			kubeNodesFromZone = sortedKubeNodesFromZone[:m.maxIGSize]
 		}
 
+		if m.isIGNotFoundCached(zone) {
+			iglogger.V(3).Info("Instance group not found was cached, skipping sync for zone", "zone", zone, "igName", igName)
+			continue
+		}
+
 		kubeNodes := sets.NewString(kubeNodesFromZone...)
 
 		gceNodes := sets.NewString()
 		instances, err := m.cloud.ListInstancesInInstanceGroup(igName, zone, allInstances)
 		if err != nil {
+			if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+				iglogger.V(3).Info("Instance group not found, caching", "zone", zone, "igName", igName)
+				m.setIGNotFoundCache(zone)
+				continue
+			}
 			iglogger.Error(err, "Failed to list instance from instance group", "zone", zone, "igName", igName)
 			return err
 		}
+		m.clearIGNotFoundCache(zone)
 		for _, ins := range instances {
 			instance, err := utils.KeyName(ins.Instance)
 			if err != nil {

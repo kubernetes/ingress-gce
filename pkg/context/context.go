@@ -273,13 +273,14 @@ func NewControllerContext(
 	}
 
 	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
-		Cloud:        context.Cloud,
-		Namer:        context.ClusterNamer,
-		Recorders:    context,
-		BasePath:     utils.GetBasePath(context.Cloud),
-		ZoneGetter:   context.ZoneGetter,
-		MaxIGSize:    config.MaxIGSize,
-		ReadOnlyMode: config.ReadOnlyMode,
+		Cloud:            context.Cloud,
+		Namer:            context.ClusterNamer,
+		Recorders:        context,
+		BasePath:         utils.GetBasePath(context.Cloud),
+		ZoneGetter:       context.ZoneGetter,
+		MaxIGSize:        config.MaxIGSize,
+		ReadOnlyMode:     config.ReadOnlyMode,
+		EnableIGTTLCache: flags.F.EnableIGTTLCache,
 	})
 
 	return context, nil

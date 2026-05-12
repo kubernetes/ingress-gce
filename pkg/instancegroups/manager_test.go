@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,12 +57,13 @@ func newNodePool(f Provider, maxIGSize int) (Manager, error) {
 	}
 
 	pool := NewManager(&ManagerConfig{
-		Cloud:      f,
-		Namer:      defaultNamer,
-		Recorders:  &test.FakeRecorderSource{},
-		BasePath:   basePath,
-		ZoneGetter: fakeZoneGetter,
-		MaxIGSize:  maxIGSize,
+		Cloud:            f,
+		Namer:            defaultNamer,
+		Recorders:        &test.FakeRecorderSource{},
+		BasePath:         basePath,
+		ZoneGetter:       fakeZoneGetter,
+		MaxIGSize:        maxIGSize,
+		EnableIGTTLCache: true,
 	})
 	return pool, nil
 }
@@ -74,13 +76,14 @@ func newNodePoolWithReadOnly(f Provider, maxIGSize int, readOnly bool) (Manager,
 	}
 
 	pool := NewManager(&ManagerConfig{
-		Cloud:        f,
-		Namer:        defaultNamer,
-		Recorders:    &test.FakeRecorderSource{},
-		BasePath:     basePath,
-		ZoneGetter:   fakeZoneGetter,
-		MaxIGSize:    maxIGSize,
-		ReadOnlyMode: readOnly,
+		Cloud:            f,
+		Namer:            defaultNamer,
+		Recorders:        &test.FakeRecorderSource{},
+		BasePath:         basePath,
+		ZoneGetter:       fakeZoneGetter,
+		MaxIGSize:        maxIGSize,
+		ReadOnlyMode:     readOnly,
+		EnableIGTTLCache: true,
 	})
 	return pool, nil
 }
@@ -760,5 +763,153 @@ func TestInstanceGroupsExist(t *testing.T) {
 				t.Errorf("pool.InstanceGroupsExist(%q, _) returned exist %t, want %t", igName, exist, tc.expectExist)
 			}
 		})
+	}
+}
+
+type fakeIGListCallCounter struct {
+	Provider
+	listCallCount int
+}
+
+func (f *fakeIGListCallCounter) ListInstancesInInstanceGroup(name, zone string, state string) ([]*compute.InstanceWithNamedPorts, error) {
+	f.listCallCount++
+	return f.Provider.ListInstancesInInstanceGroup(name, zone, state)
+}
+
+func TestNodePoolSyncCachingNotFound(t *testing.T) {
+	kubeNodes := []string{"node-1"}
+	igName := defaultNamer.InstanceGroup()
+
+	// Setup fake instance groups with empty state (no groups exist, so ListInstancesInInstanceGroup returns 404)
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{}, 1000)
+	counterFake := &fakeIGListCallCounter{Provider: fakeIGs}
+	pool, err := newNodePool(counterFake, 1000)
+	if err != nil {
+		t.Fatalf("newNodePool()=%v, want nil", err)
+	}
+	manager := pool.(*manager)
+	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, "node-1")
+
+	// 1. Call Sync first time. It should return nil (ignoring 404), but call GCE API
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 1 {
+		t.Errorf("Expected ListInstancesInInstanceGroup to be called exactly once, got %d", counterFake.listCallCount)
+	}
+
+	// Verify that it is cached in the map
+	manager.mu.Lock()
+	lastNotFoundTime, ok := manager.igNotFoundTime[defaultTestZone]
+	manager.mu.Unlock()
+	if !ok {
+		t.Errorf("Expected missing instance group for zone %q to be cached", defaultTestZone)
+	}
+
+	// 2. Call Sync second time. Since it's cached, it should skip GCE API call
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 1 {
+		t.Errorf("Expected ListInstancesInInstanceGroup call count to remain 1 (cached), got %d", counterFake.listCallCount)
+	}
+
+	// 3. Simulate TTL expiration by moving the cache time backward
+	manager.mu.Lock()
+	manager.igNotFoundTime[defaultTestZone] = lastNotFoundTime.Add(-2 * igNotFoundTTL)
+	manager.mu.Unlock()
+
+	// Call Sync third time. Since TTL expired, it should call GCE API again
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 2 {
+		t.Errorf("Expected ListInstancesInInstanceGroup to be called again after TTL expiration, got %d", counterFake.listCallCount)
+	}
+
+	// 4. Create the instance group so it now exists
+	ig := &compute.InstanceGroup{Name: igName}
+	err = fakeIGs.CreateInstanceGroup(ig, defaultTestZone)
+	if err != nil {
+		t.Fatalf("fakeIGs.CreateInstanceGroup() returned error %v, want nil", err)
+	}
+
+	// Simulate TTL expiration so that Call 4 doesn't hit the cache
+	manager.mu.Lock()
+	manager.igNotFoundTime[defaultTestZone] = time.Now().Add(-2 * igNotFoundTTL)
+	manager.mu.Unlock()
+
+	// Call Sync fourth time. It should succeed and clear the cache entry
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 3 {
+		t.Errorf("Expected ListInstancesInInstanceGroup to be called on existing group, got %d", counterFake.listCallCount)
+	}
+
+	// Verify cache is cleared
+	manager.mu.Lock()
+	_, ok = manager.igNotFoundTime[defaultTestZone]
+	manager.mu.Unlock()
+	if ok {
+		t.Errorf("Expected cache for zone %q to be cleared after successful sync", defaultTestZone)
+	}
+}
+
+func TestNodePoolSyncCachingDisabled(t *testing.T) {
+	kubeNodes := []string{"node-1"}
+
+	// Setup fake instance groups with empty state
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{}, 1000)
+	counterFake := &fakeIGListCallCounter{Provider: fakeIGs}
+
+	// Create manager explicitly with EnableIGTTLCache: false
+	nodeInformer := zonegetter.FakeNodeInformer()
+	fakeZoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("Failed to create fake zone getter: %v", err)
+	}
+
+	pool := NewManager(&ManagerConfig{
+		Cloud:            counterFake,
+		Namer:            defaultNamer,
+		Recorders:        &test.FakeRecorderSource{},
+		BasePath:         basePath,
+		ZoneGetter:       fakeZoneGetter,
+		MaxIGSize:        1000,
+		EnableIGTTLCache: false,
+	})
+
+	manager := pool.(*manager)
+	zonegetter.AddFakeNodes(manager.ZoneGetter, defaultTestZone, "node-1")
+
+	// 1. Call Sync first time.
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 1 {
+		t.Errorf("Expected ListInstancesInInstanceGroup to be called exactly once, got %d", counterFake.listCallCount)
+	}
+
+	// Verify that it is NOT cached in the map
+	manager.mu.Lock()
+	_, ok := manager.igNotFoundTime[defaultTestZone]
+	manager.mu.Unlock()
+	if ok {
+		t.Errorf("Expected missing instance group for zone %q to NOT be cached when caching is disabled", defaultTestZone)
+	}
+
+	// 2. Call Sync second time. Since caching is disabled, it should call GCE API again
+	err = pool.Sync(kubeNodes, klog.TODO())
+	if err != nil {
+		t.Fatalf("pool.Sync() returned error %v, want nil", err)
+	}
+	if counterFake.listCallCount != 2 {
+		t.Errorf("Expected ListInstancesInInstanceGroup to be called again (caching disabled), got %d", counterFake.listCallCount)
 	}
 }
