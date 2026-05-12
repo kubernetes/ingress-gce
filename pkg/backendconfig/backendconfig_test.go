@@ -27,6 +27,13 @@ import (
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 )
 
+type fakeStore struct {
+	*cache.FakeCustomStore
+}
+
+func (f *fakeStore) Bookmark(rv string)                   {}
+func (f *fakeStore) LastStoreSyncResourceVersion() string { return "" }
+
 func TestGetBackendConfigForServicePort(t *testing.T) {
 	testCases := []struct {
 		desc           string
@@ -104,9 +111,10 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		fakeStore := &cache.FakeCustomStore{
+		customStore := &cache.FakeCustomStore{
 			GetFunc: tc.getFunc,
 		}
+		fakeStore := &fakeStore{customStore}
 		config, err := GetBackendConfigForServicePort(fakeStore, tc.svc, tc.svcPort)
 		if !reflect.DeepEqual(config, tc.expectedConfig) || tc.expectedErr != err {
 			t.Errorf("%s: GetBackendConfigForServicePort() = %v, %v; want %v, %v", tc.desc, config, tc.expectedConfig, err, tc.expectedErr)

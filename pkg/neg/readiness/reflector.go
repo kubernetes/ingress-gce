@@ -322,7 +322,7 @@ func (r *readinessReflector) ensurePodNegCondition(pod *v1.Pod, expectedConditio
 	if err != nil {
 		return fmt.Errorf("failed to prepare patch bytes for pod %v: %v", pod, err)
 	}
-	r.eventRecorder.Eventf(pod, v1.EventTypeNormal, expectedCondition.Reason, expectedCondition.Message)
+	r.eventRecorder.Event(pod, v1.EventTypeNormal, expectedCondition.Reason, expectedCondition.Message)
 	_, _, err = patchPodStatus(r.client, pod.Namespace, pod.Name, patchBytes, r.negMetrics)
 	return err
 }

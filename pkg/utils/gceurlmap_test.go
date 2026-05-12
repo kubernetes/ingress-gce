@@ -30,7 +30,7 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add an unrelated host to urlmap.
 	rules := []PathRule{
-		PathRule{Path: "/other", Backend: ServicePort{NodePort: 50000}},
+		{Path: "/other", Backend: ServicePort{NodePort: 50000}},
 	}
 	urlMap.PutPathRulesForHost("foo.bar.com", rules)
 
@@ -39,8 +39,8 @@ func TestGCEURLMap(t *testing.T) {
 	}
 
 	rules = []PathRule{
-		PathRule{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
-		PathRule{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
+		{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
+		{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	if !urlMap.HostExists("example.com") {
@@ -55,7 +55,7 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add some path rules for the same host. Ensure this results in an overwrite.
 	rules = []PathRule{
-		PathRule{Path: "/test3", Backend: ServicePort{NodePort: 30002}},
+		{Path: "/test3", Backend: ServicePort{NodePort: 30002}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	if _, ok := urlMap.PathExists("example.com", "/test1"); ok {
@@ -70,9 +70,9 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add some path rules with equal paths. Ensure the last one is taken.
 	rules = []PathRule{
-		PathRule{Path: "/test4", Backend: ServicePort{NodePort: 30003}},
-		PathRule{Path: "/test5", Backend: ServicePort{NodePort: 30004}},
-		PathRule{Path: "/test4", Backend: ServicePort{NodePort: 30005}},
+		{Path: "/test4", Backend: ServicePort{NodePort: 30003}},
+		{Path: "/test5", Backend: ServicePort{NodePort: 30004}},
+		{Path: "/test4", Backend: ServicePort{NodePort: 30005}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	backend, ok := urlMap.PathExists("example.com", "/test4")
@@ -85,8 +85,8 @@ func TestGCEURLMapDeleteHost(t *testing.T) {
 	t.Parallel()
 	urlMap := NewGCEURLMap(klog.TODO())
 	rules := []PathRule{
-		PathRule{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
-		PathRule{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
+		{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
+		{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	urlMap.PutPathRulesForHost("foo.bar.com", rules)
@@ -187,8 +187,8 @@ func TestAllServicePortsDistinct(t *testing.T) {
 	b2 := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	m.DefaultBackend = &b
 	rules := []PathRule{
-		PathRule{Path: "/ex1", Backend: b1},
-		PathRule{Path: "/ex2", Backend: b2},
+		{Path: "/ex1", Backend: b1},
+		{Path: "/ex2", Backend: b2},
 	}
 	m.PutPathRulesForHost("example.com", rules)
 
@@ -207,13 +207,13 @@ func newTestMap() *GCEURLMap {
 	b := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	m.DefaultBackend = &b
 	rules := []PathRule{
-		PathRule{Path: "/ex1", Backend: newServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80})},
-		PathRule{Path: "/ex2", Backend: newServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80})},
+		{Path: "/ex1", Backend: newServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80})},
+		{Path: "/ex2", Backend: newServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80})},
 	}
 	m.PutPathRulesForHost("example.com", rules)
 	rules = []PathRule{
-		PathRule{Path: "/foo1", Backend: newServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80})},
-		PathRule{Path: "/foo2", Backend: newServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80})},
+		{Path: "/foo1", Backend: newServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80})},
+		{Path: "/foo2", Backend: newServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80})},
 	}
 	m.PutPathRulesForHost("foo.bar.com", rules)
 	return m

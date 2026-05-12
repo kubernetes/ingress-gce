@@ -27,7 +27,7 @@ import (
 )
 
 var metav1OpenAPISpec = map[string]common.OpenAPIDefinition{
-	"k8s.io/apimachinery/pkg/apis/meta/v1.Time": common.OpenAPIDefinition{
+	"k8s.io/apimachinery/pkg/apis/meta/v1.Time": {
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Type:     metav1.Time{}.OpenAPISchemaType(),
@@ -36,7 +36,7 @@ var metav1OpenAPISpec = map[string]common.OpenAPIDefinition{
 			},
 		},
 	},
-	"k8s.io/api/core/v1.TypedLocalObjectReference": common.OpenAPIDefinition{
+	"k8s.io/api/core/v1.TypedLocalObjectReference": {
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Type: []string{"object"},

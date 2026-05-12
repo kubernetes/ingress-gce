@@ -710,7 +710,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	if needsNEGForILB && !utils.HasL4ILBFinalizerV2(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		c.logger.Info(msg)
-		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
+		c.recorder.Event(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
 		return nil
 	}
 
@@ -884,7 +884,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		c.logger.Error(err, "Failed to retrieve service from store", "service", key.(string))
 		c.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	} else if exists {
-		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
+		c.recorder.Event(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
 	c.serviceQueue.AddRateLimited(key)
 }

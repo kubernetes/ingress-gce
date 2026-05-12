@@ -436,8 +436,8 @@ func TestNegCRDTransitions(t *testing.T) {
 				annotations: negannotation.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]negannotation.NegAttributes{
-						port80.Number:  negannotation.NegAttributes{Name: expectedNEGName},
-						port443.Number: negannotation.NegAttributes{},
+						port80.Number:  {Name: expectedNEGName},
+						port443.Number: {},
 					}},
 				replicas:         2,
 				expectedNegAttrs: map[string]string{strconv.Itoa(int(port80.Number)): expectedNEGName, strconv.Itoa(int(port443.Number)): ""},
@@ -446,8 +446,8 @@ func TestNegCRDTransitions(t *testing.T) {
 				annotations: negannotation.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]negannotation.NegAttributes{
-						port80.Number:  negannotation.NegAttributes{},
-						port443.Number: negannotation.NegAttributes{},
+						port80.Number:  {},
+						port443.Number: {},
 					}},
 				replicas:           2,
 				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): ""},
@@ -457,8 +457,8 @@ func TestNegCRDTransitions(t *testing.T) {
 				annotations: negannotation.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]negannotation.NegAttributes{
-						port80.Number:  negannotation.NegAttributes{},
-						port443.Number: negannotation.NegAttributes{Name: expectedNEGName},
+						port80.Number:  {},
+						port443.Number: {Name: expectedNEGName},
 					}},
 				replicas:           2,
 				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): expectedNEGName},
@@ -518,7 +518,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		annotation := negannotation.NegAnnotation{
 			Ingress: true,
 			ExposedPorts: map[int32]negannotation.NegAttributes{
-				port80.Number: negannotation.NegAttributes{Name: expectedNEGName},
+				port80.Number: {Name: expectedNEGName},
 			},
 		}
 
@@ -593,7 +593,7 @@ func TestNegDisruptive(t *testing.T) {
 
 	annotation := negannotation.NegAnnotation{
 		ExposedPorts: map[int32]negannotation.NegAttributes{
-			port80.Number: negannotation.NegAttributes{},
+			port80.Number: {},
 		},
 	}
 

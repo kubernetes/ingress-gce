@@ -30,7 +30,7 @@ export PATH=$GOBIN:$PATH
 echo "Installing golangci-lint forbidigo"
 echo
 go install github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
-go install github.com/ashanbrown/forbidigo > /dev/null
+go install github.com/ashanbrown/forbidigo/forbidigo > /dev/null
 cd "../.."
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache
