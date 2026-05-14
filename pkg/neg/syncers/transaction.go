@@ -99,9 +99,6 @@ type transactionSyncer struct {
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 
-	//kubeSystemUID used to populate Cluster UID on Neg Description when using NEG CRD
-	kubeSystemUID string
-
 	logger klog.Logger
 
 	// errorState indicates if the syncer is in any of 4 error scenarios
@@ -151,7 +148,6 @@ func NewTransactionSyncer(
 	endpointSliceLister cache.Indexer,
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
-	kubeSystemUID string,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
@@ -176,7 +172,6 @@ func NewTransactionSyncer(
 		cloud:                     cloud,
 		endpointsCalculator:       epc,
 		reflector:                 reflector,
-		kubeSystemUID:             kubeSystemUID,
 		syncMetricsCollector:      syncerMetrics,
 		errorState:                false,
 		logger:                    logger,

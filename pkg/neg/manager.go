@@ -267,7 +267,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.endpointSliceLister,
 				manager.reflector,
 				epc,
-				string(manager.kubeSystemUID),
 				manager.syncerMetrics,
 				manager.logger,
 				manager.lpConfig,

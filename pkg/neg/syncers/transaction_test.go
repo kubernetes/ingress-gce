@@ -4344,7 +4344,6 @@ func newCustomTestTransactionSyncer(params *customTestTransactionSyncerParams) (
 		params.testContext.EndpointSliceInformer.GetIndexer(),
 		reflector,
 		epc,
-		string(kubeSystemUID),
 		metricscollector.FakeSyncerMetrics(),
 		klog.TODO(),
 		labels.PodLabelPropagationConfig{},
@@ -4536,7 +4535,7 @@ func getNegObjectReference(neg *composite.NetworkEndpointGroup, negState negv1be
 // description from the syncer.
 func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
 	expectedNegDesc := utils.NegDescription{
-		ClusterUID:  syncer.kubeSystemUID,
+		ClusterUID:  string(kubeSystemUID),
 		Namespace:   syncer.NegSyncerKey.Namespace,
 		ServiceName: syncer.NegSyncerKey.Name,
 		Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
