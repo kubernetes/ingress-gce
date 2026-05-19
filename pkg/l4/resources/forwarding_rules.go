@@ -201,7 +201,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 		Recorder:              l4netlb.recorder,
 		Logger:                l4netlb.svcLogger,
 		Service:               l4netlb.Service,
-		ExistingRules:         []*composite.ForwardingRule{rules.Legacy, rules.TCP, rules.UDP},
+		ExistingRules:         []*composite.ForwardingRule{rules.Legacy, rules.TCP, rules.UDP, rules.L3},
 		ForwardingRuleDeleter: l4netlb.forwardingRules,
 	})
 	if err != nil {
@@ -217,12 +217,9 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 
 	// Leaving this without feature flag, so after rollback
 	// forwarding rules will be cleaned up
-	mixedRulesExist := rules.TCP != nil || rules.UDP != nil
-	if mixedRulesExist {
-		if err := l4netlb.mixedManager.DeleteIPv4(); err != nil {
-			frLogger.Error(err, "l4netlb.mixedManager.DeleteIPv4 returned an error")
-			return nil, address.IPAddrUndefined, utils.ResourceResync, err
-		}
+	if err := l4netlb.mixedManager.DeleteExistingIPv4(rules); err != nil {
+		frLogger.Error(err, "l4netlb.mixedManager.DeleteExistingIPv4 returned an error")
+		return nil, address.IPAddrUndefined, utils.ResourceResync, err
 	}
 
 	existingFwdRule := rules.Legacy

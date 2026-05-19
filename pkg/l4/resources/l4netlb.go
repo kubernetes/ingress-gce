@@ -157,12 +157,13 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 	logger = logger.WithName("L4NetLBHandler")
 	forwardingRulesProvider := forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional, logger)
 	mixedManager := &forwardingrules.MixedManagerNetLB{
-		Namer:    params.Namer,
-		Provider: forwardingRulesProvider,
-		Recorder: params.Recorder,
-		Logger:   logger,
-		Cloud:    params.Cloud,
-		Service:  params.Service,
+		Namer:            params.Namer,
+		Provider:         forwardingRulesProvider,
+		Recorder:         params.Recorder,
+		Logger:           logger,
+		Cloud:            params.Cloud,
+		Service:          params.Service,
+		L3DefaultEnabled: params.UseL3DefaultForMixedProtocol,
 	}
 	l4netlb := &L4NetLB{
 		cloud:                              params.Cloud,
@@ -539,6 +540,13 @@ func (l4netlb *L4NetLB) ensureIPv4MixedResources(result *L4NetLBSyncResult, node
 		}
 		ipAddr = res.TCPFwdRule.IPAddress
 	}
+	if res.L3FwdRule != nil {
+		result.Annotations[annotations.L3ForwardingRuleKey] = res.L3FwdRule.Name
+		if res.L3FwdRule.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+			result.MetricsLegacyState.IsPremiumTier = true
+		}
+		ipAddr = res.L3FwdRule.IPAddress
+	}
 
 	l4netlb.ensureIPv4NodesFirewall(nodeNames, ipAddr, result)
 	if result.Error != nil {
@@ -739,7 +747,7 @@ func (l4netlb *L4NetLB) deleteIPv4ResourcesOnDelete(result *L4NetLBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4netlb *L4NetLB) deleteIPv4ResourcesAnnotationBased(result *L4NetLBSyncResult, shouldIgnoreAnnotations bool) {
-	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) {
+	if shouldIgnoreAnnotations || l4netlb.hasAnnotation(annotations.TCPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.UDPForwardingRuleKey) || l4netlb.hasAnnotation(annotations.L3ForwardingRuleKey) {
 		err := l4netlb.deleteIPv4ForwardingRule()
 		if err != nil {
 			l4netlb.svcLogger.Error(err, "Failed to delete forwarding rule for NetLB RBS service")

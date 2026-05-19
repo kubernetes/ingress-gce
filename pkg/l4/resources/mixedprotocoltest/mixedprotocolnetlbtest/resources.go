@@ -106,6 +106,26 @@ func MixedResources() mixedprotocoltest.GCEResources {
 	}
 }
 
+// MixedResourcesL3 returns GCE resources for a mixed protocol IPv4 NetLB, that listens on tcp:80, tcp:443 and udp:53
+func MixedResourcesL3() mixedprotocoltest.GCEResources {
+	return mixedprotocoltest.GCEResources{
+		ForwardingRules: map[string]*compute.ForwardingRule{
+			mixedprotocoltest.ForwardingRuleL3IPv4Name: ForwardingRuleL3(
+				mixedprotocoltest.ForwardingRuleL3IPv4Name,
+			),
+		},
+		Firewalls: map[string]*compute.Firewall{
+			mixedprotocoltest.FirewallIPv4Name: mixedprotocoltest.Firewall([]*compute.FirewallAllowed{
+				{IPProtocol: "udp", Ports: []string{"53"}},
+				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
+			}),
+			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
+		},
+		HealthCheck:    HealthCheck(),
+		BackendService: BackendService("UNSPECIFIED"),
+	}
+}
+
 // IPv6MixedResources returns GCE resources for a mixed protocol IPv6 NetLB, that listens on tcp:80, tcp:443 and udp:53
 func IPv6MixedResources() mixedprotocoltest.GCEResources {
 	return mixedprotocoltest.GCEResources{
@@ -181,6 +201,20 @@ func ForwardingRuleTCPIPv6(name string, ports []string) *compute.ForwardingRule 
 		LoadBalancingScheme: "EXTERNAL",
 		NetworkTier:         "PREMIUM",
 		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name"}`,
+	}
+}
+
+// ForwardingRuleL3 returns an IPv4 L3 Forwarding Rule
+func ForwardingRuleL3(name string) *compute.ForwardingRule {
+	return &compute.ForwardingRule{
+		Name:                name,
+		Region:              "us-central1",
+		IPProtocol:          "L3_DEFAULT",
+		AllPorts:            true,
+		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-test-namespace-test-name-yuvhdy7i",
+		LoadBalancingScheme: "EXTERNAL",
+		NetworkTier:         "PREMIUM",
+		Description:         `{"networking.gke.io/service-name":"test-namespace/test-name","networking.gke.io/api-version":"ga"}`,
 	}
 }
 

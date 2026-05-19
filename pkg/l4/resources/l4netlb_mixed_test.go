@@ -65,6 +65,12 @@ func TestEnsureMixedNetLB(t *testing.T) {
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 		},
 		{
+			desc:        "ipv4 mixed l3",
+			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
+			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
+		},
+		{
 			desc:        "ipv6 tcp",
 			resources:   mixedprotocolnetlbtest.IPv6TCPResources(),
 			annotations: mixedprotocolnetlbtest.AnnotationsTCPIPv6(),
@@ -87,7 +93,8 @@ func TestEnsureMixedNetLB(t *testing.T) {
 	endState := []struct {
 		desc string
 		// have
-		spec api_v1.ServiceSpec
+		spec  api_v1.ServiceSpec
+		useL3 bool
 		// want
 		resources   mixedprotocoltest.GCEResources
 		annotations map[string]string
@@ -110,23 +117,48 @@ func TestEnsureMixedNetLB(t *testing.T) {
 			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
 			resources:   mixedprotocolnetlbtest.MixedResources(),
 		},
+		// Test cases below have L3 flag enabled
+		{
+			desc:        "ipv4 tcp l3",
+			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, nil),
+			annotations: mixedprotocolnetlbtest.AnnotationsTCP(),
+			resources:   mixedprotocolnetlbtest.TCPResources(),
+			useL3:       true,
+		},
+		{
+			desc:        "ipv4 udp l3",
+			spec:        mixedprotocoltest.SpecIPv4(nil, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsUDP(),
+			resources:   mixedprotocolnetlbtest.UDPResources(),
+			useL3:       true,
+		},
+		{
+			desc:        "ipv4 mixed l3",
+			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedL3(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
+			useL3:       true,
+		},
 		{
 			desc:        "ipv6 tcp",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, nil),
 			annotations: mixedprotocolnetlbtest.AnnotationsTCPIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6TCPResources(),
+			useL3:       true,
 		},
 		{
 			desc:        "ipv6 udp",
 			spec:        mixedprotocoltest.SpecIPv6(nil, []int32{53}),
 			resources:   mixedprotocolnetlbtest.IPv6UDPResources(),
 			annotations: mixedprotocolnetlbtest.AnnotationsUDPIPv6(),
+			useL3:       true,
 		},
 		{
 			desc:        "ipv6 mixed",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6MixedResources(),
+			useL3:       true,
 		},
 	}
 
@@ -152,7 +184,7 @@ func TestEnsureMixedNetLB(t *testing.T) {
 						},
 					},
 				}
-				l4netlb, fakeGCE := arrangeNetLB(t, s.resources, svc)
+				l4netlb, fakeGCE := arrangeNetLB(t, s.resources, svc, e.useL3)
 
 				result := l4netlb.EnsureFrontend([]string{mixedprotocoltest.TestNode}, svc, time.Now())
 
@@ -186,7 +218,7 @@ func assertNetLBResult(t *testing.T, got, want *L4NetLBSyncResult) {
 	}
 }
 
-func arrangeNetLB(t *testing.T, existing mixedprotocoltest.GCEResources, svc *api_v1.Service) (*L4NetLB, *gce.Cloud) {
+func arrangeNetLB(t *testing.T, existing mixedprotocoltest.GCEResources, svc *api_v1.Service, useL3 bool) (*L4NetLB, *gce.Cloud) {
 	t.Helper()
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := gce.NewFakeGCECloud(vals)
@@ -206,7 +238,7 @@ func arrangeNetLB(t *testing.T, existing mixedprotocoltest.GCEResources, svc *ap
 		Recorder:                     &record.FakeRecorder{},
 		NetworkResolver:              network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
 		EnableMixedProtocol:          true,
-		UseL3DefaultForMixedProtocol: true,
+		UseL3DefaultForMixedProtocol: useL3,
 		DualStackEnabled:             true,
 	}
 	l4NetLB := NewL4NetLB(params, klog.TODO())
@@ -239,6 +271,7 @@ func TestDeleteMixedNetLB(t *testing.T) {
 		desc        string
 		resources   mixedprotocoltest.GCEResources
 		spec        api_v1.ServiceSpec
+		useL3       bool
 		annotations map[string]string
 		ingress     []api_v1.LoadBalancerIngress
 	}{
@@ -264,20 +297,47 @@ func TestDeleteMixedNetLB(t *testing.T) {
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 		},
 		{
+			desc:        "ipv4 tcp l3 enabled",
+			resources:   mixedprotocolnetlbtest.TCPResources(),
+			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, nil),
+			annotations: mixedprotocolnetlbtest.AnnotationsTCP(),
+			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
+			useL3:       true,
+		},
+		{
+			desc:        "ipv4 udp l3 enabled",
+			resources:   mixedprotocolnetlbtest.UDPResources(),
+			spec:        mixedprotocoltest.SpecIPv4(nil, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsTCP(),
+			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
+			useL3:       true,
+		},
+		{
+			desc:        "ipv4 mixed l3 enabled",
+			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
+			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedL3(),
+			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
+			useL3:       true,
+		},
+		{
 			desc:        "ipv6 tcp",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, nil),
+			useL3:       true,
 			annotations: mixedprotocolnetlbtest.AnnotationsTCPIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6TCPResources(),
 		},
 		{
 			desc:        "ipv6 udp",
 			spec:        mixedprotocoltest.SpecIPv6(nil, []int32{53}),
+			useL3:       true,
 			resources:   mixedprotocolnetlbtest.IPv6UDPResources(),
 			annotations: mixedprotocolnetlbtest.AnnotationsUDPIPv6(),
 		},
 		{
 			desc:        "ipv6 mixed",
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, []int32{53}),
+			useL3:       true,
 			annotations: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6MixedResources(),
 		},
@@ -301,7 +361,7 @@ func TestDeleteMixedNetLB(t *testing.T) {
 					},
 				},
 			}
-			l4NetLB, fakeGCE := arrangeNetLB(t, tc.resources, svc)
+			l4NetLB, fakeGCE := arrangeNetLB(t, tc.resources, svc, tc.useL3)
 
 			result := l4NetLB.EnsureLoadBalancerDeleted(svc)
 
@@ -372,18 +432,17 @@ func TestMixedFlagsTriggerCorrectCodePaths(t *testing.T) {
 			mixedProtocolFlag:                true,
 			wantForwardingRuleAnnotationKeys: []string{annotations.TCPForwardingRuleIPv6Key},
 		},
-		// TODO(TortillaZHawaii): implement this to use L3 forwarding rule
-		// {
-		// 	// With both flags enabled we should have single L3 forwarding rules
-		// 	desc: "on_ipv4_l3",
-		// 	svc: api_v1.Service{
-		// 		ObjectMeta: commonMeta,
-		// 		Spec:       mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
-		// 	},
-		// 	mixedProtocolFlag:                true,
-		// 	useL3Flag:                        true,
-		// 	wantForwardingRuleAnnotationKeys: []string{annotations.L3ForwardingRuleKey},
-		// },
+		{
+			// With both flags enabled we should have single L3 forwarding rules
+			desc: "on_ipv4_l3",
+			svc: api_v1.Service{
+				ObjectMeta: commonMeta,
+				Spec:       mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
+			},
+			mixedProtocolFlag:                true,
+			useL3Flag:                        true,
+			wantForwardingRuleAnnotationKeys: []string{annotations.L3ForwardingRuleKey},
+		},
 		{
 			// With both flags enabled we should have single L3 forwarding rules
 			desc: "on_ipv6_l3",
