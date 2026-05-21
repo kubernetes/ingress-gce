@@ -17,8 +17,10 @@ limitations under the License.
 package resources
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -112,6 +114,10 @@ func (l4netlb *L4NetLB) ipv6FRName() string {
 	return namer.GetSuffixedName(l4netlb.frName(), ipv6Suffix)
 }
 
+func (l4netlb *L4NetLB) l3FRName() string {
+	return l4netlb.namer.L4IPv6ForwardingRule(l4netlb.Service.Namespace, l4netlb.Service.Name, "l3")
+}
+
 func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []string, syncResult *L4NetLBSyncResult) {
 	// DisableL4LBFirewall flag disables L4 FW enforcment to remove conflicts with firewall policies
 	if l4netlb.disableNodesFirewallProvisioning {
@@ -191,17 +197,31 @@ func (l4netlb *L4NetLB) ensureDenyIPv6(syncResult *L4NetLBSyncResult, nodeNames 
 }
 
 func (l4netlb *L4NetLB) deleteIPv6ForwardingRule(syncResult *L4NetLBSyncResult) {
-	ipv6FrName := l4netlb.ipv6FRName()
-
+	names := []string{l4netlb.ipv6FRName(), l4netlb.l3FRName()}
 	start := time.Now()
-	l4netlb.svcLogger.V(2).Info("Deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", ipv6FrName)
+	l4netlb.svcLogger.V(2).Info("Deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleNames", names)
 	defer func() {
-		l4netlb.svcLogger.V(2).Info("Finished deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleName", ipv6FrName, "timeTaken", time.Since(start))
+		l4netlb.svcLogger.V(2).Info("Finished deleting IPv6 forwarding rule for L4 NetLB Service", "forwardingRuleNames", names, "timeTaken", time.Since(start))
 	}()
 
-	err := l4netlb.forwardingRules.Delete(ipv6FrName)
-	if err != nil {
-		l4netlb.svcLogger.Error(err, "Failed to delete ipv6 forwarding rule for external loadbalancer service")
+	var wg sync.WaitGroup
+	var errs []error
+	var mu sync.Mutex
+
+	for _, frName := range names {
+		wg.Go(func() {
+			err := l4netlb.forwardingRules.Delete(frName)
+			if err != nil {
+				l4netlb.svcLogger.Error(err, "Failed to delete ipv6 forwarding rule for external loadbalancer service", "frName", frName)
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+
+	if err := errors.Join(errs...); err != nil {
 		syncResult.Error = err
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
 	}

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -60,14 +61,14 @@ func TestEnsureMixedNetLB(t *testing.T) {
 		},
 		{
 			desc:        "ipv4 mixed",
-			resources:   mixedprotocolnetlbtest.MixedResources(),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesSplit(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedSplit(),
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 		},
 		{
 			desc:        "ipv4 mixed l3",
-			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
+			resources:   mixedprotocolnetlbtest.MixedResources(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedSplit(),
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 		},
 		{
@@ -87,6 +88,24 @@ func TestEnsureMixedNetLB(t *testing.T) {
 			resources:   mixedprotocolnetlbtest.IPv6MixedResources(),
 			annotations: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
 			ingress:     mixedprotocolnetlbtest.IPv6Ingress(),
+		},
+		{
+			desc:        "dual stack tcp",
+			resources:   mixedprotocolnetlbtest.TCPResourcesDualStack(),
+			annotations: mixedprotocolnetlbtest.AnnotationsTCPDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
+		},
+		{
+			desc:        "dual stack udp",
+			resources:   mixedprotocolnetlbtest.UDPResourcesDualStack(),
+			annotations: mixedprotocolnetlbtest.AnnotationsUDPDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
+		},
+		{
+			desc:        "dual stack mixed",
+			resources:   mixedprotocolnetlbtest.MixedResourcesDualStack(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
 		},
 	}
 
@@ -114,8 +133,8 @@ func TestEnsureMixedNetLB(t *testing.T) {
 		{
 			desc:        "ipv4 mixed",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
-			resources:   mixedprotocolnetlbtest.MixedResources(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedSplit(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesSplit(),
 		},
 		// Test cases below have L3 flag enabled
 		{
@@ -135,8 +154,8 @@ func TestEnsureMixedNetLB(t *testing.T) {
 		{
 			desc:        "ipv4 mixed l3",
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixedL3(),
-			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
+			resources:   mixedprotocolnetlbtest.MixedResources(),
 			useL3:       true,
 		},
 		{
@@ -158,6 +177,27 @@ func TestEnsureMixedNetLB(t *testing.T) {
 			spec:        mixedprotocoltest.SpecIPv6([]int32{80, 443}, []int32{53}),
 			annotations: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6MixedResources(),
+			useL3:       true,
+		},
+		{
+			desc:        "dual stack tcp",
+			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, nil),
+			annotations: mixedprotocolnetlbtest.AnnotationsTCPDualStack(),
+			resources:   mixedprotocolnetlbtest.TCPResourcesDualStack(),
+			useL3:       true,
+		},
+		{
+			desc:        "dual stack udp",
+			spec:        mixedprotocoltest.SpecDualStack(nil, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsUDPDualStack(),
+			resources:   mixedprotocolnetlbtest.UDPResourcesDualStack(),
+			useL3:       true,
+		},
+		{
+			desc:        "dual stack mixed",
+			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, []int32{53}),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedDualStack(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesDualStack(),
 			useL3:       true,
 		},
 	}
@@ -291,9 +331,9 @@ func TestDeleteMixedNetLB(t *testing.T) {
 		},
 		{
 			desc:        "ipv4 mixed",
-			resources:   mixedprotocolnetlbtest.MixedResources(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesSplit(),
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedSplit(),
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 		},
 		{
@@ -314,9 +354,9 @@ func TestDeleteMixedNetLB(t *testing.T) {
 		},
 		{
 			desc:        "ipv4 mixed l3 enabled",
-			resources:   mixedprotocolnetlbtest.MixedResourcesL3(),
+			resources:   mixedprotocolnetlbtest.MixedResources(),
 			spec:        mixedprotocoltest.SpecIPv4([]int32{80, 443}, []int32{53}),
-			annotations: mixedprotocolnetlbtest.AnnotationsMixedL3(),
+			annotations: mixedprotocolnetlbtest.AnnotationsMixed(),
 			ingress:     mixedprotocolnetlbtest.IPv4Ingress(),
 			useL3:       true,
 		},
@@ -340,6 +380,30 @@ func TestDeleteMixedNetLB(t *testing.T) {
 			useL3:       true,
 			annotations: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
 			resources:   mixedprotocolnetlbtest.IPv6MixedResources(),
+		},
+		{
+			desc:        "dual stack tcp",
+			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, nil),
+			useL3:       true,
+			annotations: mixedprotocolnetlbtest.AnnotationsTCPDualStack(),
+			resources:   mixedprotocolnetlbtest.TCPResourcesDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
+		},
+		{
+			desc:        "dual stack udp",
+			spec:        mixedprotocoltest.SpecDualStack(nil, []int32{53}),
+			useL3:       true,
+			annotations: mixedprotocolnetlbtest.AnnotationsUDPDualStack(),
+			resources:   mixedprotocolnetlbtest.UDPResourcesDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
+		},
+		{
+			desc:        "dual stack mixed",
+			spec:        mixedprotocoltest.SpecDualStack([]int32{80, 443}, []int32{53}),
+			useL3:       true,
+			annotations: mixedprotocolnetlbtest.AnnotationsMixedDualStack(),
+			resources:   mixedprotocolnetlbtest.MixedResourcesDualStack(),
+			ingress:     mixedprotocolnetlbtest.DualStackIngress(),
 		},
 	}
 
@@ -454,6 +518,17 @@ func TestMixedFlagsTriggerCorrectCodePaths(t *testing.T) {
 			useL3Flag:                        true,
 			wantForwardingRuleAnnotationKeys: []string{annotations.L3ForwardingRuleIPv6Key},
 		},
+		{
+			// With both flags enabled we should have single L3 forwarding rules on both stacks
+			desc: "on_dualstack_l3",
+			svc: api_v1.Service{
+				ObjectMeta: commonMeta,
+				Spec:       mixedprotocoltest.SpecDualStack([]int32{80, 443}, []int32{53}),
+			},
+			mixedProtocolFlag:                true,
+			useL3Flag:                        true,
+			wantForwardingRuleAnnotationKeys: []string{annotations.L3ForwardingRuleKey, annotations.L3ForwardingRuleIPv6Key},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -516,6 +591,69 @@ func TestMixedFlagsTriggerCorrectCodePaths(t *testing.T) {
 				if got != want {
 					t.Errorf("For key %s: got %v, want %v", k, got, want)
 				}
+			}
+		})
+	}
+}
+
+// TestIPv6MixedAndSingleMigrationNoCoexistence verifies that when updating
+// IPv6 only LB from mixed to single and vice versa, there is no point in time
+// where both forwarding rules coexist at the same time.
+func TestIPv6MixedAndSingleMigrationNoCoexistence(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc     string
+		startRes mixedprotocoltest.GCEResources
+		startAnn map[string]string
+		startIng []api_v1.LoadBalancerIngress
+
+		spec api_v1.ServiceSpec
+	}{
+		{
+			desc:     "single to mixed",
+			startRes: mixedprotocolnetlbtest.IPv6TCPResources(),
+			startAnn: mixedprotocolnetlbtest.AnnotationsTCPIPv6(),
+			startIng: mixedprotocolnetlbtest.IPv6Ingress(),
+			spec:     mixedprotocoltest.SpecIPv6([]int32{80, 443}, []int32{53}),
+		},
+		{
+			desc:     "mixed to single",
+			startRes: mixedprotocolnetlbtest.IPv6MixedResources(),
+			startAnn: mixedprotocolnetlbtest.AnnotationsMixedIPv6(),
+			startIng: mixedprotocolnetlbtest.IPv6Ingress(),
+			spec:     mixedprotocoltest.SpecIPv6([]int32{80, 443}, nil),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := &api_v1.Service{
+				ObjectMeta: meta_v1.ObjectMeta{
+					UID:         mixedprotocoltest.TestUID,
+					Name:        mixedprotocoltest.TestName,
+					Namespace:   mixedprotocoltest.TestNamespace,
+					Annotations: tc.startAnn,
+				},
+				Spec:   tc.spec,
+				Status: api_v1.ServiceStatus{LoadBalancer: api_v1.LoadBalancerStatus{Ingress: tc.startIng}},
+			}
+
+			l4netlb, fakeGCE := arrangeNetLB(t, tc.startRes, svc, true)
+
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockForwardingRules.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
+				if len(m.Objects) > 0 {
+					return true, fmt.Errorf("when adding %s forwarding rule found more than one rule %v", key.Name, m.Objects)
+				}
+				return false, nil
+			}
+
+			result := l4netlb.EnsureFrontend([]string{mixedprotocoltest.TestNode}, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() returned error %v", result.Error)
 			}
 		})
 	}
