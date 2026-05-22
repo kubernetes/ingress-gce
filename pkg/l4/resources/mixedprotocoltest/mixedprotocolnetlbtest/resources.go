@@ -83,8 +83,8 @@ func IPv6UDPResources() mixedprotocoltest.GCEResources {
 	}
 }
 
-// MixedResources returns GCE resources for a mixed protocol IPv4 NetLB, that listens on tcp:80, tcp:443 and udp:53
-func MixedResources() mixedprotocoltest.GCEResources {
+// MixedResourcesSplit returns GCE resources for a mixed protocol IPv4 NetLB, that listens on tcp:80, tcp:443 and udp:53
+func MixedResourcesSplit() mixedprotocoltest.GCEResources {
 	return mixedprotocoltest.GCEResources{
 		ForwardingRules: map[string]*compute.ForwardingRule{
 			mixedprotocoltest.ForwardingRuleTCPIPv4Name: ForwardingRuleTCP(
@@ -106,8 +106,8 @@ func MixedResources() mixedprotocoltest.GCEResources {
 	}
 }
 
-// MixedResourcesL3 returns GCE resources for a mixed protocol IPv4 NetLB, that listens on tcp:80, tcp:443 and udp:53
-func MixedResourcesL3() mixedprotocoltest.GCEResources {
+// MixedResources returns GCE resources for a mixed protocol IPv4 NetLB, that listens on tcp:80, tcp:443 and udp:53
+func MixedResources() mixedprotocoltest.GCEResources {
 	return mixedprotocoltest.GCEResources{
 		ForwardingRules: map[string]*compute.ForwardingRule{
 			mixedprotocoltest.ForwardingRuleL3IPv4Name: ForwardingRuleL3(
@@ -130,8 +130,8 @@ func MixedResourcesL3() mixedprotocoltest.GCEResources {
 func IPv6MixedResources() mixedprotocoltest.GCEResources {
 	return mixedprotocoltest.GCEResources{
 		ForwardingRules: map[string]*compute.ForwardingRule{
-			mixedprotocoltest.ForwardingRuleLegacyIPv6Name: ForwardingRuleL3IPv6(
-				mixedprotocoltest.ForwardingRuleLegacyIPv6Name,
+			mixedprotocoltest.ForwardingRuleL3IPv6Name: ForwardingRuleL3IPv6(
+				mixedprotocoltest.ForwardingRuleL3IPv6Name,
 			),
 		},
 		Firewalls: map[string]*compute.Firewall{
@@ -139,6 +139,86 @@ func IPv6MixedResources() mixedprotocoltest.GCEResources {
 				{IPProtocol: "udp", Ports: []string{"53"}},
 				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
 			}),
+			mixedprotocoltest.HealthCheckFirewallIPv6Name: HealthCheckFirewallIPv6(),
+		},
+		HealthCheck:    HealthCheck(),
+		BackendService: BackendService("UNSPECIFIED"),
+	}
+}
+
+// TCPResourcesDualStack returns GCE resources for a TCP dual stack NetLB that listens on ports 80 and 443
+func TCPResourcesDualStack() mixedprotocoltest.GCEResources {
+	return mixedprotocoltest.GCEResources{
+		ForwardingRules: map[string]*compute.ForwardingRule{
+			mixedprotocoltest.ForwardingRuleLegacyName: ForwardingRuleTCP(
+				mixedprotocoltest.ForwardingRuleLegacyName, []string{"80", "443"},
+			),
+			mixedprotocoltest.ForwardingRuleLegacyIPv6Name: ForwardingRuleTCPIPv6(
+				mixedprotocoltest.ForwardingRuleLegacyIPv6Name, []string{"80", "443"},
+			),
+		},
+		Firewalls: map[string]*compute.Firewall{
+			mixedprotocoltest.FirewallIPv4Name: mixedprotocoltest.Firewall([]*compute.FirewallAllowed{
+				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
+			}),
+			mixedprotocoltest.FirewallIPv6Name: mixedprotocoltest.FirewallIPv6([]*compute.FirewallAllowed{
+				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
+			}),
+			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
+			mixedprotocoltest.HealthCheckFirewallIPv6Name: HealthCheckFirewallIPv6(),
+		},
+		HealthCheck:    HealthCheck(),
+		BackendService: BackendService("TCP"),
+	}
+}
+
+// UDPResourcesDualStack returns GCE resources for a UDP dual stack NetLB that listens on port 53
+func UDPResourcesDualStack() mixedprotocoltest.GCEResources {
+	return mixedprotocoltest.GCEResources{
+		ForwardingRules: map[string]*compute.ForwardingRule{
+			mixedprotocoltest.ForwardingRuleLegacyName: ForwardingRuleUDP(
+				mixedprotocoltest.ForwardingRuleLegacyName, []string{"53"},
+			),
+			mixedprotocoltest.ForwardingRuleLegacyIPv6Name: ForwardingRuleUDPIPv6(
+				mixedprotocoltest.ForwardingRuleLegacyIPv6Name, []string{"53"},
+			),
+		},
+		Firewalls: map[string]*compute.Firewall{
+			mixedprotocoltest.FirewallIPv4Name: mixedprotocoltest.Firewall([]*compute.FirewallAllowed{
+				{IPProtocol: "udp", Ports: []string{"53"}},
+			}),
+			mixedprotocoltest.FirewallIPv6Name: mixedprotocoltest.FirewallIPv6([]*compute.FirewallAllowed{
+				{IPProtocol: "udp", Ports: []string{"53"}},
+			}),
+			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
+			mixedprotocoltest.HealthCheckFirewallIPv6Name: HealthCheckFirewallIPv6(),
+		},
+		HealthCheck:    HealthCheck(),
+		BackendService: BackendService("UDP"),
+	}
+}
+
+// MixedResourcesDualStack returns GCE resources for a mixed protocol dual stack NetLB, that listens on tcp:80, tcp:443 and udp:53
+func MixedResourcesDualStack() mixedprotocoltest.GCEResources {
+	return mixedprotocoltest.GCEResources{
+		ForwardingRules: map[string]*compute.ForwardingRule{
+			mixedprotocoltest.ForwardingRuleL3IPv4Name: ForwardingRuleL3(
+				mixedprotocoltest.ForwardingRuleL3IPv4Name,
+			),
+			mixedprotocoltest.ForwardingRuleL3IPv6Name: ForwardingRuleL3IPv6(
+				mixedprotocoltest.ForwardingRuleL3IPv6Name,
+			),
+		},
+		Firewalls: map[string]*compute.Firewall{
+			mixedprotocoltest.FirewallIPv4Name: mixedprotocoltest.Firewall([]*compute.FirewallAllowed{
+				{IPProtocol: "udp", Ports: []string{"53"}},
+				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
+			}),
+			mixedprotocoltest.FirewallIPv6Name: mixedprotocoltest.FirewallIPv6([]*compute.FirewallAllowed{
+				{IPProtocol: "udp", Ports: []string{"53"}},
+				{IPProtocol: "tcp", Ports: []string{"80", "443"}},
+			}),
+			mixedprotocoltest.HealthCheckFirewallIPv4Name: mixedprotocoltest.HealthCheckFirewall(),
 			mixedprotocoltest.HealthCheckFirewallIPv6Name: HealthCheckFirewallIPv6(),
 		},
 		HealthCheck:    HealthCheck(),
