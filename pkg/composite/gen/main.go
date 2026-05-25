@@ -48,7 +48,7 @@ func gofmtContent(r io.Reader) string {
 	cmd.Stderr = cmdErr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, cmdErr.String())
+		fmt.Fprint(os.Stderr, cmdErr.String())
 		panic(err)
 	}
 	return out.String()

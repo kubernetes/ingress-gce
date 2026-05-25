@@ -47,7 +47,7 @@ BIN_PKG="$PKG/cmd/$(basename ${TARGET})"
 LD_FLAGS="-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}"
 
 if echo "${TARGET}" | grep '.*-test$'; then
-  go test -c -ldflags "${LD_FLAGS}" -o "${TARGET}" "${BIN_PKG}"
+  go test -buildvcs=false -c -ldflags "${LD_FLAGS}" -o "${TARGET}" "${BIN_PKG}"
 else
-  go install -installsuffix "static" -ldflags "${LD_FLAGS}" "${BIN_PKG}"
+  go install -buildvcs=false -installsuffix "static" -ldflags "${LD_FLAGS}" "${BIN_PKG}"
 fi
