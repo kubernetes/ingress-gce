@@ -44,7 +44,7 @@ OS ?= linux
 ALL_ARCH := amd64
 
 # Image to use for building.
-BUILD_IMAGE ?= golang:1.23.7
+BUILD_IMAGE ?= golang:1.25.8
 # Containers will be named: $(CONTAINER_PREFIX)-$(BINARY)-$(ARCH):$(VERSION).
 CONTAINER_PREFIX ?= ingress-gce
 
@@ -68,3 +68,22 @@ generate:
 # run linters, ensure generated code, etc.
 verify:
 	hack/verify-all.sh
+
+# Override test target to pass GOFLAGS=-buildvcs=false to docker container.
+# This fixes the "error obtaining VCS status: exit status 128" failure during linting.
+test: build-dirs
+	@docker run                                                            \
+	    --rm                                                               \
+	    --sig-proxy=true                                                   \
+	    -u $$(id -u):$$(id -g)                                             \
+	    -e GOFLAGS=-buildvcs=false                                         \
+	    -v $$(pwd)/.go:/go                                                 \
+	    -v $$(pwd):/go/src/$(PKG)                                          \
+	    -v $$(pwd)/bin/$(ARCH):/go/bin                                     \
+	    -v $$(pwd)/.go/std/$(ARCH):/usr/local/go/pkg/linux_$(ARCH)_static  \
+	    -v $$(pwd)/.go/cache:/.cache/go-build                              \
+	    -w /go/src/$(PKG)                                                  \
+	    $(BUILD_IMAGE)                                                     \
+	    /bin/sh -c "                                                       \
+	        ./build/test.sh $(SRC_DIRS)                                    \
+	    "
