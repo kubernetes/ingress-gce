@@ -408,7 +408,7 @@ func (c *Controller) IsHealthy() error {
 			"and endpoint updates for more than an hour. Something went wrong. "+
 			"Last sync was on %v", c.syncTracker.Get())
 		c.logger.Error(nil, msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 	return nil
 }

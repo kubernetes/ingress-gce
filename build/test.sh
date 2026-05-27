@@ -23,7 +23,7 @@ export CGO_ENABLED=0
 TARGETS=$(for d in "$@"; do echo ./$d/...; done)
 
 echo "Running tests:"
-go test -installsuffix "static" ${TARGETS}
+go test -buildvcs=false -installsuffix "static" ${TARGETS}
 echo
 
 echo -n "Checking gofmt: "
@@ -57,7 +57,8 @@ export PATH=$GOBIN:$PATH
 # Install golangci-lint
 echo "Installing golangci-lint"
 echo
-go install github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
+go mod tidy
+go install -buildvcs=false github.com/golangci/golangci-lint/cmd/golangci-lint > /dev/null
 cd "../.."
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache
