@@ -56,44 +56,45 @@ const (
 
 // F are global flags for the controller.
 var F = struct {
-	APIServerHost             string
-	ClusterName               string
-	ConfigFilePath            string
-	DefaultSvc                string
-	DefaultSvcHealthCheckPath string
-	DefaultSvcPortName        string
-	GCEOperationPollInterval  time.Duration
-	GCERateLimit              RateLimitSpecs
-	GCERateLimitScale         float64
-	GKEClusterName            string
-	GKEClusterHash            string
-	GKEClusterType            string
-	HealthCheckPath           string
-	HealthzPort               int
-	THCPort                   int
-	InCluster                 bool
-	IngressClass              string
-	KubeConfigFile            string
-	NegGCPeriod               time.Duration
-	NumNegGCWorkers           int
-	NodePortRanges            PortRanges
-	ResyncPeriod              time.Duration
-	L4NetLBProvisionDeadline  time.Duration
-	NumL4Workers              int
-	NumL4NetLBWorkers         int
-	NumIngressWorkers         int
-	RunIngressController      bool
-	RunL4Controller           bool
-	RunL4NetLBController      bool
-	EnableIGController        bool
-	Version                   bool
-	WatchNamespace            string
-	LeaderElection            LeaderElectionConfiguration
-	MetricsExportInterval     time.Duration
-	NegMetricsExportInterval  time.Duration
-	KubeClientQPS             float32
-	KubeClientBurst           int
-	ReadOnlyMode              bool
+	APIServerHost                  string
+	ClusterName                    string
+	ConfigFilePath                 string
+	DefaultSvc                     string
+	DefaultSvcHealthCheckPath      string
+	DefaultSvcPortName             string
+	GCEOperationPollInterval       time.Duration
+	GCERateLimit                   RateLimitSpecs
+	GCERateLimitScale              float64
+	GKEClusterName                 string
+	GKEClusterHash                 string
+	GKEClusterType                 string
+	HealthCheckPath                string
+	HealthzPort                    int
+	THCPort                        int
+	InCluster                      bool
+	IngressClass                   string
+	KubeConfigFile                 string
+	NegGCPeriod                    time.Duration
+	NumNegGCWorkers                int
+	NodePortRanges                 PortRanges
+	ResyncPeriod                   time.Duration
+	L4NetLBProvisionDeadline       time.Duration
+	NumL4Workers                   int
+	NumL4NetLBWorkers              int
+	NumIngressWorkers              int
+	RunIngressController           bool
+	RunL4Controller                bool
+	RunL4NetLBController           bool
+	RunL4StandaloneNEGLBController bool
+	EnableIGController             bool
+	Version                        bool
+	WatchNamespace                 string
+	LeaderElection                 LeaderElectionConfiguration
+	MetricsExportInterval          time.Duration
+	NegMetricsExportInterval       time.Duration
+	KubeClientQPS                  float32
+	KubeClientBurst                int
+	ReadOnlyMode                   bool
 
 	// Feature flags should be named Enablexxx.
 	EnableNonGCPMode                            bool
@@ -306,6 +307,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunIngressController, "run-ingress-controller", true, `Optional, if enabled then the ingress controller will be run.`)
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
 	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, if enabled then the L4NetLbController will be run.`)
+	flag.BoolVar(&F.RunL4StandaloneNEGLBController, "run-l4-standalone-neg-controller", false, `Optional, if enabled then the Standalone NEG L4 LB controller will be run.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
 	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
