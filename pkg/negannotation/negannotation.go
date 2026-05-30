@@ -38,6 +38,9 @@ const NEGAnnotationKey = "cloud.google.com/neg"
 // on the Service, and is applied by the NEG Controller.
 const NEGStatusKey = "cloud.google.com/neg-status"
 
+// WaitForNegCleanupKey is the annotation key to block service deletion until SvcNeg cleanup is complete.
+const WaitForNegCleanupKey = "cloud.google.com/wait-for-neg-cleanup"
+
 var (
 	ErrNEGAnnotationInvalid = errors.New("NEG annotation is invalid.")
 )

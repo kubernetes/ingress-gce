@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -675,6 +676,210 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, true)
+}
+
+func TestBlockDeletionUntilSvcNegCleanup(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	defer controller.stop()
+
+	svc := newTestService(controller, true, []int32{80})
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[negannotation.WaitForNegCleanupKey] = "enabled"
+
+	controller.serviceLister.Add(svc)
+	controller.ingressLister.Add(newTestIngress(testServiceName))
+
+	_, err = controller.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	if err != nil {
+		existingSvc, err := controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Failed to get service: %v", err)
+		}
+		if existingSvc.Annotations == nil {
+			existingSvc.Annotations = make(map[string]string)
+		}
+		existingSvc.Annotations[negannotation.WaitForNegCleanupKey] = "enabled"
+		_, err = controller.client.CoreV1().Services(testServiceNamespace).Update(context.TODO(), existingSvc, metav1.UpdateOptions{})
+		if err != nil {
+			t.Fatalf("Failed to update service in fake client: %v", err)
+		}
+	}
+
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+
+	updatedSvc, err := controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get service: %v", err)
+	}
+	if !common.HasGivenFinalizer(updatedSvc.ObjectMeta, common.SvcNegCleanupFinalizer) {
+		t.Fatalf("Expected service to have finalizer %s", common.SvcNegCleanupFinalizer)
+	}
+
+	negName := controller.namer.NEG(testServiceNamespace, testServiceName, 80)
+	negCR := &svcnegv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      negName,
+			Namespace: testServiceNamespace,
+			Labels: map[string]string{
+				negtypes.NegCRServiceNameKey: testServiceName,
+			},
+		},
+	}
+	controller.svcNegLister.Add(negCR)
+
+	now := metav1.Now()
+	updatedSvc.DeletionTimestamp = &now
+	controller.serviceLister.Update(updatedSvc)
+
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+
+	validateSyncers(t, controller, 3, true)
+
+	updatedSvc, err = controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get service: %v", err)
+	}
+	if !common.HasGivenFinalizer(updatedSvc.ObjectMeta, common.SvcNegCleanupFinalizer) {
+		t.Fatalf("Expected service to still have finalizer %s", common.SvcNegCleanupFinalizer)
+	}
+
+	controller.svcNegLister.Delete(negCR)
+
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+
+	updatedSvc, err = controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get service: %v", err)
+	}
+	if common.HasGivenFinalizer(updatedSvc.ObjectMeta, common.SvcNegCleanupFinalizer) {
+		t.Fatalf("Expected service to NOT have finalizer %s", common.SvcNegCleanupFinalizer)
+	}
+}
+
+func TestBlockDeletionUntilL4Cleanup(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	defer controller.stop()
+
+	svc := newTestService(controller, true, []int32{80})
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[negannotation.WaitForNegCleanupKey] = "enabled"
+
+	controller.serviceLister.Add(svc)
+	controller.ingressLister.Add(newTestIngress(testServiceName))
+
+	existingSvc, err := controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err == nil {
+		if existingSvc.Annotations == nil {
+			existingSvc.Annotations = make(map[string]string)
+		}
+		existingSvc.Annotations[negannotation.WaitForNegCleanupKey] = "enabled"
+		_, err = controller.client.CoreV1().Services(testServiceNamespace).Update(context.TODO(), existingSvc, metav1.UpdateOptions{})
+		if err != nil {
+			t.Fatalf("Failed to update service in fake client: %v", err)
+		}
+	} else {
+		if svc.Annotations == nil {
+			svc.Annotations = make(map[string]string)
+		}
+		svc.Annotations[negannotation.WaitForNegCleanupKey] = "enabled"
+		_, err = controller.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatalf("Failed to create service in fake client: %v", err)
+		}
+	}
+
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 3, false)
+
+	now := metav1.Now()
+	updatedSvc, err := controller.client.CoreV1().Services(testServiceNamespace).Get(context.TODO(), testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get service: %v", err)
+	}
+	updatedSvc.DeletionTimestamp = &now
+	updatedSvc.Finalizers = []string{common.SvcNegCleanupFinalizer, common.NetLBFinalizerV3}
+	controller.serviceLister.Update(updatedSvc)
+	_, err = controller.client.CoreV1().Services(testServiceNamespace).Update(context.TODO(), updatedSvc, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to update service in fake client: %v", err)
+	}
+
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+
+	validateSyncers(t, controller, 3, false)
+
+	updatedSvc.Finalizers = []string{common.SvcNegCleanupFinalizer}
+	controller.serviceLister.Update(updatedSvc)
+	_, err = controller.client.CoreV1().Services(testServiceNamespace).Update(context.TODO(), updatedSvc, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to update service in fake client: %v", err)
+	}
+
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+
+	validateSyncers(t, controller, 3, true)
+}
+
+func TestSvcNegDeleteEnqueuesService(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	defer controller.stop()
+
+	negCR := &svcnegv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-neg",
+			Namespace: testServiceNamespace,
+			Labels: map[string]string{
+				negtypes.NegCRServiceNameKey: testServiceName,
+			},
+		},
+	}
+
+	// Call the handler directly
+	controller.handleSvcNegDelete(negCR)
+
+	// Verify enqueue
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	ensureEnqueue(t, svcKey, &controller.serviceQueue)
 }
 
 func TestGatherPortMappingUsedByIngress(t *testing.T) {

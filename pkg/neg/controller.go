@@ -18,6 +18,7 @@ package neg
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -72,6 +74,7 @@ type Controller struct {
 	hasSynced             func() bool
 	ingressLister         cache.Indexer
 	serviceLister         cache.Indexer
+	svcNegLister          cache.Indexer
 	client                kubernetes.Interface
 	defaultBackendService utils.ServicePort
 
@@ -249,6 +252,7 @@ func NewController(
 		hasSynced:                      hasSynced,
 		ingressLister:                  ingressInformer.GetIndexer(),
 		serviceLister:                  serviceInformer.GetIndexer(),
+		svcNegLister:                   svcNegInformer.GetIndexer(),
 		networkResolver:                network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
 		serviceQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
 		endpointQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
@@ -321,6 +325,9 @@ func NewController(
 		UpdateFunc: func(old, cur interface{}) {
 			negController.enqueueService(cur)
 		},
+	})
+	svcNegInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: negController.handleSvcNegDelete,
 	})
 	endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueEndpointSlice,
@@ -552,6 +559,47 @@ func (c *Controller) processService(key string) error {
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
+
+	// Add an additional finalizer if WaitForNegCleanupKey is set. This will not be removed from the
+	// service until associated SvcNeg objects are fully deleted
+	if service.DeletionTimestamp == nil && service.Annotations != nil {
+		if val, ok := service.Annotations[negannotation.WaitForNegCleanupKey]; ok && strings.ToLower(val) == "enabled" {
+			if err := common.EnsureServiceFinalizer(service, common.SvcNegCleanupFinalizer, c.client, c.logger); err != nil {
+				return fmt.Errorf("failed to ensure service finalizer: %w", err)
+			}
+		}
+	}
+
+	if service.DeletionTimestamp != nil && common.HasGivenFinalizer(service.ObjectMeta, common.SvcNegCleanupFinalizer) {
+		// Wait for L4 controller to clean up before deleting NEGs
+		if common.HasGivenFinalizer(service.ObjectMeta, common.NetLBFinalizerV3) {
+			c.logger.Info("Waiting for L4 controller to remove finalizer before cleaning up NEGs", "service", key)
+			return nil
+		}
+
+		c.manager.StopSyncer(namespace, name)
+
+		negCRs := c.svcNegLister.List()
+		found := false
+		for _, obj := range negCRs {
+			neg := obj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+			if neg.Namespace == service.Namespace && neg.Labels[negtypes.NegCRServiceNameKey] == service.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.logger.Info("All SvcNegs are gone, removing finalizer from service", "service", key)
+			err := common.EnsureDeleteServiceFinalizer(service, common.SvcNegCleanupFinalizer, c.client, c.logger)
+			if err != nil {
+				return fmt.Errorf("failed to remove finalizer: %w", err)
+			}
+			return nil
+		}
+		c.logger.Info("Waiting for SvcNegs to be deleted before removing finalizer", "service", key)
+		return nil // Wait for next sync
+	}
+
 	negUsage := metricscollector.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	networkInfo, err := c.networkResolver.ServiceNetwork(service)
@@ -887,6 +935,28 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		c.recorder.Event(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
 	c.serviceQueue.AddRateLimited(key)
+}
+
+func (c *Controller) handleSvcNegDelete(obj interface{}) {
+	negCR, ok := obj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			c.logger.Error(nil, "Unexpected object type", "type", fmt.Sprintf("%T", obj))
+			return
+		}
+		negCR, ok = tombstone.Obj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+		if !ok {
+			c.logger.Error(nil, "Unexpected tombstone object", "type", fmt.Sprintf("%T", obj))
+			return
+		}
+	}
+	if negCR != nil {
+		svcName := negCR.Labels[negtypes.NegCRServiceNameKey]
+		if svcName != "" {
+			c.enqueueService(cache.ExplicitKey(fmt.Sprintf("%s/%s", negCR.Namespace, svcName)))
+		}
+	}
 }
 
 func (c *Controller) enqueueEndpointSlice(obj interface{}) {
