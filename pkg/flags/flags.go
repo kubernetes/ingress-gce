@@ -156,6 +156,7 @@ var F = struct {
 	EnableL4NEGLocalIncludeDrainNodes           bool
 	// EnableL4DenyFirewallExplicitlySet will be set to true if the argument was explicitly set by the user.
 	EnableL4DenyFirewallExplicitlySet bool
+	EnableL4NetLBRBSByDefault         bool
 	// ===============================
 	// DEPRECATED FLAGS
 	// ===============================
@@ -373,6 +374,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NEGDetachCancel, "enable-l4-neg-detach-cancel", false, "Enable cancelling NEG detach when endpoints need to be re-attached.")
 	flag.BoolVar(&F.EnablePSCReconcileConnections, "enable-psc-reconcile-connections", false, "Enable support for PSC ServiceAttachment reconcile connections field")
 	flag.BoolVar(&F.EnableL4NEGLocalIncludeDrainNodes, "enable-l4-neg-local-include-drain-nodes", false, "For L4 LB NEGs with externalTrafficPolicy=Local, keep nodes carrying the GKE drain label in the NEG as long as they still host a backing pod. Unready-node behavior is unchanged.")
+	flag.BoolVar(&F.EnableL4NetLBRBSByDefault, "enable-l4-netlb-rbs-by-default", false, "Enable L4 NetLB Regional Backend Services by default for new L4 NetLB services.")
 }
 
 func Validate() {
