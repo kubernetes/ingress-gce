@@ -19,11 +19,13 @@ package crd
 import (
 	"context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"github.com/google/go-cmp/cmp"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	crdclientfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,7 +39,31 @@ var (
 	crdMeta = &CRDMeta{
 		groupName: "test.group.com",
 		versions: []*Version{
-			NewVersion("v1alpha1", "pkg/apis/test/v1alpha1.Test", testGetOpenAPIDefinitions, false),
+			NewVersion(
+				"v1alpha1",
+				"pkg/apis/test/v1alpha1.Test",
+				testGetOpenAPIDefinitions,
+				nil,
+				false,
+			),
+		},
+		kind:     "Test",
+		listKind: "TestList",
+		singular: "test",
+		plural:   "tests",
+	}
+	crdMetaWithStatusSubresource = &CRDMeta{
+		groupName: "test.group.com",
+		versions: []*Version{
+			NewVersion(
+				"v1alpha1",
+				"pkg/apis/test/v1alpha1.Test",
+				testGetOpenAPIDefinitions,
+				&apiextensionsv1.CustomResourceSubresources{
+					Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
+				},
+				false,
+			),
 		},
 		kind:     "Test",
 		listKind: "TestList",
@@ -53,17 +79,22 @@ func testGetOpenAPIDefinitions(common.ReferenceCallback) map[string]common.OpenA
 
 func TestCreateOrUpdateCRD(t *testing.T) {
 	testCases := []struct {
-		desc             string
-		initFunc         func(clientset crdclient.Interface, namespaceScoped bool) error
-		retryOnForbidden bool
+		desc                      string
+		metaWithStatusSubresource bool
+		initFunc                  func(clientset crdclient.Interface, namespaceScoped bool, meta *CRDMeta) error
+		retryOnForbidden          bool
 	}{
 		{
 			desc: "Create CRD when not exist",
 		},
 		{
+			desc:                      "Create CRD with subresources",
+			metaWithStatusSubresource: true,
+		},
+		{
 			desc: "Update CRD when exist with wrongname",
-			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped, klog.TODO())
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool, meta *CRDMeta) error {
+				crd := crd(meta, namespaceScoped, klog.TODO())
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
@@ -74,8 +105,8 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		},
 		{
 			desc: "Update CRD when pruning is not enabled",
-			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped, klog.TODO())
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool, meta *CRDMeta) error {
+				crd := crd(meta, namespaceScoped, klog.TODO())
 				crd.Spec.PreserveUnknownFields = trueValue
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 					return err
@@ -89,8 +120,8 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		},
 		{
 			desc: "Update CRD when exist with wrongname after receiving a forbidden error the first time",
-			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped, klog.TODO())
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool, meta *CRDMeta) error {
+				crd := crd(meta, namespaceScoped, klog.TODO())
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
@@ -102,8 +133,8 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		},
 		{
 			desc: "Update CRD when pruning is not enabled after receiving a forbidden error the first time",
-			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
-				crd := crd(crdMeta, namespaceScoped, klog.TODO())
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool, meta *CRDMeta) error {
+				crd := crd(meta, namespaceScoped, klog.TODO())
 				crd.Spec.PreserveUnknownFields = trueValue
 				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 					return err
@@ -115,13 +146,18 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 	}
 
 	for _, namespacedScoped := range []bool{true, false} {
-		expectedCRD := crd(crdMeta, namespacedScoped, klog.TODO())
 		for _, tc := range testCases {
 			t.Run(tc.desc+fmt.Sprintf(" namespaced scoped %v", namespacedScoped), func(t *testing.T) {
+				meta := crdMeta
+				if tc.metaWithStatusSubresource {
+					meta = crdMetaWithStatusSubresource
+				}
+				expectedCRD := crd(meta, namespacedScoped, klog.TODO())
+
 				fakeCRDClient := crdclientfake.NewSimpleClientset()
 				fakeCRDHandler := NewCRDHandler(fakeCRDClient, klog.TODO())
 				if tc.initFunc != nil {
-					if err := tc.initFunc(fakeCRDClient, namespacedScoped); err != nil {
+					if err := tc.initFunc(fakeCRDClient, namespacedScoped, meta); err != nil {
 						t.Errorf("Unexpected error in initFunc(): %v", err)
 					}
 				}
@@ -139,7 +175,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 						return false, &apiextensionsv1.CustomResourceDefinition{}, nil
 					}))
 				}
-				crd, err := fakeCRDHandler.createOrUpdateCRD(crdMeta, namespacedScoped)
+				crd, err := fakeCRDHandler.createOrUpdateCRD(meta, namespacedScoped)
 				if err != nil {
 					t.Errorf("Unexpected error in createOrUpdateCRD(): %v", err)
 				}
@@ -157,6 +193,15 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 					}
 					if v.Schema == nil {
 						t.Errorf("Unexpected version returned, validation schema not specified for %s API", v.Name)
+					}
+					if tc.metaWithStatusSubresource {
+						if v.Subresources == nil || v.Subresources.Status == nil {
+							t.Errorf("Unexpected version returned, status subresource not specified for %s API", v.Name)
+						}
+					} else {
+						if v.Subresources != nil {
+							t.Errorf("Unexpected version returned, subresources should be nil for %s API", v.Name)
+						}
 					}
 				}
 

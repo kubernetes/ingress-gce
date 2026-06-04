@@ -31,8 +31,8 @@ func CRDMeta() *crd.CRDMeta {
 		"serviceattachments",
 		[]*crd.Version{
 			// latest version should be the first version
-			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1.ServiceAttachment", svcattachv1.GetOpenAPIDefinitions, false),
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ServiceAttachment", svcattachv1beta1.GetOpenAPIDefinitions, true),
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1.ServiceAttachment", svcattachv1.GetOpenAPIDefinitions, nil, false),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ServiceAttachment", svcattachv1beta1.GetOpenAPIDefinitions, nil, true),
 		},
 	)
 	return meta

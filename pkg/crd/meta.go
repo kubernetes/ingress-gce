@@ -17,6 +17,7 @@ limitations under the License.
 package crd
 
 import (
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/kube-openapi/pkg/common"
 )
 
@@ -50,18 +51,20 @@ func NewCRDMeta(groupName, kind, listKind, singular, plural string, versions []*
 // Version specifies the API version and meta information that is needed to
 // generate OpenAPI schema based CRD validation.
 type Version struct {
-	name       string
-	typeSource string
-	fn         common.GetOpenAPIDefinitions
-	deprecated bool
+	name         string
+	typeSource   string
+	fn           common.GetOpenAPIDefinitions
+	subresources *apiextensionsv1.CustomResourceSubresources
+	deprecated   bool
 }
 
 // NewVersion returns a CRD API version with validation metadata.
-func NewVersion(name, typeSource string, fn common.GetOpenAPIDefinitions, deprecated bool) *Version {
+func NewVersion(name, typeSource string, fn common.GetOpenAPIDefinitions, subresources *apiextensionsv1.CustomResourceSubresources, deprecated bool) *Version {
 	return &Version{
-		name:       name,
-		typeSource: typeSource,
-		fn:         fn,
-		deprecated: deprecated,
+		name:         name,
+		typeSource:   typeSource,
+		fn:           fn,
+		subresources: subresources,
+		deprecated:   deprecated,
 	}
 }
