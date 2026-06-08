@@ -1501,7 +1501,10 @@ func TestCommitPodsMSC(t *testing.T) {
 	defaultSubnetNegName := transactionSyncer.NegName
 	defaultSubnetSyncerKey := transactionSyncer.NegSyncerKey
 
-	nonDefaultSubnetNegName := transactionSyncer.namer.NonDefaultSubnetNEG(transactionSyncer.NegSyncerKey.Namespace, transactionSyncer.NegSyncerKey.Name, additionalTestSubnet, transactionSyncer.NegSyncerKey.PortTuple.Port)
+	nonDefaultSubnetNegName, err := transactionSyncer.namer.NonDefaultSubnetNEG(transactionSyncer.NegSyncerKey.Namespace, transactionSyncer.NegSyncerKey.Name, additionalTestSubnet, transactionSyncer.NegSyncerKey.PortTuple.Port)
+	if err != nil {
+		t.Fatalf("Failed to get non-default subnet NEG name: %v", err)
+	}
 	nonDefaultSubnetSyncerKey := transactionSyncer.NegSyncerKey
 	nonDefaultSubnetSyncerKey.NegName = nonDefaultSubnetNegName
 

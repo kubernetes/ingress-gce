@@ -1131,7 +1131,7 @@ func (s *transactionSyncer) getNonDefaultSubnetNEGName(subnet string) (string, e
 		return negName, nil
 	}
 
-	return s.namer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnet, s.NegSyncerKey.PortTuple.Port), nil
+	return s.namer.NonDefaultSubnetNEG(s.NegSyncerKey.Namespace, s.NegSyncerKey.Name, subnet, s.NegSyncerKey.PortTuple.Port)
 }
 
 // computeDegradedModeCorrectness computes degraded mode correctness metrics based on the difference between degraded mode and normal calculation

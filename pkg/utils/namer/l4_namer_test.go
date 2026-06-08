@@ -208,6 +208,10 @@ func TestL4Namer(t *testing.T) {
 			t.Parallel()
 			const frNumber = uint(10)
 
+			nonDefaultNEGName, err := namer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0)
+			if err != nil {
+				t.Fatalf("NonDefaultSubnetNEG: unexpected error: %v", err)
+			}
 			// Act
 			got := names{
 				FRName:            namer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto)),
@@ -215,7 +219,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FRName:        namer.L4IPv6ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto)),
 				NetLbIPv6FRName:   namer.L4NetLBIPv6ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto), frNumber),
 				NEGName:           namer.L4Backend(tc.namespace, tc.name),
-				NonDefaultNEGName: namer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, 0), // Port is not used for L4 NEG
+				NonDefaultNEGName: nonDefaultNEGName,
 				FWName:            namer.L4Firewall(tc.namespace, tc.name),
 				FWDenyName:        namer.L4FirewallDeny(tc.namespace, tc.name),
 				IPv6FWName:        namer.L4IPv6Firewall(tc.namespace, tc.name),

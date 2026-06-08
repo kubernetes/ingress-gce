@@ -78,7 +78,7 @@ type BackendNamer interface {
 type NonDefaultSubnetNEGNamer interface {
 	// NonDefaultSubnetNEG returns the gce neg name for NEGs created in non-default
 	// subnet.
-	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string
+	NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) (string, error)
 	// NonDefaultSubnetCustomNEG returns the gce neg name for custom NEGs created
 	// in non-default subnets.
 	NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error)
