@@ -500,7 +500,7 @@ func (l4c *L4Controller) linkNEG(l4 *resources.L4, svcLogger klog.Logger) error 
 	// link neg to backend service
 	zones, err := l4c.zoneGetter.ListZones(zonegetter.CandidateAndUnreadyNodesFilter, svcLogger)
 	if err != nil {
-		return nil
+		return err
 	}
 	var groupKeys []backends.GroupKey
 	for _, zone := range zones {
