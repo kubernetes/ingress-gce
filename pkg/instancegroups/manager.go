@@ -402,7 +402,7 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 		if len(removeNodes) != 0 {
 			metrics.PublishInstanceGroupRemove(len(removeNodes))
 			err = m.remove(igName, removeNodes, zone, iglogger)
-			iglogger.V(2).Info("Remove finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "removeNodes", events.TruncatedStringList(removeNodes))
+			iglogger.V(2).Info("Remove finished", "name", igName, "err", err, "timeTaken", time.Since(start), "removeNodes", events.TruncatedStringList(removeNodes))
 			if err != nil {
 				return err
 			}
@@ -412,7 +412,7 @@ func (m *manager) Sync(nodes []string, logger klog.Logger) (err error) {
 		if len(addNodes) != 0 {
 			metrics.PublishInstanceGroupAdd(len(addNodes))
 			err = m.add(igName, addNodes, zone, iglogger)
-			iglogger.V(2).Info("Add finished", "name", igName, "err", err, "timeTaken", time.Now().Sub(start), "addNodes", events.TruncatedStringList(addNodes))
+			iglogger.V(2).Info("Add finished", "name", igName, "err", err, "timeTaken", time.Since(start), "addNodes", events.TruncatedStringList(addNodes))
 			if err != nil {
 				return err
 			}
