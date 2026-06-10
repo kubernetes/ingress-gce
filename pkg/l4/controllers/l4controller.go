@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	context2 "context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -261,10 +262,14 @@ func (l4c *L4Controller) SystemHealth() error {
 func (l4c *L4Controller) Run() {
 	defer l4c.shutdown()
 
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+	// An error means stopCh was closed while waiting; proceed anyway since the
+	// queue below exits immediately and the deferred cleanup still runs.
+	if err := wait.PollUntilContextCancel(wait.ContextForChannel(l4c.stopCh), 5*time.Second, false, func(context2.Context) (bool, error) {
 		l4c.logger.V(2).Info("Waiting for initial cache sync before starting L4 Controller")
 		return l4c.hasSynced(), nil
-	}, l4c.stopCh)
+	}); err != nil {
+		l4c.logger.Error(err, "Stopped waiting for initial cache sync")
+	}
 
 	l4c.logger.Info("Running L4 Controller", "numWorkers", l4c.numWorkers)
 	activecontrollermetrics.RecordRunningController(activecontrollermetrics.L4ILBControllerLabel)
