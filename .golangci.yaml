@@ -29,7 +29,6 @@ linters-settings:
   errcheck:
     exclude-functions:
       - (*flag.FlagSet).Parse
-      - k8s.io/apimachinery/pkg/util/wait.PollUntil
   forbidigo:
     analyze-types: true
     forbid:

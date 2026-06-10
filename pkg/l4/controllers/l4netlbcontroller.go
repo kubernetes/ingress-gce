@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	context2 "context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -508,10 +509,14 @@ func (lc *L4NetLBController) SystemHealth() error {
 func (lc *L4NetLBController) Run() {
 	defer lc.shutdown()
 
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+	// An error means stopCh was closed while waiting; proceed anyway since the
+	// queue below exits immediately and the deferred cleanup still runs.
+	if err := wait.PollUntilContextCancel(wait.ContextForChannel(lc.stopCh), 5*time.Second, false, func(context2.Context) (bool, error) {
 		lc.logger.V(2).Info("Waiting for initial cache sync before starting L4 Net LB Controller")
 		return lc.hasSynced(), nil
-	}, lc.stopCh)
+	}); err != nil {
+		lc.logger.Error(err, "Stopped waiting for initial cache sync")
+	}
 
 	lc.logger.Info("Running L4 Net Controller", "numWorkers", lc.ctx.NumL4NetLBWorkers)
 	activecontrollermetrics.RecordRunningController(activecontrollermetrics.L4NetLBControllerLabel)
