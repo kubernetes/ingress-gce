@@ -34,7 +34,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
@@ -1291,7 +1290,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityNone,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: ptr.To[int32](minStrongSessionAffinityIdleTimeout)}},
 			expectError:           true,
 		},
 		{
@@ -1301,7 +1300,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(maxSessionAffinityIdleTimeout + 1)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: ptr.To[int32](maxSessionAffinityIdleTimeout + 1)}},
 			expectError:           true,
 		},
 		{
@@ -1321,7 +1320,7 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
 			},
 			sessionAffinityType:   v1.ServiceAffinityClientIP,
-			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: proto.Int32(minStrongSessionAffinityIdleTimeout)}},
+			sessionAffinityConfig: &v1.SessionAffinityConfig{ClientIP: &v1.ClientIPConfig{TimeoutSeconds: ptr.To[int32](minStrongSessionAffinityIdleTimeout)}},
 			expectError:           false,
 		},
 	}
