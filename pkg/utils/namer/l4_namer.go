@@ -76,14 +76,14 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 //
 // subnetHash length = 6, nsNameHash length = 8, and the remainings are trimmed evenly.
 // Output name is at most 63 characters.
-func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ int32) string {
+func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ int32) (string, error) {
 	return strings.Join([]string{
 		namer.v2Prefix,
 		namer.v2ClusterUID,
 		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-subnetHashLength-1),
 		subnetHash(subnetName),
 		namer.getServiceHash(namespace, name),
-	}, "-")
+	}, "-"), nil
 }
 
 // NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet

@@ -538,7 +538,10 @@ func TestNamerNonDefaultSubnetNEG(t *testing.T) {
 
 	newNamer := NewNamer(clusterId, "", klog.TODO())
 	for _, tc := range testCases {
-		res := newNamer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, tc.port)
+		res, err := newNamer.NonDefaultSubnetNEG(tc.namespace, tc.name, tc.subnetName, tc.port)
+		if err != nil {
+			t.Errorf("%s: unexpected error: %v", tc.desc, err)
+		}
 		if len(res) > 63 {
 			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
 		}

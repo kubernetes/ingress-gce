@@ -484,14 +484,14 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 // information as possible, while avoiding potential conflicts with the NEGs in
 // the default subnet, or conflicts due to the naming pattern for non default
 // subnets(e.g.: us-central1-subnet, us-central2-subnet).
-func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) string {
+func (n *Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, port int32) (string, error) {
 	portStr := fmt.Sprintf("%v", port)
 	hashedSubnet := subnetHash(subnetName)
 	truncFields := TrimFieldsEvenly(n.maxNEGLabelLength-subnetHashLength-1, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, hashedSubnet, negSuffix(n.shortUID(), namespace, name, portStr, ""))
+	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, hashedSubnet, negSuffix(n.shortUID(), namespace, name, portStr, "")), nil
 }
 
 // RXLBBackendName returns the gce Backend name based on the service namespace, name
