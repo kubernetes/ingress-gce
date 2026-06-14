@@ -105,6 +105,8 @@ type L4BackendServiceParams struct {
 	EnableZonalAffinity      bool
 	LogConfig                *composite.BackendServiceLogConfig
 	LogConfigControlEnabled  bool
+	EnableOrchestrationInfo  bool
+	ClusterName              string
 }
 
 var versionPrecedence = map[meta.Version]int{
@@ -289,6 +291,24 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		LocalityLbPolicy:    string(params.LocalityLbPolicy),
 	}
 
+	// Populate OrchestrationInfo for L4 ILB backend service to identify the managing GKE cluster and service.
+	if params.EnableOrchestrationInfo && params.ClusterName != "" && params.Scheme == string(cloud.SchemeInternal) {
+		resourceUri := ""
+		if p.cloud.Regional() {
+			resourceUri = fmt.Sprintf("//container.googleapis.com/projects/%s/locations/%s/clusters/%s/k8s/namespaces/%s/services/%s",
+				p.cloud.ProjectID(), p.cloud.Region(), params.ClusterName, params.NamespacedName.Namespace, params.NamespacedName.Name)
+		} else {
+			resourceUri = fmt.Sprintf("//container.googleapis.com/projects/%s/zones/%s/clusters/%s/k8s/namespaces/%s/services/%s",
+				p.cloud.ProjectID(), p.cloud.LocalZone(), params.ClusterName, params.NamespacedName.Namespace, params.NamespacedName.Name)
+		}
+		beLogger.V(2).Info("EnsureL4BackendService: Populated OrchestrationInfo", "resourceUri", resourceUri)
+		expectedBS.OrchestrationInfo = &composite.BackendServiceOrchestrationInfo{
+			ResourceUri: resourceUri,
+		}
+	} else {
+		beLogger.V(2).Info("EnsureL4BackendService: OrchestrationInfo not populated", "enableL4ILBOrchestrationInfo", params.EnableOrchestrationInfo, "gkeClusterName", params.ClusterName)
+	}
+
 	if params.LogConfigControlEnabled {
 		beLogger.V(2).Info("EnsureL4BackendService: using provided LogConfig for backend service", "logConfig", params.LogConfig)
 		expectedBS.LogConfig = params.LogConfig
@@ -357,7 +377,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		}
 	}
 
-	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled) {
+	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled, params.EnableOrchestrationInfo) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return currentBS, l4utils.ResourceResync, nil
 	}
@@ -412,7 +432,7 @@ func readAPIVersionFromL4Description(description string, beLogger klog.Logger) m
 // service will not be updated. The list of backends is not checked either,
 // since that is handled by the neg-linker.
 // The list of backends is not checked, since that is handled by the neg-linker.
-func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool, compareLogConfig bool) bool {
+func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTracking bool, compareLogConfig bool, compareOrchestrationInfo bool) bool {
 
 	svcsEqual := newBS.Protocol == oldBS.Protocol &&
 		newBS.Description == oldBS.Description &&
@@ -446,6 +466,11 @@ func backendSvcEqual(newBS, oldBS *composite.BackendService, compareConnectionTr
 
 	// If zonal affinity is set, needs to be equal
 	svcsEqual = svcsEqual && zonalAffinityEqual(newBS, oldBS)
+
+	// If ILB orchestration info is enabled, ensure it matches (triggers backfill if missing on oldBS).
+	if compareOrchestrationInfo {
+		svcsEqual = svcsEqual && orchestrationInfoEqual(newBS.OrchestrationInfo, oldBS.OrchestrationInfo)
+	}
 	return svcsEqual
 }
 
@@ -540,4 +565,15 @@ func zonalAffinityDisabledTrafficPolicy() *composite.BackendServiceNetworkPassTh
 			SpilloverRatio: DefaultZonalAffinitySpilloverRatio,
 		},
 	}
+}
+
+// orchestrationInfoEqual returns true if both BackendServiceOrchestrationInfo objects are equal.
+func orchestrationInfoEqual(newInfo, oldInfo *composite.BackendServiceOrchestrationInfo) bool {
+	if newInfo == nil && oldInfo == nil {
+		return true
+	}
+	if newInfo == nil || oldInfo == nil {
+		return false
+	}
+	return newInfo.ResourceUri == oldInfo.ResourceUri
 }

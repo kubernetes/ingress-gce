@@ -378,6 +378,8 @@ func main() {
 		EnableL4DenyFirewalls:                flags.F.EnableL4DenyFirewall,
 		EnableL4DenyFirewallsRollbackCleanup: flags.F.EnableL4DenyFirewallRollbackCleanup,
 		EnableL4ILBZonalAffinity:             flags.F.EnableL4ILBZonalAffinity,
+		EnableL4ILBOrchestrationInfo:         flags.F.EnableL4ILBOrchestrationInfo,
+		GKEClusterName:                       flags.F.GKEClusterName,
 		ReadOnlyMode:                         flags.F.ReadOnlyMode,
 		EnableL4NetLBRBSByDefault:            flags.F.EnableL4NetLBRBSByDefault,
 	}

@@ -142,6 +142,8 @@ type ControllerContextConfig struct {
 	EnableWeightedL4ILB                  bool
 	EnableWeightedL4NetLB                bool
 	EnableL4ILBZonalAffinity             bool
+	EnableL4ILBOrchestrationInfo         bool
+	GKEClusterName                       string
 	DisableL4LBFirewall                  bool
 	EnableL4NetLBNEGs                    bool
 	EnableL4NetLBNEGsDefault             bool

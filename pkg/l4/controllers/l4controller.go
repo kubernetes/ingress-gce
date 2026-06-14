@@ -361,6 +361,8 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
+		EnableOrchestrationInfo:          l4c.ctx.EnableL4ILBOrchestrationInfo,
+		ClusterName:                      l4c.ctx.GKEClusterName,
 	}
 	if l4c.ctx.L4LBConfigInformer != nil {
 		l4ilbParams.L4LBConfigLister = l4c.ctx.L4LBConfigInformer.GetIndexer()
@@ -448,6 +450,8 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		DisableNodesFirewallProvisioning: l4c.ctx.DisableL4LBFirewall,
 		EnableMixedProtocol:              l4c.ctx.EnableL4ILBMixedProtocol,
 		EnableZonalAffinity:              l4c.ctx.EnableL4ILBZonalAffinity,
+		EnableOrchestrationInfo:          l4c.ctx.EnableL4ILBOrchestrationInfo,
+		ClusterName:                      l4c.ctx.GKEClusterName,
 	}
 	if l4c.ctx.L4LBConfigInformer != nil {
 		l4ilbParams.L4LBConfigLister = l4c.ctx.L4LBConfigInformer.GetIndexer()
