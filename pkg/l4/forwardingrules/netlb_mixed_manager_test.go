@@ -22,6 +22,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -402,7 +403,7 @@ func TestMixedManagerNetLB_EnsureIPv4_L3Default(t *testing.T) {
 		TCPFwdRule: nil,
 		UDPFwdRule: nil,
 		L3FwdRule:  l3Rule,
-		SyncStatus: utils.ResourceUpdate,
+		SyncStatus: l4utils.ResourceUpdate,
 		IPManaged:  address.IPAddrManaged,
 	}
 
@@ -503,8 +504,8 @@ func TestMixedManagerNetLB_EnsureIPv4_Resync(t *testing.T) {
 		t.Fatalf("EnsureIPv4() error = %v", err)
 	}
 
-	if result.SyncStatus != utils.ResourceResync {
-		t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, utils.ResourceResync)
+	if result.SyncStatus != l4utils.ResourceResync {
+		t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceResync)
 	}
 }
 

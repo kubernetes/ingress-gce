@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -112,4 +113,16 @@ func NewInvalidLoadBalancerSourceRangesAnnotationError(serviceLoadBalancerSource
 		serviceLoadBalancerSourceRangesAnnotation,
 		err,
 	}
+}
+
+// IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
+func IsInvalidLoadBalancerSourceRangesSpecError(err error) bool {
+	var invalidLoadBalancerSourceRangesSpecError *InvalidLoadBalancerSourceRangesSpecError
+	return errors.As(err, &invalidLoadBalancerSourceRangesSpecError)
+}
+
+// IsInvalidLoadBalancerSourceRangesAnnotationError checks if wrapped error is an InvalidLoadBalancerSourceRangesAnnotationError error.
+func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
+	var invalidLoadBalancerSourceRangesAnnotationError *InvalidLoadBalancerSourceRangesAnnotationError
+	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
 }

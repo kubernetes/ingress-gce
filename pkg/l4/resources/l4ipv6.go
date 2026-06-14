@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 Load Balancers:
@@ -169,7 +170,7 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 	}()
 
 	// ensure firewalls
-	ipv6SourceRanges, err := utils.IPv6ServiceSourceRanges(l4.Service)
+	ipv6SourceRanges, err := l4utils.IPv6ServiceSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return

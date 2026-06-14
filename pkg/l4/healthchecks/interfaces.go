@@ -4,6 +4,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -29,8 +30,8 @@ type EnsureHealthCheckResult struct {
 	HCFirewallRuleIPv6Name string
 	GceResourceInError     string
 	Err                    error
-	WasUpdated             utils.ResourceSyncStatus
-	WasFirewallUpdated     utils.ResourceSyncStatus
+	WasUpdated             l4utils.ResourceSyncStatus
+	WasFirewallUpdated     l4utils.ResourceSyncStatus
 }
 
 type healthChecksProvider interface {

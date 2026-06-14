@@ -39,6 +39,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -461,7 +462,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		scope      meta.KeyType
 		l4Type     utils.L4LBType
 		wantHC     *composite.HealthCheck
-		wantUpdate utils.ResourceSyncStatus
+		wantUpdate l4utils.ResourceSyncStatus
 	}{
 		{
 			desc:       "create for XLB",
@@ -471,7 +472,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 			scope:      meta.Global,
 			l4Type:     utils.XLB,
 			wantHC:     newL4HealthCheck(hcName, namespacedName, false, hcDefaultPath, 80, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 		{
 			desc:       "create for ILB",
@@ -481,7 +482,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 			scope:      meta.Regional,
 			l4Type:     utils.ILB,
 			wantHC:     newL4HealthCheck(hcName, namespacedName, true, hcDefaultPath, 80, utils.ILB, meta.Regional, testClusterValues.Region, klog.TODO()),
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 		{
 			desc:       "no update",
@@ -491,7 +492,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 			scope:      meta.Global,
 			l4Type:     utils.XLB,
 			wantHC:     newL4HealthCheck(hcName, namespacedName, false, hcDefaultPath, 80, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate: utils.ResourceResync,
+			wantUpdate: l4utils.ResourceResync,
 		},
 		{
 			desc:       "update ILB to XLB",
@@ -501,7 +502,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 			scope:      meta.Global,
 			l4Type:     utils.XLB,
 			wantHC:     newL4HealthCheck(hcName, namespacedName, false, hcDefaultPath, 80, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 	}
 	for _, tc := range testCases {
@@ -632,24 +633,24 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 		wantHC           *composite.HealthCheck
 		wantFirewall     *compute.Firewall
 		needIPv6         bool
-		wantUpdate       utils.ResourceSyncStatus
-		wantUpdateFw     utils.ResourceSyncStatus
+		wantUpdate       l4utils.ResourceSyncStatus
+		wantUpdateFw     l4utils.ResourceSyncStatus
 	}{
 		{
 			desc:         "create",
 			svc:          svc,
 			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall: expectedFw,
-			wantUpdate:   utils.ResourceUpdate,
-			wantUpdateFw: utils.ResourceUpdate,
+			wantUpdate:   l4utils.ResourceUpdate,
+			wantUpdateFw: l4utils.ResourceUpdate,
 		},
 		{
 			desc:         "create cluster mode",
 			svc:          svcETPCluster,
 			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, true), namespacedName, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall: expectedSharedFw,
-			wantUpdate:   utils.ResourceUpdate,
-			wantUpdateFw: utils.ResourceUpdate,
+			wantUpdate:   l4utils.ResourceUpdate,
+			wantUpdateFw: l4utils.ResourceUpdate,
 		},
 		{
 			desc:         "create cluster mode multinet",
@@ -657,8 +658,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			svcNetwork:   secondaryNetwork,
 			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, true), namespacedName, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall: expectedMultinetFw,
-			wantUpdate:   utils.ResourceUpdate,
-			wantUpdateFw: utils.ResourceUpdate,
+			wantUpdate:   l4utils.ResourceUpdate,
+			wantUpdateFw: l4utils.ResourceUpdate,
 		},
 		{
 			desc:             "no update",
@@ -667,8 +668,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			existingFirewall: expectedFw,
 			wantHC:           newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall:     expectedFw,
-			wantUpdate:       utils.ResourceResync,
-			wantUpdateFw:     utils.ResourceResync,
+			wantUpdate:       l4utils.ResourceResync,
+			wantUpdateFw:     l4utils.ResourceResync,
 		},
 		{
 			desc:             "update only FW",
@@ -677,8 +678,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			existingFirewall: fwThatNeedsUpdate,
 			wantHC:           newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall:     expectedFw,
-			wantUpdate:       utils.ResourceResync,
-			wantUpdateFw:     utils.ResourceUpdate,
+			wantUpdate:       l4utils.ResourceResync,
+			wantUpdateFw:     l4utils.ResourceUpdate,
 		},
 		{
 			desc:             "add ipv6",
@@ -688,8 +689,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			needIPv6:         true,
 			wantHC:           newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall:     expectedFw,
-			wantUpdate:       utils.ResourceResync,
-			wantUpdateFw:     utils.ResourceUpdate,
+			wantUpdate:       l4utils.ResourceResync,
+			wantUpdateFw:     l4utils.ResourceUpdate,
 		},
 		{
 			desc:       "change fw priority to 999",
@@ -711,8 +712,8 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			},
 			wantHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false), namespacedName, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			wantFirewall: expectedFw,
-			wantUpdate:   utils.ResourceResync,
-			wantUpdateFw: utils.ResourceUpdate,
+			wantUpdate:   l4utils.ResourceResync,
+			wantUpdateFw: l4utils.ResourceUpdate,
 		},
 	}
 
@@ -832,40 +833,40 @@ func TestEnsureHealthCheckWithIPv6OnlyFirewalls(t *testing.T) {
 		existingFirewall *compute.Firewall
 		svc              *corev1.Service
 		wantHC           *composite.HealthCheck
-		wantUpdate       utils.ResourceSyncStatus
-		wantUpdateFw     utils.ResourceSyncStatus
+		wantUpdate       l4utils.ResourceSyncStatus
+		wantUpdateFw     l4utils.ResourceSyncStatus
 		wantIPv6Ranges   []string
 	}{
 		{
 			desc:           "NetLB ETP Local IPv6-only (Isolated NetLB range)",
 			svc:            svcNetLBLocal,
 			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBLocal.Namespace, svcNetLBLocal.Name, false), namespacedNameNetLBLocal, false, hcDefaultPath, 1234, utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate:     utils.ResourceUpdate,
-			wantUpdateFw:   utils.ResourceUpdate,
+			wantUpdate:     l4utils.ResourceUpdate,
+			wantUpdateFw:   l4utils.ResourceUpdate,
 			wantIPv6Ranges: []string{L4NetLBIPv6HCRange},
 		},
 		{
 			desc:           "NetLB ETP Cluster IPv6-only (Merged ranges - Smart Unification)",
 			svc:            svcNetLBCluster,
 			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate:     utils.ResourceUpdate,
-			wantUpdateFw:   utils.ResourceUpdate,
+			wantUpdate:     l4utils.ResourceUpdate,
+			wantUpdateFw:   l4utils.ResourceUpdate,
 			wantIPv6Ranges: []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
 		},
 		{
 			desc:           "ILB ETP Local IPv6-only (Isolated ILB range)",
 			svc:            svcILBLocal,
 			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcILBLocal.Namespace, svcILBLocal.Name, false), namespacedNameILBLocal, false, hcDefaultPath, 1234, utils.ILB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate:     utils.ResourceUpdate,
-			wantUpdateFw:   utils.ResourceUpdate,
+			wantUpdate:     l4utils.ResourceUpdate,
+			wantUpdateFw:   l4utils.ResourceUpdate,
 			wantIPv6Ranges: []string{L4ILBIPv6HCRange},
 		},
 		{
 			desc:           "ILB ETP Cluster IPv6-only (Merged ranges - Smart Unification)",
 			svc:            svcILBCluster,
 			wantHC:         newL4HealthCheck(l4Namer.L4HealthCheck(svcILBCluster.Namespace, svcILBCluster.Name, true), namespacedNameILBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.ILB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate:     utils.ResourceUpdate,
-			wantUpdateFw:   utils.ResourceUpdate,
+			wantUpdate:     l4utils.ResourceUpdate,
+			wantUpdateFw:   l4utils.ResourceUpdate,
 			wantIPv6Ranges: []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
 		},
 		{
@@ -874,8 +875,8 @@ func TestEnsureHealthCheckWithIPv6OnlyFirewalls(t *testing.T) {
 			existingHC:       newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
 			existingFirewall: existingSharedFwWithOnlyILBRange,
 			wantHC:           newL4HealthCheck(l4Namer.L4HealthCheck(svcNetLBCluster.Namespace, svcNetLBCluster.Name, true), namespacedNameNetLBCluster, true, hcDefaultPath, gce.GetNodesHealthCheckPort(), utils.XLB, meta.Global, testClusterValues.Region, klog.TODO()),
-			wantUpdate:       utils.ResourceResync,
-			wantUpdateFw:     utils.ResourceUpdate,
+			wantUpdate:       l4utils.ResourceResync,
+			wantUpdateFw:     l4utils.ResourceUpdate,
 			wantIPv6Ranges:   []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
 		},
 	}

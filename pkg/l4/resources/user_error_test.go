@@ -8,6 +8,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -45,11 +46,11 @@ func TestIsUserError(t *testing.T) {
 			want: true,
 		},
 		{
-			err:  utils.NewInvalidLoadBalancerSourceRangesAnnotationError("annotation", fmt.Errorf("bad")),
+			err:  l4utils.NewInvalidLoadBalancerSourceRangesAnnotationError("annotation", fmt.Errorf("bad")),
 			want: true,
 		},
 		{
-			err:  utils.NewInvalidLoadBalancerSourceRangesSpecError(nil, fmt.Errorf("bad")),
+			err:  l4utils.NewInvalidLoadBalancerSourceRangesSpecError(nil, fmt.Errorf("bad")),
 			want: true,
 		},
 		{

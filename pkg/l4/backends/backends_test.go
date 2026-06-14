@@ -14,6 +14,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -170,7 +171,7 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 		affinityType        string
 		updatedAffinityType string
 		schemeType          string
-		expectUpdate        utils.ResourceSyncStatus
+		expectUpdate        l4utils.ResourceSyncStatus
 	}{
 		{
 			desc:                "Test no update needed",
@@ -181,7 +182,7 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			affinityType:        string(v1.ServiceAffinityNone),
 			updatedAffinityType: string(v1.ServiceAffinityNone),
 			schemeType:          string(cloud.SchemeInternal),
-			expectUpdate:        utils.ResourceResync,
+			expectUpdate:        l4utils.ResourceResync,
 		},
 		{
 			desc:                "Test update protocol",
@@ -192,7 +193,7 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			affinityType:        string(v1.ServiceAffinityNone),
 			updatedAffinityType: string(v1.ServiceAffinityNone),
 			schemeType:          string(cloud.SchemeInternal),
-			expectUpdate:        utils.ResourceUpdate,
+			expectUpdate:        l4utils.ResourceUpdate,
 		},
 		{
 			desc:                "Test update affinityType",
@@ -203,7 +204,7 @@ func TestEnsureL4BackendServiceUpdate(t *testing.T) {
 			affinityType:        string(v1.ServiceAffinityNone),
 			updatedAffinityType: string(v1.ServiceAffinityClientIP),
 			schemeType:          string(cloud.SchemeInternal),
-			expectUpdate:        utils.ResourceUpdate,
+			expectUpdate:        l4utils.ResourceUpdate,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {

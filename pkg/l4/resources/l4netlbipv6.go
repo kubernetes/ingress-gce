@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -150,7 +151,7 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 	}()
 
 	// ensure firewalls
-	ipv6SourceRanges, err := utils.IPv6ServiceSourceRanges(l4netlb.Service)
+	ipv6SourceRanges, err := l4utils.IPv6ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		syncResult.Error = err
 		return

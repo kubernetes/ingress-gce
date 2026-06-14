@@ -26,6 +26,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -250,7 +251,7 @@ func apiVersionRequiredbyServiceFeatures(params L4BackendServiceParams) meta.Ver
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, utils.ResourceSyncStatus, error) {
+func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger klog.Logger) (*composite.BackendService, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	beLogger = beLogger.WithValues("L4BackendServiceParams", params)
 	beLogger.V(2).Info("EnsureL4BackendService started")
@@ -262,13 +263,13 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 
 	key, err := composite.CreateKey(p.cloud, params.Name, meta.Regional)
 	if err != nil {
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 	expectedVersion := apiVersionRequiredbyServiceFeatures(params)
 
 	currentBS, err := composite.GetBackendService(p.cloud, key, expectedVersion, beLogger)
 	if err != nil && !utils.IsNotFoundError(err) {
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 
 	expectedDesc, err := utils.MakeL4LBServiceDescription(params.NamespacedName.String(), "", expectedVersion, false, utils.ILB)
@@ -323,14 +324,14 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		beLogger.V(2).Info("EnsureL4BackendService: creating backend service")
 		err := composite.CreateBackendService(p.cloud, key, expectedBS, beLogger)
 		if err != nil {
-			return nil, utils.ResourceResync, err
+			return nil, l4utils.ResourceResync, err
 		}
 		beLogger.V(2).Info("EnsureL4BackendService: created backend service successfully")
 		// We need to perform a GCE call to re-fetch the object we just created
 		// so that the "Fingerprint" field is filled in. This is needed to update the
 		// object without error. The lookup is also needed to populate the selfLink.
 		createdBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
-		return createdBS, utils.ResourceUpdate, err
+		return createdBS, l4utils.ResourceUpdate, err
 	} else {
 		// Determine the appropriate API version to use for updating the backend service
 		apiVersion := readAPIVersionFromL4Description(currentBS.Description, beLogger)
@@ -339,7 +340,7 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 
 	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
-		return currentBS, utils.ResourceResync, nil
+		return currentBS, l4utils.ResourceResync, nil
 	}
 	if currentBS.ConnectionDraining != nil && currentBS.ConnectionDraining.DrainingTimeoutSec > 0 && params.Protocol == string(api_v1.ProtocolTCP) {
 		// only preserves user overridden timeout value when the protocol is TCP
@@ -351,12 +352,12 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 	// Copy backends to avoid detaching them during update. This could be replaced with a patch call in the future.
 	expectedBS.Backends = currentBS.Backends
 	if err := composite.UpdateBackendService(p.cloud, key, expectedBS, beLogger); err != nil {
-		return nil, utils.ResourceUpdate, err
+		return nil, l4utils.ResourceUpdate, err
 	}
 	beLogger.V(2).Info("EnsureL4BackendService: updated backend service successfully")
 
 	updatedBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
-	return updatedBS, utils.ResourceUpdate, err
+	return updatedBS, l4utils.ResourceUpdate, err
 }
 
 func readAPIVersionFromL4Description(description string, beLogger klog.Logger) meta.Version {

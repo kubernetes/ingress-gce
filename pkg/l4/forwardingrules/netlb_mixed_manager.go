@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/tools/record"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -62,7 +63,7 @@ type EnsureNetLBResult struct {
 	TCPFwdRule *composite.ForwardingRule
 	L3FwdRule  *composite.ForwardingRule
 	IPManaged  address.IPAddressType
-	SyncStatus utils.ResourceSyncStatus
+	SyncStatus l4utils.ResourceSyncStatus
 }
 
 // EnsureIPv4 will try to create or update forwarding rules for mixed protocol service.
@@ -70,7 +71,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	m.Logger = m.Logger.WithName("MixedManagerNetLB")
 	svcPorts := m.Service.Spec.Ports
 	res := EnsureNetLBResult{
-		SyncStatus: utils.ResourceResync,
+		SyncStatus: l4utils.ResourceResync,
 	}
 
 	if !NeedsMixed(svcPorts) {
@@ -115,7 +116,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		haveToDeleteSplitRules := existing.TCP != nil || existing.UDP != nil
 		if haveToDeleteSplitRules {
 			m.Logger.Info("TCP and UDP forwarding rules are present, deleting them in favor of L3_DEFAULT rule")
-			res.SyncStatus = utils.ResourceUpdate
+			res.SyncStatus = l4utils.ResourceUpdate
 			if err := m.deleteExistingSplit(existing); err != nil {
 				return res, err
 			}
@@ -126,14 +127,14 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 
 	if existing.L3 != nil {
 		m.Logger.Info("L3 forwarding rule is present, deleting it in favor of split TCP and UDP rules")
-		res.SyncStatus = utils.ResourceUpdate
+		res.SyncStatus = l4utils.ResourceUpdate
 		if err := m.delete("l3"); err != nil {
 			return res, err
 		}
 	}
 
 	var tcpErr, udpErr error
-	var tcpSync, udpSync utils.ResourceSyncStatus
+	var tcpSync, udpSync l4utils.ResourceSyncStatus
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -146,8 +147,8 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	}()
 
 	wg.Wait()
-	if tcpSync == utils.ResourceUpdate || udpSync == utils.ResourceUpdate {
-		res.SyncStatus = utils.ResourceUpdate
+	if tcpSync == l4utils.ResourceUpdate || udpSync == l4utils.ResourceUpdate {
+		res.SyncStatus = l4utils.ResourceUpdate
 	}
 	err = errors.Join(tcpErr, udpErr)
 
@@ -162,7 +163,7 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 // * if equal 			-> do nothing
 // * if can be patched 	-> patch
 // * else 				-> delete and recreate
-func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
 	start := time.Now()
 	log := m.Logger.
@@ -177,14 +178,14 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 	wanted, err := m.buildWanted(backendServiceLink, name, protocol, ip)
 	if err != nil {
 		log.Error(err, "buildWanted returned error")
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 
 	// Exists
 	if existing == nil {
 		if err := m.Provider.Create(wanted); err != nil {
 			log.Error(err, "Provider.Create returned error")
-			return nil, utils.ResourceUpdate, err
+			return nil, l4utils.ResourceUpdate, err
 		}
 		return m.getAfterUpdate(name)
 	}
@@ -193,21 +194,21 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 	if networkMismatch := existing.NetworkTier != wanted.NetworkTier; networkMismatch {
 		resource := fmt.Sprintf("Forwarding rule (%v)", name)
 		networkTierMismatchErr := utils.NewNetworkTierErr(resource, wanted.NetworkTier, wanted.NetworkTier)
-		return nil, utils.ResourceUpdate, networkTierMismatchErr
+		return nil, l4utils.ResourceUpdate, networkTierMismatchErr
 	}
 
 	// Equal
 	if equal, err := EqualIPv4(existing, wanted); err != nil {
 		log.Error(err, "EqualIPV4 returned error")
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	} else if equal {
-		return existing, utils.ResourceResync, err
+		return existing, l4utils.ResourceResync, err
 	}
 
 	// Patchable
 	if patchable, filtered := PatchableIPv4(existing, wanted); patchable {
 		if err := m.Provider.Patch(filtered); err != nil {
-			return nil, utils.ResourceUpdate, err
+			return nil, l4utils.ResourceUpdate, err
 		}
 		m.recordEventf("ForwardingRule %s patched", name)
 		return m.getAfterUpdate(name)
@@ -215,7 +216,7 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 
 	// Recreate
 	if err := m.recreate(wanted); err != nil {
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 	return m.getAfterUpdate(name)
 }
@@ -277,16 +278,16 @@ func (m *MixedManagerNetLB) buildWanted(backendServiceLink, name, protocol, ip s
 	}, nil
 }
 
-func (m *MixedManagerNetLB) getAfterUpdate(name string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (m *MixedManagerNetLB) getAfterUpdate(name string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	found, err := m.Provider.Get(name)
 	if err != nil {
-		return nil, utils.ResourceUpdate, err
+		return nil, l4utils.ResourceUpdate, err
 	}
 	if found == nil {
-		return nil, utils.ResourceUpdate, fmt.Errorf("Forwarding rule %s not found", name)
+		return nil, l4utils.ResourceUpdate, fmt.Errorf("Forwarding rule %s not found", name)
 	}
 
-	return found, utils.ResourceUpdate, nil
+	return found, l4utils.ResourceUpdate, nil
 }
 
 // NetLBManagedRules contains rules managed by NetLB loadbalancer.

@@ -296,18 +296,6 @@ func IsInvalidSubnetConfigurationError(err error) bool {
 	return errors.As(err, &invalidSubnetConfigError)
 }
 
-// IsInvalidLoadBalancerSourceRangesSpecError checks if wrapped error is an InvalidLoadBalancerSourceRangesSpecError error.
-func IsInvalidLoadBalancerSourceRangesSpecError(err error) bool {
-	var invalidLoadBalancerSourceRangesSpecError *InvalidLoadBalancerSourceRangesSpecError
-	return errors.As(err, &invalidLoadBalancerSourceRangesSpecError)
-}
-
-// IsInvalidLoadBalancerSourceRangesAnnotationError checks if wrapped error is an InvalidLoadBalancerSourceRangesAnnotationError error.
-func IsInvalidLoadBalancerSourceRangesAnnotationError(err error) bool {
-	var invalidLoadBalancerSourceRangesAnnotationError *InvalidLoadBalancerSourceRangesAnnotationError
-	return errors.As(err, &invalidLoadBalancerSourceRangesAnnotationError)
-}
-
 // UserError is a struct to define error caused by User misconfiguration.
 type UserError struct {
 	err error

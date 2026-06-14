@@ -37,6 +37,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
@@ -54,7 +55,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 		namedAddress *compute.Address
 		existingRule *composite.ForwardingRule
 		wantRule     *composite.ForwardingRule
-		wantUpdate   utils.ResourceSyncStatus
+		wantUpdate   l4utils.ResourceSyncStatus
 		wantErrMsg   string
 	}{
 		{
@@ -82,7 +83,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 		{
 			desc: "no update",
@@ -118,7 +119,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
-			wantUpdate: utils.ResourceResync,
+			wantUpdate: l4utils.ResourceResync,
 		},
 		{
 			desc: "update ports",
@@ -158,7 +159,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 	}
 

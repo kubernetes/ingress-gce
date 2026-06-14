@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -42,12 +43,12 @@ const (
 	prefix96range = "/96"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
 	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
 	if err != nil {
-		return nil, utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
 	}
 
 	frLogger := l4.svcLogger.WithValues("forwardingRuleName", expectedIPv6FwdRule.Name)
@@ -59,26 +60,26 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	if existingIPv6FwdRule != nil {
 		equal, err := forwardingrules.EqualIPv6(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return existingIPv6FwdRule, utils.ResourceResync, err
+			return existingIPv6FwdRule, l4utils.ResourceResync, err
 		}
 		if equal {
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
-			return existingIPv6FwdRule, utils.ResourceResync, nil
+			return existingIPv6FwdRule, l4utils.ResourceResync, nil
 		}
 		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return nil, utils.ResourceUpdate, err
+			return nil, l4utils.ResourceUpdate, err
 		}
 	}
 
 	frLogger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule")
 	err = l4.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
-		return nil, utils.ResourceUpdate, err
+		return nil, l4utils.ResourceUpdate, err
 	}
 
 	createdFr, err := l4.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	return createdFr, utils.ResourceUpdate, err
+	return createdFr, l4utils.ResourceUpdate, err
 }
 
 func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
@@ -146,7 +147,7 @@ func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.Forward
 	return nil
 }
 
-func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, utils.ResourceSyncStatus, error) {
+func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
 	// Single and mixed protocol use different names for ipv6 forwarding rules. We need to handle the transition between the two.
@@ -171,13 +172,13 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	existingIPv6FwdRule, err := l4netlb.forwardingRules.Get(expectedIPv6FrName)
 	if err != nil {
 		frLogger.Error(err, "l4netlb.forwardingRules.Get returned error")
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 
 	toDeleteIPv6FwdRule, err := l4netlb.forwardingRules.Get(toDeleteIPv6FrName)
 	if err != nil {
 		frLogger.Error(err, "l4netlb.forwardingRules.Get returned error for alt FR")
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 
 	fwdRuleToDetermineIP := existingIPv6FwdRule
@@ -187,7 +188,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	subnetworkURL, err := l4netlb.ipv6SubnetURL()
 	if err != nil {
-		return nil, utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)
 
@@ -196,7 +197,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	ipv6AddrToUse, ipv6AddressName, err := address.IPv6ToUse(l4netlb.cloud, l4netlb.Service, fwdRuleToDetermineIP, subnetworkURL, frLogger)
 	if err != nil {
 		frLogger.Error(err, "address.IPv6ToUse for service returned error")
-		return nil, utils.ResourceResync, err
+		return nil, l4utils.ResourceResync, err
 	}
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
@@ -206,7 +207,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	// IPv6 address is not supported for External Regional Network Load Balancing with Standard network tier.
 	if netTier == cloud.NetworkTierStandard {
 		resourceErr := "IPv6 External Load Balancer"
-		return nil, utils.ResourceResync, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
+		return nil, l4utils.ResourceResync, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
 	}
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
@@ -219,13 +220,13 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		// If they do not match, tear down the existing resources with the wrong tier.
 		if isFromAnnotation {
 			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(fwdRuleToDetermineIP, netTier, addrMgr, frLogger); err != nil {
-				return nil, utils.ResourceResync, err
+				return nil, l4utils.ResourceResync, err
 			}
 		}
 
 		ipv6AddrToUse, _, err = addrMgr.HoldAddress()
 		if err != nil {
-			return nil, utils.ResourceResync, err
+			return nil, l4utils.ResourceResync, err
 		}
 		frLogger.V(2).Info("ensureIPv6ForwardingRule: reserved IP for the forwarding rule", "ip", ipv6AddrToUse)
 		// We delete the alt Forwarding Rule as it is not needed when switching from single to mixed and vice versa
@@ -233,7 +234,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			err = l4netlb.forwardingRules.Delete(toDeleteIPv6FwdRule.Name)
 			if err != nil {
 				frLogger.Error(err, "l4netlb.forwardingRules.Delete returned error for alt FR")
-				return nil, utils.ResourceUpdate, err
+				return nil, l4utils.ResourceUpdate, err
 			}
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", toDeleteIPv6FwdRule.Name)
 			toDeleteIPv6FwdRule = nil
@@ -255,7 +256,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddrToUse, subnetworkURL, netTier)
 	if err != nil {
-		return nil, utils.ResourceResync, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
 	}
 	frLogger.V(2).Info("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service", "expectedIPv6FwdRule", expectedIPv6FwdRule)
 
@@ -263,30 +264,30 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
 			resource := fmt.Sprintf("Forwarding rule (%v)", existingIPv6FwdRule.Name)
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingIPv6FwdRule.NetworkTier, expectedIPv6FwdRule.NetworkTier)
-			return nil, utils.ResourceResync, networkTierMismatchError
+			return nil, l4utils.ResourceResync, networkTierMismatchError
 		}
 
 		equal, err := forwardingrules.EqualIPv6(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return existingIPv6FwdRule, utils.ResourceResync, err
+			return existingIPv6FwdRule, l4utils.ResourceResync, err
 		}
 		if equal {
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
-			return existingIPv6FwdRule, utils.ResourceResync, nil
+			return existingIPv6FwdRule, l4utils.ResourceResync, nil
 		}
 		err = l4netlb.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
 		if err != nil {
-			return nil, utils.ResourceUpdate, err
+			return nil, l4utils.ResourceUpdate, err
 		}
 	}
 	frLogger.V(2).Info("ensureIPv6ForwardingRule: Creating/Recreating forwarding rule")
 	err = l4netlb.forwardingRules.Create(expectedIPv6FwdRule)
 	if err != nil {
-		return nil, utils.ResourceUpdate, err
+		return nil, l4utils.ResourceUpdate, err
 	}
 
 	createdFr, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
-	return createdFr, utils.ResourceUpdate, err
+	return createdFr, l4utils.ResourceUpdate, err
 }
 
 func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL string, netTier cloud.NetworkTier) (*composite.ForwardingRule, error) {
