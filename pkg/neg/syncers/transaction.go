@@ -214,9 +214,23 @@ func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, 
 		nodeLister := listers.NewNodeLister(nodeLister)
 		switch mode {
 		case negtypes.L4LocalMode:
-			return NewLocalL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType, negMetrics)
+			return NewLocalL4EndpointsCalculator(LocalL4EndpointsCalculatorParams{
+				NodeLister:  nodeLister,
+				ZoneGetter:  zoneGetter,
+				SvcId:       serviceKey,
+				NetworkInfo: networkInfo,
+				LbType:      l4LBType,
+				NegMetrics:  negMetrics,
+			}, logger)
 		default:
-			return NewClusterL4EndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger, networkInfo, l4LBType, negMetrics)
+			return NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+				NodeLister:  nodeLister,
+				ZoneGetter:  zoneGetter,
+				SvcId:       serviceKey,
+				NetworkInfo: networkInfo,
+				LbType:      l4LBType,
+				NegMetrics:  negMetrics,
+			}, logger)
 		}
 	}
 	return NewL7EndpointsCalculator(
