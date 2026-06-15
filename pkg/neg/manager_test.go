@@ -115,6 +115,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
 		metrics.NewNegMetrics(),
+		false,
 	)
 	return manager, testContext.Cloud, testContext, nil
 }
@@ -2285,4 +2286,56 @@ func populateSvcNegCache(t *testing.T, manager *syncerManager, svcNegClient svcn
 func rebuildSvcNegCache(t *testing.T, manager *syncerManager, svcNegClient svcnegclient.Interface, namespace string) {
 	manager.svcNegLister.Replace([]any{}, "")
 	populateSvcNegCache(t, manager, svcNegClient, namespace)
+}
+
+// TestGetSyncerKeyIncludeDrainNodesL4Local verifies that getSyncerKey correctly
+// stamps the manager-level includeDrainNodesL4Local flag into NegSyncerKey so
+// that syncer-map lookups are always consistent with the key used at creation.
+func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
+	t.Parallel()
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("NewFakeZoneGetter: %v", err)
+	}
+
+	portInfo := negtypes.PortInfo{
+		PortTuple: negtypes.SvcPortTuple{},
+		NegName:   "test-neg",
+	}
+	portKey := negtypes.PortInfoMapKey{ServicePort: 80}
+
+	for _, wantDrain := range []bool{false, true} {
+		manager := newSyncerManager(
+			testContext.NegNamer,
+			testContext.L4Namer,
+			record.NewFakeRecorder(100),
+			negtypes.NewAdapter(testContext.Cloud, testContext.NegMetrics),
+			zoneGetter,
+			testContext.SvcNegClient,
+			testContext.KubeSystemUID,
+			testContext.PodInformer.GetIndexer(),
+			testContext.ServiceInformer.GetIndexer(),
+			testContext.EndpointSliceInformer.GetIndexer(),
+			testContext.NodeInformer.GetIndexer(),
+			testContext.SvcNegInformer.GetIndexer(),
+			metricscollector.FakeSyncerMetrics(),
+			false,
+			testContext.EnableDualStackNEG,
+			testContext.NumGCWorkers,
+			labels.PodLabelPropagationConfig{},
+			klog.TODO(),
+			metrics.NewNegMetrics(),
+			wantDrain,
+		)
+
+		key := manager.getSyncerKey("ns", "svc", portKey, portInfo)
+		if key.IncludeDrainNodesL4Local != wantDrain {
+			t.Errorf("getSyncerKey with includeDrainNodesL4Local=%v: got key.IncludeDrainNodesL4Local=%v",
+				wantDrain, key.IncludeDrainNodesL4Local)
+		}
+	}
 }

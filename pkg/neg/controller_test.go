@@ -163,7 +163,8 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,
 		false,
 		readOnlyMode,
-		true, // enableNEGsForIngress
+		true,  // enableNEGsForIngress
+		false, // includeDrainNodesL4Local
 		make(<-chan struct{}),
 		klog.TODO(),
 		testContext.NegMetrics,
@@ -1870,7 +1871,7 @@ func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, 
 	if err != nil {
 		t.Fatalf("Failed to initialize zone getter: %s", err)
 	}
-	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()), klog.TODO())
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode(), false), klog.TODO())
 	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
 		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
 	}
@@ -1955,7 +1956,7 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 		t.Fatalf("Failed to initialize zone getter: %v", err)
 	}
 	// This routine is called from tests verifying L7 NEGs.
-	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode), klog.TODO())
+	zones, _ := zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L7Mode, false), klog.TODO())
 
 	// negStatus validation
 	negStatus, err := negannotation.ParseNegStatus(v)
@@ -2480,4 +2481,167 @@ func TestMergeDefaultBackendServiceWithNEGsForIngressDisabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
+	t.Parallel()
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+
+	// Populate initially with some nodes, but we will add the test node manually.
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to create fake zone getter: %v", err)
+	}
+
+	// Create controller with includeDrainNodesL4Local = true
+	controller, err := NewController(
+		kubeClient,
+		testContext.SvcNegClient,
+		kubeClient,
+		testContext.KubeSystemUID,
+		testContext.IngressInformer,
+		testContext.ServiceInformer,
+		testContext.PodInformer,
+		testContext.NodeInformer, // use the testContext node informer
+		testContext.EndpointSliceInformer,
+		testContext.SvcNegInformer,
+		testContext.NetworkInformer,
+		testContext.GKENetworkParamSetInformer,
+		testContext.NodeTopologyInformer,
+		func() bool { return true },
+		testContext.L4Namer,
+		defaultBackend,
+		negtypes.NewAdapter(testContext.Cloud, testContext.NegMetrics),
+		zoneGetter,
+		testContext.NegNamer,
+		testContext.ResyncPeriod,
+		testContext.ResyncPeriod,
+		testContext.NumGCWorkers,
+		false, // enableReadinessReflector
+		true,  // runL4Controller
+		false, // enableNonGcpMode
+		testContext.EnableDualStackNEG,
+		labels.PodLabelPropagationConfig{},
+		true,
+		false,
+		false,
+		false, // readOnlyMode
+		true,  // enableNEGsForIngress
+		true,  // includeDrainNodesL4Local = true
+		make(<-chan struct{}),
+		klog.TODO(),
+		testContext.NegMetrics,
+		metricscollector.FakeSyncerMetrics(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create test controller: %v", err)
+	}
+	defer controller.stop()
+
+	stopChan := make(chan struct{}, 1)
+	go testContext.NodeInformer.Run(stopChan)
+	defer func() {
+		stopChan <- struct{}{}
+	}()
+	if !cache.WaitForCacheSync(stopChan, testContext.NodeInformer.HasSynced) {
+		t.Fatal("timed out waiting for node informer to sync")
+	}
+
+	// We will create a node that is initially upgrading
+	upgradingNode := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "upgrading-node",
+			Labels: map[string]string{
+				utils.GKECurrentOperationLabel: utils.NodeDrain,
+				utils.LabelNodeSubnet:          "default",
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/zone1/upgrading-node",
+			PodCIDR:    "10.100.1.0/24",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	// Create the node in fake client / informer
+	_, err = kubeClient.CoreV1().Nodes().Create(ctx, upgradingNode, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// Wait for the add event to propagate and clear it from the queue
+	ensureNodeEnqueue(t, "upgrading-node", controller)
+
+	// Now update the node to remove the drain label (so it becomes ready)
+	readyNode := upgradingNode.DeepCopy()
+	delete(readyNode.Labels, utils.GKECurrentOperationLabel)
+
+	_, err = kubeClient.CoreV1().Nodes().Update(ctx, readyNode, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("failed to update node: %v", err)
+	}
+
+	// This update transitions the node from:
+	// - CandidateAndUnreadyNodesFilter: Selected=False -> Selected=True (Change!)
+	// - CandidateNodesFilter: Selected=True -> Selected=True (No Change)
+	// Since includeDrainNodesL4Local is true, if we only check CandidateNodesFilter,
+	// we will not enqueue this node update.
+	// We want to verify that the node IS enqueued (because we also check CandidateAndUnreadyNodesFilter).
+	ensureNodeEnqueue(t, "upgrading-node", controller)
+
+	// Second scenario: verify CandidateAndDrainingNodesFilter detects a change
+	// that CandidateAndUnreadyNodesFilter misses.
+	//
+	// A node carrying both the drain label and the exclude-from-external-load-balancers
+	// label is rejected by every filter (drain exclusion and balancer exclusion both
+	// apply). When the exclude-balancer label is removed while the drain label is kept:
+	//   - CandidateAndUnreadyNodesFilter: false → false (drain label still blocks it)
+	//   - CandidateAndDrainingNodesFilter: false → true  (exclude-balancer gone; drain tolerated)
+	// Only CandidateAndDrainingNodesFilter detects the change, so removing it from
+	// the filter set would cause this enqueue to be missed.
+	drainExcludedNode := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "drain-excluded-node",
+			Labels: map[string]string{
+				utils.GKECurrentOperationLabel:     utils.NodeDrain,
+				utils.LabelNodeRoleExcludeBalancer: "true",
+				utils.LabelNodeSubnet:              "default",
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			ProviderID: "gce://foo-project/zone1/drain-excluded-node",
+			PodCIDR:    "10.100.2.0/24",
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{Type: apiv1.NodeReady, Status: apiv1.ConditionTrue},
+			},
+		},
+	}
+	_, err = kubeClient.CoreV1().Nodes().Create(ctx, drainExcludedNode, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create drain-excluded-node: %v", err)
+	}
+	ensureNodeEnqueue(t, "drain-excluded-node", controller)
+
+	// Remove only the exclude-balancer label; keep the drain label.
+	drainOnlyNode := drainExcludedNode.DeepCopy()
+	delete(drainOnlyNode.Labels, utils.LabelNodeRoleExcludeBalancer)
+	_, err = kubeClient.CoreV1().Nodes().Update(ctx, drainOnlyNode, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("failed to update drain-excluded-node: %v", err)
+	}
+	// CandidateAndDrainingNodesFilter sees false→true; CandidateAndUnreadyNodesFilter
+	// stays false→false (drain label still present). The enqueue must happen via the
+	// drain filter — if that filter were missing from the set the queue would stay empty.
+	ensureNodeEnqueue(t, "drain-excluded-node", controller)
 }

@@ -55,15 +55,16 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	defer func() { flags.F.EnableMultiSubnetCluster = prevFlag }()
 	flags.F.EnableMultiSubnetCluster = false
 	testCases := []struct {
-		desc                string
-		endpointsData       []negtypes.EndpointsData
-		wantEndpointSets    map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
-		networkEndpointType negtypes.NetworkEndpointType
-		nodeLabelsMap       map[string]map[string]string
-		nodeAnnotationsMap  map[string]map[string]string
-		nodeReadyStatusMap  map[string]v1.ConditionStatus
-		nodeNames           []string
-		network             network.NetworkInfo
+		desc                     string
+		endpointsData            []negtypes.EndpointsData
+		wantEndpointSets         map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		networkEndpointType      negtypes.NetworkEndpointType
+		nodeLabelsMap            map[string]map[string]string
+		nodeAnnotationsMap       map[string]map[string]string
+		nodeReadyStatusMap       map[string]v1.ConditionStatus
+		nodeNames                []string
+		network                  network.NetworkInfo
+		includeDrainNodesL4Local bool
 	}{
 		{
 			desc:          "default endpoints",
@@ -159,17 +160,89 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			network:             defaultNetwork,
 		},
+		{
+			desc:          "all nodes unready with IncludeDrainNodesL4Local: unready still tolerated",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// The flag is additive: it stops dropping drain-labeled nodes but leaves
+			// the existing unready tolerance untouched, so the picked set matches the
+			// flag-off "all nodes unready" case.
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeReadyStatusMap: map[string]v1.ConditionStatus{
+				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
+			},
+			network:                  defaultNetwork,
+			includeDrainNodesL4Local: true,
+		},
+		{
+			desc:          "some nodes unready with IncludeDrainNodesL4Local: unready still tolerated",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// Same expectation as the flag-off "default endpoints" case — the flag
+			// has no effect when no node is drain-labeled.
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeReadyStatusMap: map[string]v1.ConditionStatus{
+				testInstance1: v1.ConditionTrue, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionTrue, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionTrue, testInstance6: v1.ConditionTrue,
+			},
+			network:                  defaultNetwork,
+			includeDrainNodesL4Local: true,
+		},
+		{
+			desc:          "draining node kept with IncludeDrainNodesL4Local, exclude-balancer still dropped",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			nodeLabelsMap: map[string]map[string]string{
+				testInstance1: {utils.LabelNodeRoleExcludeBalancer: "true"},
+				testInstance3: {utils.GKECurrentOperationLabel: utils.NodeDrain},
+			},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			// testInstance3 (draining) is kept because it still has pods; testInstance1
+			// (exclude-from-external-load-balancers) is still excluded — that exclusion
+			// is unconditional and not affected by the flag.
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType:      negtypes.VmIpEndpointType,
+			network:                  defaultNetwork,
+			includeDrainNodesL4Local: true,
+		},
+		{
+			desc:          "draining node without pods dropped naturally with IncludeDrainNodesL4Local",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			nodeLabelsMap: map[string]map[string]string{
+				// testInstance5 has the drain label but no endpoints reference it,
+				// so it is never iterated by the per-pod loop and never enters the subset.
+				testInstance5: {utils.GKECurrentOperationLabel: utils.NodeDrain},
+			},
+			nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			wantEndpointSets: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType:      negtypes.VmIpEndpointType,
+			network:                  defaultNetwork,
+			includeDrainNodesL4Local: true,
+		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			ec := NewLocalL4EndpointsCalculator(LocalL4EndpointsCalculatorParams{
-				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
-				ZoneGetter:  zoneGetter,
-				SvcId:       svcKey,
-				NetworkInfo: &tc.network,
-				LbType:      negtypes.L4InternalLB,
-				NegMetrics:  metrics.NewNegMetrics(),
+				NodeLister:               listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:               zoneGetter,
+				SvcId:                    svcKey,
+				NetworkInfo:              &tc.network,
+				LbType:                   negtypes.L4InternalLB,
+				NegMetrics:               metrics.NewNegMetrics(),
+				IncludeDrainNodesL4Local: tc.includeDrainNodesL4Local,
 			}, klog.TODO())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
@@ -1251,12 +1324,13 @@ func TestValidateEndpoints(t *testing.T) {
 	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
 	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(LocalL4EndpointsCalculatorParams{
-		NodeLister:  listers.NewNodeLister(nodeLister),
-		ZoneGetter:  zoneGetter,
-		SvcId:       fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace),
-		NetworkInfo: &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL},
-		LbType:      negtypes.L4InternalLB,
-		NegMetrics:  testContext.NegMetrics,
+		NodeLister:               listers.NewNodeLister(nodeLister),
+		ZoneGetter:               zoneGetter,
+		SvcId:                    fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace),
+		NetworkInfo:              &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL},
+		LbType:                   negtypes.L4InternalLB,
+		NegMetrics:               testContext.NegMetrics,
+		IncludeDrainNodesL4Local: false,
 	}, klog.TODO())
 	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
 		NodeLister:  listers.NewNodeLister(nodeLister),

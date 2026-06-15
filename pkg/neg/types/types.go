@@ -296,10 +296,24 @@ type NegSyncerKey struct {
 
 	// L4LBType indicates which L4 LB this syncer is running for. For non L4 GCE_GM_IP NEGs this should be empty.
 	L4LBType L4LBType
+
+	// IncludeDrainNodesL4Local mirrors the controller-level flag of the same
+	// name. It is placed on the key (rather than read from flags.F at the call
+	// site) so syncer identity, equality, and the syncerManager.syncerMap keying
+	// reflect the configuration the syncer was created under. In practice the
+	// value is identical for every syncer because it is a controller-wide flag,
+	// but keeping it here keeps the controller and syncer code free of direct
+	// flag access — see the GetAPIVersion comment below for the trade-off we
+	// chose not to take.
+	IncludeDrainNodesL4Local bool
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	s := fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	if key.IncludeDrainNodesL4Local {
+		s += "-includeDrainNodesL4Local=true"
+	}
+	return s
 }
 
 // GetAPIVersion returns the compute API version to be used in order
@@ -384,15 +398,24 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 }
 
 // NodeFilterForEndpointCalculatorMode returns the filter type to select candidate nodes, given the endpoints calculator mode.
-func NodeFilterForEndpointCalculatorMode(mode EndpointsCalculatorMode) zonegetter.Filter {
-	// VM_IP NEGs can include unready and upgrading nodes.
-	if mode == L4ClusterMode || mode == L4LocalMode {
-		return NodeFilterForNetworkEndpointType(VmIpEndpointType)
+//
+// For L4 ETP=Local with includeDrainNodesL4Local enabled, returns a filter
+// that also tolerates GKE drain nodes. Because LocalL4EndpointsCalculator
+// iterates per pod, the resulting subset still drops the node once its pods
+// are gone, only the node's "drain" label no longer evicts it preemptively.
+// Unready-node behavior is unchanged.
+func NodeFilterForEndpointCalculatorMode(mode EndpointsCalculatorMode, includeDrainNodesL4Local bool) zonegetter.Filter {
+	if mode == L4LocalMode && includeDrainNodesL4Local {
+		return zonegetter.CandidateAndDrainingNodesFilter
 	}
-	return NodeFilterForNetworkEndpointType(VmIpPortEndpointType)
+	if mode == L4ClusterMode || mode == L4LocalMode {
+		return zonegetter.CandidateAndUnreadyNodesFilter
+	}
+	return zonegetter.CandidateNodesFilter
 }
 
-// NodeFilterForNetworkEndpointType returns the filter type to select candidate nodes, given the NEG type.
+// NodeFilterForNetworkEndpointType returns the filter type to select candidate
+// nodes, given the NEG endpoint type.
 func NodeFilterForNetworkEndpointType(negType NetworkEndpointType) zonegetter.Filter {
 	if negType == VmIpEndpointType {
 		return zonegetter.CandidateAndUnreadyNodesFilter
