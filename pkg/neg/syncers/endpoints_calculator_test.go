@@ -163,7 +163,14 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, metrics.NewNegMetrics())
+			ec := NewLocalL4EndpointsCalculator(LocalL4EndpointsCalculatorParams{
+				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:  zoneGetter,
+				SvcId:       svcKey,
+				NetworkInfo: &tc.network,
+				LbType:      negtypes.L4InternalLB,
+				NegMetrics:  metrics.NewNegMetrics(),
+			}, klog.TODO())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -324,7 +331,14 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &tc.network, negtypes.L4InternalLB, metrics.NewNegMetrics())
+			ec := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:  zoneGetter,
+				SvcId:       svcKey,
+				NetworkInfo: &tc.network,
+				LbType:      negtypes.L4InternalLB,
+				NegMetrics:  metrics.NewNegMetrics(),
+			}, klog.TODO())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
@@ -595,7 +609,14 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				}
 			}
 
-			ec := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeInformer.GetIndexer()), zoneGetter, svcKey, klog.TODO(), &defaultNetwork, lbType, metrics.NewNegMetrics())
+			ec := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:  zoneGetter,
+				SvcId:       svcKey,
+				NetworkInfo: &defaultNetwork,
+				LbType:      lbType,
+				NegMetrics:  metrics.NewNegMetrics(),
+			}, klog.TODO())
 
 			// Act
 			res, _, _, err := ec.CalculateEndpoints(eds, currentMap)
@@ -941,11 +962,14 @@ func TestEndpointsSplitAcrossZonesILB(t *testing.T) {
 
 			// We use ILB so that it doesn't trigger code that linearly calculates number of NEGs needed
 			// based on actual number of Pods.
-			c := NewClusterL4EndpointsCalculator(
-				listers.NewNodeLister(nodeInformer.GetIndexer()),
-				zoneGetter, "svc", klog.TODO(), &defaultNetwork, negtypes.L4InternalLB,
-				metrics.NewNegMetrics(),
-			)
+			c := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:  zoneGetter,
+				SvcId:       "svc",
+				NetworkInfo: &defaultNetwork,
+				LbType:      negtypes.L4InternalLB,
+				NegMetrics:  metrics.NewNegMetrics(),
+			}, klog.TODO())
 
 			var endpointsMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 			for _, stage := range tc.stages {
@@ -1103,11 +1127,14 @@ func TestEndpointsMigrationFrom25To24ForILBEtpCluster(t *testing.T) {
 			defaultNetwork := network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL}
 			// We use ILB so that it doesn't trigger code that linearly calculates number of NEGs needed
 			// based on actual number of Pods.
-			c := NewClusterL4EndpointsCalculator(
-				listers.NewNodeLister(nodeInformer.GetIndexer()),
-				zoneGetter, "svc", klog.TODO(), &defaultNetwork, negtypes.L4InternalLB,
-				metrics.NewNegMetrics(),
-			)
+			c := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+				NodeLister:  listers.NewNodeLister(nodeInformer.GetIndexer()),
+				ZoneGetter:  zoneGetter,
+				SvcId:       "svc",
+				NetworkInfo: &defaultNetwork,
+				LbType:      negtypes.L4InternalLB,
+				NegMetrics:  metrics.NewNegMetrics(),
+			}, klog.TODO())
 
 			// Set up nodes
 			for zone, nodes := range tc.nodes {
@@ -1223,8 +1250,22 @@ func TestValidateEndpoints(t *testing.T) {
 	}
 	L7EndpointsCalculatorMSC := NewL7EndpointsCalculator(zoneGetterMSC, podLister, nodeLister, serviceLister, svcPort, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), testContext.NegMetrics)
 	L7EndpointsCalculatorMSC.enableMultiSubnetCluster = true
-	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
-	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(listers.NewNodeLister(nodeLister), zoneGetter, fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace), klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics)
+	L4LocalEndpointCalculator := NewLocalL4EndpointsCalculator(LocalL4EndpointsCalculatorParams{
+		NodeLister:  listers.NewNodeLister(nodeLister),
+		ZoneGetter:  zoneGetter,
+		SvcId:       fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace),
+		NetworkInfo: &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL},
+		LbType:      negtypes.L4InternalLB,
+		NegMetrics:  testContext.NegMetrics,
+	}, klog.TODO())
+	L4ClusterEndpointCalculator := NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
+		NodeLister:  listers.NewNodeLister(nodeLister),
+		ZoneGetter:  zoneGetter,
+		SvcId:       fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace),
+		NetworkInfo: &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL},
+		LbType:      negtypes.L4InternalLB,
+		NegMetrics:  testContext.NegMetrics,
+	}, klog.TODO())
 
 	l7TestEPS := []*discovery.EndpointSlice{
 		{

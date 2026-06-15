@@ -51,20 +51,30 @@ type LocalL4EndpointsCalculator struct {
 	negMetrics      *metrics.NegMetrics
 }
 
-func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType, negMetrics *metrics.NegMetrics) *LocalL4EndpointsCalculator {
+// LocalL4EndpointsCalculatorParams contains the parameters for the LocalL4EndpointsCalculator
+type LocalL4EndpointsCalculatorParams struct {
+	NodeLister  listers.NodeLister
+	ZoneGetter  *zonegetter.ZoneGetter
+	SvcId       string
+	NetworkInfo *network.NetworkInfo
+	LbType      types.L4LBType
+	NegMetrics  *metrics.NegMetrics
+}
+
+func NewLocalL4EndpointsCalculator(params LocalL4EndpointsCalculatorParams, logger klog.Logger) *LocalL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeLocal
-	if lbType == types.L4ExternalLB {
+	if params.LbType == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBLocal
 	}
 
 	return &LocalL4EndpointsCalculator{
-		nodeLister:      nodeLister,
-		zoneGetter:      zoneGetter,
+		nodeLister:      params.NodeLister,
+		zoneGetter:      params.ZoneGetter,
 		subsetSizeLimit: subsetSize,
-		svcId:           svcId,
+		svcId:           params.SvcId,
 		logger:          logger.WithName("LocalL4EndpointsCalculator"),
-		networkInfo:     networkInfo,
-		negMetrics:      negMetrics,
+		networkInfo:     params.NetworkInfo,
+		negMetrics:      params.NegMetrics,
 	}
 }
 
@@ -168,19 +178,29 @@ type ClusterL4EndpointsCalculator struct {
 	negMetrics *metrics.NegMetrics
 }
 
-func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype types.L4LBType, negMetrics *metrics.NegMetrics) *ClusterL4EndpointsCalculator {
+// ClusterL4EndpointsCalculatorParams contains the parameters for the ClusterL4EndpointsCalculator.
+type ClusterL4EndpointsCalculatorParams struct {
+	NodeLister  listers.NodeLister
+	ZoneGetter  *zonegetter.ZoneGetter
+	SvcId       string
+	NetworkInfo *network.NetworkInfo
+	LbType      types.L4LBType
+	NegMetrics  *metrics.NegMetrics
+}
+
+func NewClusterL4EndpointsCalculator(params ClusterL4EndpointsCalculatorParams, logger klog.Logger) *ClusterL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeDefault
-	if l4LBtype == types.L4ExternalLB {
+	if params.LbType == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBCluster
 	}
 	return &ClusterL4EndpointsCalculator{
-		zoneGetter:      zoneGetter,
+		zoneGetter:      params.ZoneGetter,
 		subsetSizeLimit: subsetSize,
-		svcId:           svcId,
-		lbType:          l4LBtype,
+		svcId:           params.SvcId,
+		lbType:          params.LbType,
 		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
-		networkInfo:     networkInfo,
-		negMetrics:      negMetrics,
+		networkInfo:     params.NetworkInfo,
+		negMetrics:      params.NegMetrics,
 	}
 }
 
