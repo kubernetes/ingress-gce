@@ -116,11 +116,54 @@ type Controller struct {
 	// enableNEGsForIngress indicates whether the NEG controller will create NEGs for Ingress services
 	enableNEGsForIngress bool
 
+	// includeDrainNodesL4Local indicates whether to include draining nodes for NEGs with L4Local mode
+	includeDrainNodesL4Local bool
+
+	// nodeMembershipFilters is the deduplicated set of zone filters that decide
+	// whether a node belongs in a NEG. The node update handler treats a node
+	// change as relevant when the node's inclusion under any of these filters
+	// flips. Precomputed at controller initialization so the handler has a single
+	// source of truth and does not rebuild the set on every event.
+	nodeMembershipFilters []zonegetter.Filter
+
 	stopCh <-chan struct{}
 	logger klog.Logger
 
 	// negMetrics is used to collect metrics for NEG
 	negMetrics *metrics.NegMetrics
+}
+
+// buildNodeMembershipFilters returns the deduplicated set of node filters that
+// the NEG syncers use to decide whether a node belongs in a NEG. A node update
+// is only worth a resync if it changes the node's inclusion under one of these.
+// Dedup matters because several modes resolve to the same filter (L4 Cluster
+// and VM_IP_PORT both use CandidateNodesFilter; with includeDrainNodesL4Local
+// the L4 Local filter may coincide too), so we never evaluate a filter twice.
+func buildNodeMembershipFilters(includeDrainNodesL4Local bool) []zonegetter.Filter {
+	set := map[zonegetter.Filter]struct{}{
+		negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode, includeDrainNodesL4Local): {},
+		negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4ClusterMode, false):                  {},
+		zonegetter.CandidateNodesFilter: {},
+	}
+	filters := make([]zonegetter.Filter, 0, len(set))
+	for f := range set {
+		filters = append(filters, f)
+	}
+	return filters
+}
+
+// nodeUpdateRequiresResync reports whether the change from oldNode to
+// currentNode could alter NEG membership and therefore needs a resync. The
+// change is relevant when the node's inclusion under any membership filter
+// flips.
+func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) bool {
+	for _, filter := range c.nodeMembershipFilters {
+		if c.zoneGetter.IsNodeSelectedByFilter(oldNode, filter, c.logger) !=
+			c.zoneGetter.IsNodeSelectedByFilter(currentNode, filter, c.logger) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewController returns a network endpoint group controller.
@@ -157,6 +200,7 @@ func NewController(
 	runL4ForNetLB bool,
 	readOnlyMode bool,
 	enableNEGsForIngress bool,
+	includeDrainNodesL4Local bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 	negMetrics *metrics.NegMetrics,
@@ -206,6 +250,7 @@ func NewController(
 		lpConfig,
 		logger,
 		negMetrics,
+		includeDrainNodesL4Local,
 	)
 
 	var reflector readiness.Reflector
@@ -262,6 +307,8 @@ func NewController(
 		runL4ForNetLB:                  runL4ForNetLB,
 		readOnlyMode:                   readOnlyMode,
 		enableNEGsForIngress:           enableNEGsForIngress,
+		includeDrainNodesL4Local:       includeDrainNodesL4Local,
+		nodeMembershipFilters:          buildNodeMembershipFilters(includeDrainNodesL4Local),
 		stopCh:                         stopCh,
 		logger:                         logger,
 		negMetrics:                     negMetrics,
@@ -342,12 +389,8 @@ func NewController(
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
 
-			vmIpCandidateNodeCheck := zonegetter.CandidateAndUnreadyNodesFilter
-			vmIpPortCandidateNodeCheck := zonegetter.CandidateNodesFilter
-
-			if zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpCandidateNodeCheck, logger) ||
-				zoneGetter.IsNodeSelectedByFilter(oldNode, vmIpPortCandidateNodeCheck, logger) != zoneGetter.IsNodeSelectedByFilter(currentNode, vmIpPortCandidateNodeCheck, logger) {
-				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
+			if negController.nodeUpdateRequiresResync(oldNode, currentNode) {
+				logger.Info("Node membership-relevant change, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
 			// Trigger a sync when node provider ID changed.
@@ -824,7 +867,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()), c.logger)
+	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode(), c.includeDrainNodesL4Local), c.logger)
 	if err != nil {
 		return err
 	}
