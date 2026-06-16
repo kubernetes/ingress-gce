@@ -752,16 +752,24 @@ func TestEndpointsCalculatorMode(t *testing.T) {
 func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		desc             string
-		epCalculatorMode EndpointsCalculatorMode
-		expectZones      []string
+		desc                     string
+		epCalculatorMode         EndpointsCalculatorMode
+		includeDrainNodesL4Local bool
+		expectZones              []string
 	}{
-		{"L4 Local mode, includes unready, excludes upgrading", L4LocalMode, []string{TestZone1, TestZone2, TestZone3}},
-		{"L4 Cluster mode, includes unready, excludes upgrading", L4ClusterMode, []string{TestZone1, TestZone2, TestZone3}},
-		{"L7 mode, includes upgrading, excludes unready", L7Mode, []string{TestZone1, TestZone2, TestZone4}},
+		{"L4 Local mode, includes unready, excludes upgrading", L4LocalMode, false, []string{TestZone1, TestZone2, TestZone3}},
+		{"L4 Cluster mode, includes unready, excludes upgrading", L4ClusterMode, false, []string{TestZone1, TestZone2, TestZone3}},
+		{"L7 mode, includes upgrading, excludes unready", L7Mode, false, []string{TestZone1, TestZone2, TestZone4}},
+		// IncludeDrainNodesL4Local is additive: L4 Local now includes both unready
+		// AND upgrading nodes, so every populated zone is selected.
+		{"L4 Local mode with includeDrainNodesL4Local=true, includes unready and upgrading", L4LocalMode, true, []string{TestZone1, TestZone2, TestZone3, TestZone4}},
+		// L4 Cluster mode is unaffected by the flag.
+		{"L4 Cluster mode with includeDrainNodesL4Local=true, includes unready, excludes upgrading", L4ClusterMode, true, []string{TestZone1, TestZone2, TestZone3}},
+		// L7 mode is unaffected by the flag.
+		{"L7 mode with includeDrainNodesL4Local=true, includes upgrading, excludes unready", L7Mode, true, []string{TestZone1, TestZone2, TestZone4}},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode)
+			predicate := NodeFilterForEndpointCalculatorMode(tc.epCalculatorMode, tc.includeDrainNodesL4Local)
 			nodeInformer := zonegetter.FakeNodeInformer()
 			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)

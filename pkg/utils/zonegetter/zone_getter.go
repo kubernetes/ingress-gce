@@ -55,8 +55,17 @@ const (
 	AllNodesFilter                 = Filter("AllNodesFilter")
 	CandidateNodesFilter           = Filter("CandidateNodesFilter")
 	CandidateAndUnreadyNodesFilter = Filter("CandidateAndUnreadyNodesFilter")
-	EmptyZone                      = ""
-	EmptySubnet                    = ""
+	// CandidateAndDrainingNodesFilter is a strict superset of
+	// CandidateAndUnreadyNodesFilter: it includes unready nodes AND nodes
+	// carrying the GKE drain label (operation.gke.io/type=drain). Intended for
+	// L4 ETP=Local NEGs: the per-pod iteration in LocalL4EndpointsCalculator
+	// already removes a node from the subset once its pods are gone, so we
+	// want the filter to keep draining nodes that still host backing pods.
+	// All other exclusions (ToBeDeletedTaint, exclude-balancer label, subnet
+	// membership) still apply unconditionally.
+	CandidateAndDrainingNodesFilter = Filter("CandidateAndDrainingNodesFilter")
+	EmptyZone                       = ""
+	EmptySubnet                     = ""
 )
 
 var ErrProviderIDNotFound = errors.New("providerID not found")
@@ -318,6 +327,8 @@ func (z *ZoneGetter) IsNodeSelectedByFilter(node *api_v1.Node, filter Filter, fi
 		return z.candidateNodesPredicate(node, nodeAndFilterLogger)
 	case CandidateAndUnreadyNodesFilter:
 		return z.candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(node, nodeAndFilterLogger)
+	case CandidateAndDrainingNodesFilter:
+		return z.candidateNodesPredicateIncludeUnreadyAndDrainingNodes(node, nodeAndFilterLogger)
 	default:
 		return false
 	}
@@ -359,6 +370,15 @@ func (z *ZoneGetter) candidateNodesPredicate(node *api_v1.Node, nodeAndFilterLog
 // TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
 func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes(node *api_v1.Node, nodeAndFilterLogger klog.Logger) bool {
 	return z.nodePredicateInternal(node, true, true, nodeAndFilterLogger)
+}
+
+// candidateNodesPredicateIncludeUnreadyAndDrainingNodes is like
+// candidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes but does not
+// exclude nodes carrying the GKE drain label. All other exclusions
+// (ToBeDeleted taint, master/exclude-balancer labels, default-subnet check,
+// missing status conditions) still apply.
+func (z *ZoneGetter) candidateNodesPredicateIncludeUnreadyAndDrainingNodes(node *api_v1.Node, nodeAndFilterLogger klog.Logger) bool {
+	return z.nodePredicateInternal(node, true, false, nodeAndFilterLogger)
 }
 
 func (z *ZoneGetter) nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool, nodeAndFilterLogger klog.Logger) bool {
