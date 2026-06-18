@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -30,7 +31,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 		shared       bool
 		existingRule *compute.Firewall
 		want         *compute.Firewall
-		expectUpdate utils.ResourceSyncStatus
+		expectUpdate l4utils.ResourceSyncStatus
 	}{
 		{
 			desc:   "default ensure",
@@ -71,7 +72,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				},
 				Priority: 1000,
 			},
-			expectUpdate: utils.ResourceUpdate,
+			expectUpdate: l4utils.ResourceUpdate,
 		},
 		{
 			desc:   "default setup no udpate",
@@ -128,7 +129,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				},
 				Priority: 1000,
 			},
-			expectUpdate: utils.ResourceResync,
+			expectUpdate: l4utils.ResourceResync,
 		},
 		{
 			desc:   "non default network",
@@ -169,7 +170,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				},
 				Priority: 1000,
 			},
-			expectUpdate: utils.ResourceUpdate,
+			expectUpdate: l4utils.ResourceUpdate,
 		},
 		{
 			desc:   "non default priority",
@@ -189,7 +190,7 @@ func TestEnsureL4FirewallRule(t *testing.T) {
 				Description: firewallDescription,
 				Priority:    1234,
 			},
-			expectUpdate: utils.ResourceUpdate,
+			expectUpdate: l4utils.ResourceUpdate,
 		},
 	}
 	for _, tc := range tests {

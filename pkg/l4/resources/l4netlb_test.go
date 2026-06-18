@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -1666,7 +1667,7 @@ func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4
 		t.Fatalf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthCheck, err)
 	}
 
-	if utils.NeedsIPv4(l4NetLB.Service) {
+	if l4utils.NeedsIPv4(l4NetLB.Service) {
 		err = verifyNetLBIPv4ForwardingRule(l4NetLB, backendService.SelfLink)
 		if err != nil {
 			t.Errorf("verifyNetLBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
@@ -1687,7 +1688,7 @@ func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4
 			t.Errorf("verifyNetLBIPv4ResourcesDeletedOnSync(_) returned error %v, want nil", err)
 		}
 	}
-	if utils.NeedsIPv6(l4NetLB.Service) {
+	if l4utils.NeedsIPv6(l4NetLB.Service) {
 		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink, expectedIPv6Subnet)
 		if err != nil {
 			t.Errorf("verifyNetLBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
@@ -1769,7 +1770,7 @@ func verifyNetLBIPv4NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
+	sourceRanges, err := l4utils.IPv4ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
 	}
@@ -1784,7 +1785,7 @@ func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := utils.IPv6ServiceSourceRanges(l4netlb.Service)
+	sourceRanges, err := l4utils.IPv6ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
 	}
@@ -1973,7 +1974,7 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 	}
 
 	isSharedHCFW := isSharedHC && l4netlb.networkInfo.IsDefault
-	if utils.NeedsIPv4(l4netlb.Service) {
+	if l4utils.NeedsIPv4(l4netlb.Service) {
 		hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHCFW)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
@@ -1986,7 +1987,7 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
 		}
 	}
-	if utils.NeedsIPv6(l4netlb.Service) {
+	if l4utils.NeedsIPv6(l4netlb.Service) {
 		ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHCFW)
 		ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
 

@@ -47,6 +47,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -424,7 +425,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	l4.network = *svcNetwork
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
-	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+	if l4.enableDualStack && l4utils.NeedsIPv6(l4.Service) {
 		err := l4.serviceSubnetHasInternalIPv6Range()
 		if err != nil {
 			result.Error = err
@@ -458,7 +459,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var existingIPv4FR *composite.ForwardingRule
 	var ipv4AddressToUse string
 	var ipv4AddressName string
-	if !l4.enableDualStack || utils.NeedsIPv4(l4.Service) {
+	if !l4.enableDualStack || l4utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
 		ipv4AddressToUse, ipv4AddressName, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
 		if err != nil {
@@ -491,7 +492,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var existingIPv6FR *composite.ForwardingRule
 	var ipv6AddrToUse string
 	var ipv6AddressName string
-	if l4.enableDualStack && utils.NeedsIPv6(l4.Service) {
+	if l4.enableDualStack && l4utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
 		ipv6AddrToUse, ipv6AddressName, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
@@ -645,7 +646,7 @@ func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) s
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
 
-	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, utils.NeedsIPv4(l4.Service), utils.NeedsIPv6(l4.Service), l4.network, l4.svcLogger)
+	hcResult := l4.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames, l4utils.NeedsIPv4(l4.Service), l4utils.NeedsIPv6(l4.Service), l4.network, l4.svcLogger)
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -684,12 +685,12 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 }
 
 func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4AddressToUse, ipv6AddressToUse string) {
-	if utils.NeedsIPv4(l4.Service) {
+	if l4utils.NeedsIPv4(l4.Service) {
 		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4AddressToUse)
 	} else {
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
-	if utils.NeedsIPv6(l4.Service) {
+	if l4utils.NeedsIPv6(l4.Service) {
 		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
@@ -758,7 +759,7 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 	}()
 
 	// ensure firewalls
-	ipv4SourceRanges, err := utils.IPv4ServiceSourceRanges(l4.Service)
+	ipv4SourceRanges, err := l4utils.IPv4ServiceSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return

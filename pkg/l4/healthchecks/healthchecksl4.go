@@ -32,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -140,7 +141,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 		return &EnsureHealthCheckResult{
 			GceResourceInError: annotations.HealthcheckResource,
 			Err:                err,
-			WasUpdated:         utils.ResourceResync,
+			WasUpdated:         l4utils.ResourceResync,
 		}
 	}
 
@@ -168,7 +169,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 	return hcResult
 }
 
-func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType, hcLogger klog.Logger) (string, utils.ResourceSyncStatus, error) {
+func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType, hcLogger klog.Logger) (string, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 	hcLogger.V(2).Info("Ensuring healthcheck for service", "shared", shared, "path", path, "port", port, "scope", scope, "l4Type", l4Type.ToString())
 	defer func() {
@@ -177,7 +178,7 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 
 	hc, err := l4hc.hcProvider.Get(hcName, scope)
 	if err != nil {
-		return "", utils.ResourceResync, err
+		return "", l4utils.ResourceResync, err
 	}
 
 	var region string
@@ -191,27 +192,27 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 		hcLogger.V(2).Info("Creating healthcheck for service", "shared", shared, "expectedHealthcheck", expectedHC)
 		err = l4hc.hcProvider.Create(expectedHC)
 		if err != nil {
-			return "", utils.ResourceResync, err
+			return "", l4utils.ResourceResync, err
 		}
 		selfLink, err := l4hc.hcProvider.SelfLink(expectedHC.Name, scope)
 		if err != nil {
-			return "", utils.ResourceResync, err
+			return "", l4utils.ResourceResync, err
 		}
-		return selfLink, utils.ResourceUpdate, nil
+		return selfLink, l4utils.ResourceUpdate, nil
 	}
 	selfLink := hc.SelfLink
 	if !needToUpdateHealthChecks(hc, expectedHC) {
 		// nothing to do
 		hcLogger.V(3).Info("Healthcheck already exists and does not require update")
-		return selfLink, utils.ResourceResync, nil
+		return selfLink, l4utils.ResourceResync, nil
 	}
 	mergeHealthChecks(hc, expectedHC)
 	hcLogger.V(2).Info("Updating healthcheck for service", "updatedHealthcheck", expectedHC)
 	err = l4hc.hcProvider.Update(expectedHC.Name, scope, expectedHC)
 	if err != nil {
-		return selfLink, utils.ResourceUpdate, err
+		return selfLink, l4utils.ResourceUpdate, err
 	}
-	return selfLink, utils.ResourceUpdate, err
+	return selfLink, l4utils.ResourceUpdate, err
 }
 
 // ensureIPv4Firewall rule for `svc`.
@@ -243,7 +244,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 		Priority:     l4hc.firewallPriority(),
 	}
 	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
-	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
+	hcResult.WasFirewallUpdated = wasUpdated == l4utils.ResourceUpdate || hcResult.WasFirewallUpdated == l4utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv4 Firewall for health check for service")
 		hcResult.GceResourceInError = annotations.FirewallForHealthcheckResource
@@ -277,7 +278,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 		Priority:     l4hc.firewallPriority(),
 	}
 	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
-	hcResult.WasFirewallUpdated = wasUpdated == utils.ResourceUpdate || hcResult.WasFirewallUpdated == utils.ResourceUpdate
+	hcResult.WasFirewallUpdated = wasUpdated == l4utils.ResourceUpdate || hcResult.WasFirewallUpdated == l4utils.ResourceUpdate
 	if err != nil {
 		fwLogger.Error(err, "Error ensuring IPv6 Firewall for health check for service")
 		hcResult.GceResourceInError = annotations.FirewallForHealthcheckIPv6Resource

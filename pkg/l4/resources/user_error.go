@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"k8s.io/ingress-gce/pkg/firewalls"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -17,8 +18,8 @@ func IsUserError(err error) bool {
 		utils.IsIPOutOfRangeError(err) ||
 		utils.IsConflictingPortsConfigurationError(err) ||
 		utils.IsInvalidSubnetConfigurationError(err) ||
-		utils.IsInvalidLoadBalancerSourceRangesSpecError(err) ||
-		utils.IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
+		l4utils.IsInvalidLoadBalancerSourceRangesSpecError(err) ||
+		l4utils.IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
 		utils.IsUnsupportedNetworkTierError(err) ||
 		utils.IsConstraintViolationError(err) ||
 		errors.As(err, &firewallErr) ||

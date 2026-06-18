@@ -46,6 +46,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -282,7 +283,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 	}
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
-	if l4netlb.enableDualStack && utils.NeedsIPv6(svc) {
+	if l4netlb.enableDualStack && l4utils.NeedsIPv6(svc) {
 		err := l4netlb.serviceSubnetHasExternalIPv6Range()
 		if err != nil {
 			result.Error = err
@@ -346,7 +347,7 @@ func (l4netlb *L4NetLB) provideHealthChecks(nodeNames []string, result *L4NetLBS
 func (l4netlb *L4NetLB) provideDualStackHealthChecks(nodeNames []string, result *L4NetLBSyncResult) string {
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 
-	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, utils.NeedsIPv4(l4netlb.Service), utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
+	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithDualStackFirewalls(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames, l4utils.NeedsIPv4(l4netlb.Service), l4utils.NeedsIPv6(l4netlb.Service), l4netlb.networkInfo, l4netlb.svcLogger)
 	result.GCEResourceUpdate.SetHealthCheck(hcResult.WasUpdated)
 	result.GCEResourceUpdate.SetFirewallForHealthCheck(hcResult.WasFirewallUpdated)
 	if hcResult.Err != nil {
@@ -466,12 +467,12 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 }
 
 func (l4netlb *L4NetLB) ensureDualStackResources(result *L4NetLBSyncResult, nodeNames []string, bsLink string) {
-	if utils.NeedsIPv4(l4netlb.Service) {
+	if l4utils.NeedsIPv4(l4netlb.Service) {
 		l4netlb.ensureIPv4Resources(result, nodeNames, bsLink)
 	} else {
 		l4netlb.deleteIPv4ResourcesOnSync(result)
 	}
-	if utils.NeedsIPv6(l4netlb.Service) {
+	if l4utils.NeedsIPv6(l4netlb.Service) {
 		l4netlb.ensureIPv6Resources(result, nodeNames, bsLink)
 	} else {
 		l4netlb.deleteIPv6ResourcesOnSync(result)
@@ -587,7 +588,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		fwLogger.V(2).Info("Finished ensuring nodes firewall for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
+	sourceRanges, err := l4utils.IPv4ServiceSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
 		return
@@ -604,7 +605,7 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		Network:           l4netlb.networkInfo,
 		Priority:          l4netlb.allowFirewallPriority(),
 	}
-	var firewallForNodesUpdateStatus utils.ResourceSyncStatus
+	var firewallForNodesUpdateStatus l4utils.ResourceSyncStatus
 	firewallForNodesUpdateStatus, err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
 	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
 	if err != nil {

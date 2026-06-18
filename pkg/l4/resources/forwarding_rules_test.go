@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 func TestL4CreateExternalForwardingRuleUserErrors(t *testing.T) {
@@ -237,7 +238,7 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 		namedAddress *compute.Address
 		existingRule *composite.ForwardingRule
 		wantRule     *composite.ForwardingRule
-		wantUpdate   utils.ResourceSyncStatus
+		wantUpdate   l4utils.ResourceSyncStatus
 		wantErrMsg   string
 	}{
 		{
@@ -272,7 +273,7 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.XLB),
 			},
-			wantUpdate: utils.ResourceResync,
+			wantUpdate: l4utils.ResourceResync,
 		},
 		{
 			desc: "update ports",
@@ -310,7 +311,7 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.XLB),
 			},
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 	}
 
@@ -444,7 +445,7 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 
 	forwardingRule, syncStatus, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, nil, subnetworkURL, ipToUse)
 	require.NoError(t, err)
-	require.Equal(t, utils.ResourceUpdate, syncStatus)
+	require.Equal(t, l4utils.ResourceUpdate, syncStatus)
 
 	wantForwardingRule := &composite.ForwardingRule{
 		Name:                l4namer.L4ForwardingRule(serviceNamespace, serviceName, "tcp"),
@@ -489,7 +490,7 @@ func TestL4EnsureInternalForwardingRuleUpdate(t *testing.T) {
 		namedAddress *compute.Address
 		existingRule *composite.ForwardingRule
 		wantRule     *composite.ForwardingRule
-		wantUpdate   utils.ResourceSyncStatus
+		wantUpdate   l4utils.ResourceSyncStatus
 		wantErrMsg   string
 	}{
 		{
@@ -528,7 +529,7 @@ func TestL4EnsureInternalForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
 			},
-			wantUpdate: utils.ResourceResync,
+			wantUpdate: l4utils.ResourceResync,
 		},
 		{
 			desc: "update ports",
@@ -570,7 +571,7 @@ func TestL4EnsureInternalForwardingRuleUpdate(t *testing.T) {
 				BackendService:      bsLink,
 				Description:         l4ServiceDescription(t, serviceName, serviceNamespace, "", utils.ILB),
 			},
-			wantUpdate: utils.ResourceUpdate,
+			wantUpdate: l4utils.ResourceUpdate,
 		},
 	}
 

@@ -51,6 +51,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -2865,7 +2866,7 @@ func assertDualStackILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames
 		t.Errorf("getAndVerifyBackendService(_, %v) returned error %v, want nil", healthCheck, err)
 	}
 
-	if utils.NeedsIPv4(l4.Service) {
+	if l4utils.NeedsIPv4(l4.Service) {
 		err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink, expectedSubnet)
 		if err != nil {
 			t.Errorf("verifyILBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
@@ -2886,7 +2887,7 @@ func assertDualStackILBResourcesWithCustomSubnet(t *testing.T, l4 *L4, nodeNames
 			t.Errorf("verifyILBIPv4ResourcesDeletedOnSync(_) returned error %v, want nil", err)
 		}
 	}
-	if utils.NeedsIPv6(l4.Service) {
+	if l4utils.NeedsIPv6(l4.Service) {
 		err = verifyILBIPv6ForwardingRule(l4, backendService.SelfLink, expectedSubnet)
 		if err != nil {
 			t.Errorf("verifyILBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
@@ -2928,7 +2929,7 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 		annotations.HealthcheckKey:    hcName,
 	}
 
-	if utils.NeedsIPv4(l4.Service) {
+	if l4utils.NeedsIPv4(l4.Service) {
 		hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, sharedHCFW)
 
 		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
@@ -2941,7 +2942,7 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
 		}
 	}
-	if utils.NeedsIPv6(l4.Service) {
+	if l4utils.NeedsIPv6(l4.Service) {
 		ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, sharedHCFW)
 		ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
 
@@ -3068,9 +3069,9 @@ func verifyILBIPv4NodesFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4.Service)
+	sourceRanges, err := l4utils.IPv4ServiceSourceRanges(l4.Service)
 	if err != nil {
-		return fmt.Errorf("utils.IPv4ServiceSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
+		return fmt.Errorf("l4utils.IPv4ServiceSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
 	}
 	return verifyFirewall(l4.cloud, nodeNames, fwName, fwDesc, sourceRanges, l4.network.NetworkURL)
 }
@@ -3083,9 +3084,9 @@ func verifyILBIPv6NodesFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	sourceRanges, err := utils.IPv6ServiceSourceRanges(l4.Service)
+	sourceRanges, err := l4utils.IPv6ServiceSourceRanges(l4.Service)
 	if err != nil {
-		return fmt.Errorf("utils.IPv6ServiceSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
+		return fmt.Errorf("l4utils.IPv6ServiceSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
 	}
 	return verifyFirewall(l4.cloud, nodeNames, ipv6FirewallName, fwDesc, sourceRanges, l4.network.NetworkURL)
 }

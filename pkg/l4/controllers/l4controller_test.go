@@ -29,7 +29,6 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -47,6 +46,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -1122,10 +1122,10 @@ func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
 
 func calculateExpectedAnnotationsKeys(svc *api_v1.Service) []string {
 	expectedAnnotations := ilbCommonAnnotationKeys
-	if utils.NeedsIPv4(svc) {
+	if l4utils.NeedsIPv4(svc) {
 		expectedAnnotations = append(expectedAnnotations, ilbIPv4AnnotationKeys...)
 	}
-	if utils.NeedsIPv6(svc) {
+	if l4utils.NeedsIPv6(svc) {
 		expectedAnnotations = append(expectedAnnotations, ilbIPv6AnnotationKeys...)
 	}
 	return expectedAnnotations

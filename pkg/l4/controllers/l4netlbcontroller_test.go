@@ -62,6 +62,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -362,10 +363,10 @@ func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
 
 func calculateNetLBExpectedAnnotationsKeys(svc *v1.Service) []string {
 	expectedAnnotations := netLBCommonAnnotationKeys
-	if utils.NeedsIPv4(svc) {
+	if l4utils.NeedsIPv4(svc) {
 		expectedAnnotations = append(expectedAnnotations, netLBIPv4AnnotationKeys...)
 	}
-	if utils.NeedsIPv6(svc) {
+	if l4utils.NeedsIPv6(svc) {
 		expectedAnnotations = append(expectedAnnotations, netLBIPv6AnnotationKeys...)
 	}
 	return expectedAnnotations
