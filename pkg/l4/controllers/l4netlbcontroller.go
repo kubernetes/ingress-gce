@@ -42,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/backends"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -988,5 +989,5 @@ func (lc *L4NetLBController) publishSyncMetrics(result *resources.L4NetLBSyncRes
 	backendType := result.MetricsState.BackendType
 	isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
 
-	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType, isLoggingControlEnabled)
+	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, l4utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType, isLoggingControlEnabled)
 }

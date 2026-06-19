@@ -23,9 +23,10 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -240,7 +241,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 
 	m.frLogger.V(2).Info("Unable to reserve address (could be expected). Checking for conflict", "err", reserveErr)
 
-	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
+	if l4utils.IsNetworkTierMismatchGCEError(reserveErr) {
 		receivedNetworkTier := cloud.NetworkTierPremium
 		if receivedNetworkTier == m.networkTier {
 			// We don't have information of current ephemeral IP address Network Tier since
@@ -249,7 +250,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 			receivedNetworkTier = cloud.NetworkTierStandard
 		}
 		resource := fmt.Sprintf("Reserved static IP (%v)", m.name)
-		networkTierError := utils.NewNetworkTierErr(resource, string(m.networkTier), string(receivedNetworkTier))
+		networkTierError := l4utils.NewNetworkTierErr(resource, string(m.networkTier), string(receivedNetworkTier))
 		return "", IPAddrUndefined, networkTierError
 	}
 
@@ -274,7 +275,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	addr, err := m.svc.GetRegionAddressByIP(m.region, m.targetIP)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			return "", IPAddrUndefined, utils.NewIPConfigurationError(m.targetIP, "address not found. Check if the IP is valid and is reserved in your VPC.")
+			return "", IPAddrUndefined, l4utils.NewIPConfigurationError(m.targetIP, "address not found. Check if the IP is valid and is reserved in your VPC.")
 		}
 		return "", IPAddrUndefined, fmt.Errorf("failed to get address by IP %q after reservation attempt, err: %q, reservation err: %q", m.targetIP, err, reserveErr)
 	}
@@ -302,10 +303,10 @@ func (m *Manager) validateAddress(addr *compute.Address) error {
 		return fmt.Errorf("IP mismatch, expected %q, actual: %q", m.targetIP, addr.Address)
 	}
 	if addr.AddressType != string(m.addressType) {
-		return utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("address type mismatch, expected %q, actual: %q", m.addressType, addr.AddressType))
+		return l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("address type mismatch, expected %q, actual: %q", m.addressType, addr.AddressType))
 	}
 	if addr.NetworkTier != m.networkTier.ToGCEValue() {
-		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", m.name), m.networkTier.ToGCEValue(), addr.NetworkTier)
+		return l4utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", m.name), m.networkTier.ToGCEValue(), addr.NetworkTier)
 	}
 	return nil
 }
@@ -342,7 +343,7 @@ func (m *Manager) TearDownAddressIPIfNetworkTierMismatch() error {
 	}
 	if addr != nil && addr.NetworkTier != m.networkTier.ToGCEValue() {
 		if !m.isManagedAddress(addr) {
-			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", m.name), string(m.networkTier), addr.NetworkTier)
+			return l4utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", m.name), string(m.networkTier), addr.NetworkTier)
 		}
 		m.frLogger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", m.targetIP)
 		if err := m.svc.DeleteRegionAddress(addr.Name, m.targetIP); err != nil {

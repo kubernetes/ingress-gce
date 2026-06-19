@@ -33,6 +33,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 const (
@@ -195,7 +196,7 @@ func TestAddressManagerNonExisting(t *testing.T) {
 	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNotAllocatedToProjectErrorHook
 	_, _, err = mgr.HoldAddress()
 	require.Error(t, err)
-	assert.True(t, utils.IsIPConfigurationError(err))
+	assert.True(t, l4utils.IsIPConfigurationError(err))
 }
 
 // TestAddressManagerWrongTypeReserved tests the case where the address was reserved by the user but it is of the wrong type.
@@ -214,7 +215,7 @@ func TestAddressManagerWrongTypeReserved(t *testing.T) {
 
 	_, _, err = mgr.HoldAddress()
 	require.Error(t, err)
-	assert.True(t, utils.IsIPConfigurationError(err))
+	assert.True(t, l4utils.IsIPConfigurationError(err))
 }
 
 // TestAddressManagerExternallyOwnedWrongNetworkTier tests the case where the address exists but isn't
@@ -230,8 +231,8 @@ func TestAddressManagerExternallyOwnedWrongNetworkTier(t *testing.T) {
 	mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv4Version, klog.TODO())
 	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNetworkErrorHook
 	_, _, err = mgr.HoldAddress()
-	if err == nil || !utils.IsNetworkTierError(err) {
-		t.Fatalf("mgr.HoldAddress() = %v, utils.IsNetworkTierError(err) = %t, want %t", err, utils.IsNetworkTierError(err), true)
+	if err == nil || !l4utils.IsNetworkTierError(err) {
+		t.Fatalf("mgr.HoldAddress() = %v, l4utils.IsNetworkTierError(err) = %t, want %t", err, l4utils.IsNetworkTierError(err), true)
 	}
 }
 

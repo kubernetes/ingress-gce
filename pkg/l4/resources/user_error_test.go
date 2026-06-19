@@ -9,7 +9,6 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/resources"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 func TestIsUserError(t *testing.T) {
@@ -26,15 +25,15 @@ func TestIsUserError(t *testing.T) {
 			want: false,
 		},
 		{
-			err:  utils.NewNetworkTierErr("forwardingRule", "STANDARD", "PREMIUM"),
+			err:  l4utils.NewNetworkTierErr("forwardingRule", "STANDARD", "PREMIUM"),
 			want: true,
 		},
 		{
-			err:  utils.NewUnsupportedNetworkTierErr("forwardingRule", "STANDARD"),
+			err:  l4utils.NewUnsupportedNetworkTierErr("forwardingRule", "STANDARD"),
 			want: true,
 		},
 		{
-			err:  utils.NewUserError(fmt.Errorf("err")),
+			err:  l4utils.NewUserError(fmt.Errorf("err")),
 			want: true,
 		},
 		{
@@ -42,7 +41,7 @@ func TestIsUserError(t *testing.T) {
 			want: true,
 		},
 		{
-			err:  utils.NewIPConfigurationError("123.123.123.456", "bad ip"),
+			err:  l4utils.NewIPConfigurationError("123.123.123.456", "bad ip"),
 			want: true,
 		},
 		{
@@ -54,7 +53,7 @@ func TestIsUserError(t *testing.T) {
 			want: true,
 		},
 		{
-			err:  utils.NewConflictingPortsConfigurationError("8080-8090", "conflicting ports"),
+			err:  l4utils.NewConflictingPortsConfigurationError("8080-8090", "conflicting ports"),
 			want: true,
 		},
 		{

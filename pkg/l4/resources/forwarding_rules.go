@@ -166,10 +166,10 @@ func (l4 *L4) createFwdRule(newFr *composite.ForwardingRule, frLogger klog.Logge
 	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
 	if err := l4.forwardingRules.Create(newFr); err != nil {
 		if isAddressAlreadyInUseError(err) {
-			return utils.NewIPConfigurationError(newFr.IPAddress, err.Error())
+			return l4utils.NewIPConfigurationError(newFr.IPAddress, err.Error())
 		}
 		if isConflictingPortsError(err) {
-			return utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
+			return l4utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
 		}
 		return err
 	}
@@ -255,7 +255,7 @@ func (l4netlb *L4NetLB) ensureIPv4ForwardingRule(bsLink string) (*composite.Forw
 	if existingFwdRule != nil {
 		if existingFwdRule.NetworkTier != newFwdRule.NetworkTier {
 			resource := fmt.Sprintf("Forwarding rule (%v)", frName)
-			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, newFwdRule.NetworkTier)
+			networkTierMismatchError := l4utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, newFwdRule.NetworkTier)
 			return nil, address.IPAddrUndefined, l4utils.ResourceUpdate, networkTierMismatchError
 		}
 		equal, err := forwardingrules.EqualIPv4(existingFwdRule, newFwdRule)
@@ -316,10 +316,10 @@ func (l4netlb *L4NetLB) createFwdRule(newFr *composite.ForwardingRule, frLogger 
 	frLogger.V(2).Info("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule")
 	if err := l4netlb.forwardingRules.Create(newFr); err != nil {
 		if isAddressAlreadyInUseError(err) {
-			return utils.NewIPConfigurationError(newFr.IPAddress, addressAlreadyInUseMessageExternal)
+			return l4utils.NewIPConfigurationError(newFr.IPAddress, addressAlreadyInUseMessageExternal)
 		}
 		if isConflictingPortsError(err) {
-			return utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
+			return l4utils.NewConflictingPortsConfigurationError(newFr.PortRange, err.Error())
 		}
 		return err
 	}

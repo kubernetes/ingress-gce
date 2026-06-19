@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/backends"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4/metrics"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -707,7 +708,7 @@ func (l4c *L4Controller) publishMetrics(result *resources.L4ILBSyncResult, names
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 		isZonalAffinityLB := result.MetricsState.ZonalAffinity
 		isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
-		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
+		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, l4utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
 		if l4c.enableDualStack {
 			svcLogger.V(2).Info("Internal L4 DualStack Loadbalancer for Service ensured, updating its state in metrics cache", "serviceState", result.MetricsState)
 			metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, isResync)
@@ -727,7 +728,7 @@ func (l4c *L4Controller) publishMetrics(result *resources.L4ILBSyncResult, names
 		isWeightedLB := result.MetricsState.WeightedLBPodsPerNode
 		isZonalAffinityLB := result.MetricsState.ZonalAffinity
 		isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
-		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
+		metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, l4utils.GetErrorType(result.Error), result.StartTime, false, isWeightedLB, result.MetricsState.Protocol, isZonalAffinityLB, isLoggingControlEnabled)
 		if l4c.enableDualStack {
 			metrics.PublishL4ILBDualStackSyncLatency(result.Error == nil, result.SyncType, result.MetricsState.IPFamilies, result.StartTime, false)
 		}

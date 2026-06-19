@@ -207,7 +207,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	// IPv6 address is not supported for External Regional Network Load Balancing with Standard network tier.
 	if netTier == cloud.NetworkTierStandard {
 		resourceErr := "IPv6 External Load Balancer"
-		return nil, l4utils.ResourceResync, utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
+		return nil, l4utils.ResourceResync, l4utils.NewUnsupportedNetworkTierErr(resourceErr, string(cloud.NetworkTierStandard))
 	}
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
@@ -263,7 +263,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if existingIPv6FwdRule != nil {
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
 			resource := fmt.Sprintf("Forwarding rule (%v)", existingIPv6FwdRule.Name)
-			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingIPv6FwdRule.NetworkTier, expectedIPv6FwdRule.NetworkTier)
+			networkTierMismatchError := l4utils.NewNetworkTierErr(resource, existingIPv6FwdRule.NetworkTier, expectedIPv6FwdRule.NetworkTier)
 			return nil, l4utils.ResourceResync, networkTierMismatchError
 		}
 
