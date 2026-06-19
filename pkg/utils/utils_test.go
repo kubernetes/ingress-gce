@@ -1954,3 +1954,55 @@ func TestIsIPOutOfRangeError(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFirewallForbiddenError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "other error",
+			err:  fmt.Errorf("some error"),
+			want: false,
+		},
+		{
+			desc: "forbidden error but not firewall related",
+			err:  &googleapi.Error{Code: http.StatusForbidden, Message: "Access denied to resources"},
+			want: false,
+		},
+		{
+			desc: "firewall error but not forbidden",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid value for 'compute.firewalls' resource"},
+			want: false,
+		},
+		{
+			desc: "generic firewall forbidden without compute.firewalls prefix",
+			err:  &googleapi.Error{Code: http.StatusForbidden, Message: "Forbidden access to firewall rules"},
+			want: false,
+		},
+		{
+			desc: "forbidden and compute.firewalls.get permission related",
+			err:  &googleapi.Error{Code: http.StatusForbidden, Message: "Required 'compute.firewalls.get' permission for 'projects/.../global/firewalls/...', forbidden"},
+			want: true,
+		},
+		{
+			desc: "forbidden and compute.firewalls.create permission related",
+			err:  &googleapi.Error{Code: http.StatusForbidden, Message: "Required 'compute.firewalls.create' permission for 'projects/.../global/firewalls/...', forbidden"},
+			want: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := utils.IsFirewallForbiddenError(tc.err); got != tc.want {
+				t.Errorf("IsFirewallForbiddenError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
