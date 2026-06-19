@@ -328,6 +328,20 @@ func TestWantsL4NetLB(t *testing.T) {
 			want: false,
 		},
 		{
+			desc: "LoadBalancer with explicit External annotation wants NetLB",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"cloud.google.com/load-balancer-type": "External",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			want: true,
+		},
+		{
 			desc: "LoadBalancer with Regional Internal Class does not wants NetLB",
 			svc: &v1.Service{
 				Spec: v1.ServiceSpec{

@@ -357,6 +357,7 @@ func main() {
 		EnableL4DenyFirewallsRollbackCleanup: flags.F.EnableL4DenyFirewallRollbackCleanup,
 		EnableL4ILBZonalAffinity:             flags.F.EnableL4ILBZonalAffinity,
 		ReadOnlyMode:                         flags.F.ReadOnlyMode,
+		EnableL4NetLBRBSByDefault:            flags.F.EnableL4NetLBRBSByDefault,
 	}
 	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, l4LBConfigClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
