@@ -1,0 +1,666 @@
+/*
+Copyright 2026 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controllers
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/cloud-provider-gcp/providers/gce"
+	"k8s.io/ingress-gce/pkg/composite"
+	ingctx "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/l4/annotations"
+	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog/v2"
+)
+
+func TestStandaloneNEGLBSync(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	frName := "custom-fr"
+	frIP := "10.0.0.100"
+	project := "test-project"
+	region := "us-central1"
+
+	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+
+	testCases := []struct {
+		desc               string
+		svc                *v1.Service
+		frs                map[string]*composite.ForwardingRule
+		expectIPs          []string
+		expectEventReasons []string
+		expectError        bool
+	}{
+		{
+			desc: "Multiple forwarding rules, one missing, success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc3",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName + ",missing-fr",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:          []string{frIP},
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+		{
+			desc: "Multiple forwarding rules, all missing, error",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc4",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "missing-fr1,missing-fr2",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs:         map[string]*composite.ForwardingRule{},
+			expectIPs:   nil,
+			expectError: true,
+		},
+		{
+			desc: "Multiple forwarding rules, multiple backend services, success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc5",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName + ",fr2",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"fr2": {
+					Name:                "fr2",
+					IPAddress:           "10.0.0.101",
+					BackendService:      bsURL + "-2",
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{frIP, "10.0.0.101"},
+			expectError: false,
+		},
+		{
+			desc: "Multiple forwarding rules, same backend service, success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc6",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName + ",fr2",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"fr2": {
+					Name:                "fr2",
+					IPAddress:           "10.0.0.101",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{frIP, "10.0.0.101"},
+			expectError: false,
+		},
+		{
+			desc: "Global forwarding rule sync success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-global",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/forwardingRules/global-fr", project),
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"global-fr": {
+					Name:                "global-fr",
+					IPAddress:           "10.0.0.200",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Global,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs: []string{"10.0.0.200"},
+		},
+		{
+			desc: "Failure when rule has INTERNAL scheme",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-internal-scheme",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "INTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:          nil,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+		{
+			desc: "Failure when rule protocol is ESP",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-esp-protocol",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "ESP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:          nil,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+		{
+			desc: "Success when rule protocol is L3_DEFAULT",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-l3-default",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "L3_DEFAULT",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs: []string{frIP},
+		},
+		{
+			desc: "Missing forwarding rule annotation entirely",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-missing-annotation",
+					Namespace: "default",
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+		},
+		{
+			desc: "Forwarding rule annotation is empty",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-empty-annotation",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+		},
+		{
+			desc: "Forwarding rule annotation parses to nothing",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-parses-to-nothing",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: ",  , ",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+		},
+		{
+			desc: "Forwarding rule annotation has invalid URL",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-invalid-url",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "invalid/url/format",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+		{
+			desc: "Service with Type != ServiceTypeLoadBalancer is ignored",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-not-lb",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeClusterIP,
+					LoadBalancerClass: &lbClass,
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{
+							{IP: "1.2.3.4"},
+						},
+					},
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{"1.2.3.4"},
+			expectError: false,
+		},
+		{
+			desc: "Clear status ingress IP when CustomForwardingRuleKey annotation is missing",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-clear-missing-annotation",
+					Namespace: "default",
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{
+							{IP: "1.2.3.4"},
+						},
+					},
+				},
+			},
+			expectIPs:          nil,
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+		},
+		{
+			desc: "Clear status ingress IP when forwarding rule protocol is ESP (unusable)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-clear-esp",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{
+							{IP: "1.2.3.4"},
+						},
+					},
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "ESP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:          nil,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+		{
+			desc: "Clear status ingress IP when CustomForwardingRuleKey annotation parses to nothing",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-clear-parses-to-nothing",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: ",  , ",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{
+							{IP: "1.2.3.4"},
+						},
+					},
+				},
+			},
+			expectIPs:          nil,
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+		},
+		{
+			desc: "Clear status ingress IP when CustomForwardingRuleKey annotation has an invalid URL",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-clear-invalid-url",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "invalid/url/format",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{
+							{IP: "1.2.3.4"},
+						},
+					},
+				},
+			},
+			expectIPs:          nil,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			kubeClient := fake.NewSimpleClientset()
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			namer := namer.NewNamer("cluster-uid", "firewall-name", klog.TODO())
+
+			// Populate fakeGCE client with forwarding rules defined in each test case
+			for name, fr := range tc.frs {
+				key, err := composite.CreateKey(fakeGCE, name, fr.Scope)
+				if err != nil {
+					t.Fatalf("Failed to create key for forwarding rule %s: %v", name, err)
+				}
+				err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
+				if err != nil {
+					t.Fatalf("Failed to create forwarding rule %s: %v", name, err)
+				}
+			}
+
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			ctxConfig := ingctx.ControllerContextConfig{Namespace: v1.NamespaceAll}
+			c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
+			if err != nil {
+				t.Fatalf("Failed to create controller context: %v", err)
+			}
+
+			lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+
+			// Add service to informer
+			c.ServiceInformer.GetIndexer().Add(tc.svc)
+			// Also add to fake kube client so updateStatus works
+			kubeClient.CoreV1().Services(tc.svc.Namespace).Create(context.TODO(), tc.svc, metav1.CreateOptions{})
+
+			key := tc.svc.Namespace + "/" + tc.svc.Name
+			err = lc.sync(key)
+			if (err != nil) != tc.expectError {
+				t.Errorf("sync() error = %v, expectError %v", err, tc.expectError)
+			}
+
+			updatedSvc, _ := kubeClient.CoreV1().Services(tc.svc.Namespace).Get(context.TODO(), tc.svc.Name, metav1.GetOptions{})
+
+			if len(updatedSvc.Status.LoadBalancer.Ingress) != len(tc.expectIPs) {
+				t.Errorf("Expected %d ingress IPs, got %d", len(tc.expectIPs), len(updatedSvc.Status.LoadBalancer.Ingress))
+			} else {
+				for i, ip := range tc.expectIPs {
+					if updatedSvc.Status.LoadBalancer.Ingress[i].IP != ip {
+						t.Errorf("Expected IP %s, got %v", ip, updatedSvc.Status.LoadBalancer.Ingress[i].IP)
+					}
+				}
+			}
+
+			if len(tc.expectEventReasons) > 0 {
+				for _, expectedReason := range tc.expectEventReasons {
+					expectedReason := expectedReason
+					err := wait.PollUntilContextTimeout(context.Background(), 10*time.Millisecond, 5*time.Second, true,
+						func(ctx context.Context) (bool, error) {
+							events, err := kubeClient.CoreV1().Events(tc.svc.Namespace).List(ctx, metav1.ListOptions{})
+							if err != nil {
+								return false, err
+							}
+							for _, e := range events.Items {
+								if e.Reason == expectedReason {
+									return true, nil
+								}
+							}
+							return false, nil
+						})
+					if err != nil {
+						t.Errorf("Expected %s event, but none found within timeout", expectedReason)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestValidateForwardingRule(t *testing.T) {
+	testCases := []struct {
+		desc           string
+		fr             *composite.ForwardingRule
+		frName         string
+		expectError    bool
+		expectErrorMsg string
+	}{
+		{
+			desc: "Valid TCP rule",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL",
+				IPProtocol:          "TCP",
+			},
+			frName:      "valid-tcp",
+			expectError: false,
+		},
+		{
+			desc: "Valid UDP rule",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL",
+				IPProtocol:          "UDP",
+			},
+			frName:      "valid-udp",
+			expectError: false,
+		},
+		{
+			desc: "Valid L3_DEFAULT rule",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL",
+				IPProtocol:          "L3_DEFAULT",
+			},
+			frName:      "valid-l3-default",
+			expectError: false,
+		},
+		{
+			desc: "Internal scheme unsupported",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "INTERNAL",
+				IPProtocol:          "TCP",
+			},
+			frName:         "internal-scheme",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule internal-scheme has unsupported load balancing scheme: INTERNAL",
+		},
+		{
+			desc: "Unsupported scheme",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "INTERNAL_SELF_MANAGED",
+				IPProtocol:          "TCP",
+			},
+			frName:         "invalid-scheme",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule invalid-scheme has unsupported load balancing scheme: INTERNAL_SELF_MANAGED",
+		},
+		{
+			desc: "Unsupported protocol",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL",
+				IPProtocol:          "ESP",
+			},
+			frName:         "invalid-protocol",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule invalid-protocol has unsupported protocol: ESP",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := validateForwardingRule(tc.fr, tc.frName)
+			if (err != nil) != tc.expectError {
+				t.Errorf("validateForwardingRule() error = %v, expectError = %v", err, tc.expectError)
+			}
+			if err != nil && tc.expectErrorMsg != "" && err.Error() != tc.expectErrorMsg {
+				t.Errorf("validateForwardingRule() error message = %q, expected = %q", err.Error(), tc.expectErrorMsg)
+			}
+		})
+	}
+}

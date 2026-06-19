@@ -744,9 +744,10 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := l4annotations.WantsL4ILB(service)
+	wantsStandaloneNEGLB := flags.F.RunL4StandaloneNEGLBController && l4annotations.HasLoadBalancerClass(service, l4annotations.StandalonePassthroughNegLoadBalancerClass)
 	needsNEGForILB := c.runL4ForILB && wantsILB
 	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
-	if !needsNEGForILB && !needsNEGForNetLB {
+	if !needsNEGForILB && !needsNEGForNetLB && !wantsStandaloneNEGLB {
 		return nil
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
@@ -757,11 +758,13 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		return nil
 	}
 
-	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external" or
-	// "networking.gke.io/l4-regional-internal" used for L4 controllers that use GCE_VM_IP NEGs.
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external",
+	// "networking.gke.io/l4-regional-internal" or "networking.gke.io/standalone-passthrough-lb-neg"
+	// used for L4 controllers that use GCE_VM_IP NEGs.
 	if service.Spec.LoadBalancerClass != nil &&
 		!l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalExternalLoadBalancerClass) &&
-		!l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalInternalLoadBalancerClass) {
+		!l4annotations.HasLoadBalancerClass(service, l4annotations.RegionalInternalLoadBalancerClass) &&
+		!l4annotations.HasLoadBalancerClass(service, l4annotations.StandalonePassthroughNegLoadBalancerClass) {
 		msg := fmt.Sprintf("Ignoring Service %s, namespace %s as it uses a LoadBalancerClass %s", service.Name, service.Namespace, *service.Spec.LoadBalancerClass)
 		c.logger.Info(msg)
 		return nil
@@ -771,7 +774,9 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Update usage metrics.
 	negUsage.VmIpNeg = metricscollector.NewVmIpNegType(onlyLocal)
 	var l4LBType negtypes.L4LBType
-	if needsNEGForILB {
+	if wantsStandaloneNEGLB {
+		l4LBType = negtypes.L4ExternalLB // for now treat this as external since it has higher limits for backend subset
+	} else if needsNEGForILB {
 		l4LBType = negtypes.L4InternalLB
 	} else {
 		l4LBType = negtypes.L4ExternalLB

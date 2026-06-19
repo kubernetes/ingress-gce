@@ -56,6 +56,10 @@ const (
 	// LegacyRegionalExternalLoadBalancerClass is the loadBalancerClass name used to select the
 	// GKE CCM NetLB implementation.
 	LegacyRegionalExternalLoadBalancerClass = "networking.gke.io/l4-regional-external-legacy"
+
+	// StandalonePassthroughNegLoadBalancerClass is the loadBalancerClass name used for services that
+	// should use GCE_VM_IP NEGs for L4.
+	StandalonePassthroughNegLoadBalancerClass = "networking.gke.io/standalone-passthrough-lb-neg"
 )
 
 // GetLoadBalancerAnnotationType returns the type of GCP load balancer which should be assembled.

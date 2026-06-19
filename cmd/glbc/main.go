@@ -663,6 +663,12 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		logger.V(0).Info("L4NetLB controller started")
 	}
 
+	if flags.F.RunL4StandaloneNEGLBController {
+		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
+		runWithWg(standaloneNEGLBController.Run, option.wg)
+		logger.V(0).Info("L4 Standalone NEG LB controller started")
+	}
+
 	ctx.Start(option.stopCh)
 }
 

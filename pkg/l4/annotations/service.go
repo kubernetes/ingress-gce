@@ -107,6 +107,9 @@ const (
 
 	// Service annotation key for specifying L4LBConfig
 	L4LBConfigKey = "networking.gke.io/l4lb-config"
+
+	// CustomForwardingRuleKey is the annotation key for custom forwarding rule name.
+	CustomForwardingRuleKey = "networking.gke.io/custom-forwarding-rule"
 )
 
 // Service represents Service annotations.
