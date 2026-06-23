@@ -211,29 +211,29 @@ func isSessionAffinityConfigEmpty(sessionAffinityConfig *corev1.SessionAffinityC
 //   - with anything else than ExternalTrafficPolicy=Local
 //   - with anything else than v1.ServiceAffinityClientIP
 //     passes silently if the SSA annotation wasn't enabled
-func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *utils.UserError {
+func (l4netlb *L4NetLB) checkStrongSessionAffinityRequirements() *l4utils.UserError {
 	if !annotations.HasStrongSessionAffinityAnnotation(l4netlb.Service) {
 		return nil
 	}
 	// there is no strong session affinity flag but annotation was added
 	if !l4netlb.enableStrongSessionAffinity {
 		err := fmt.Errorf("strong session affinity set on service but not yet enabled on the cluster")
-		return utils.NewUserError(err)
+		return l4utils.NewUserError(err)
 	}
 	if l4netlb.Service.Spec.SessionAffinity != corev1.ServiceAffinityClientIP {
 		err := fmt.Errorf("strong session affinity is supported only with ServiceType=%s for Service %s", corev1.ServiceAffinityClientIP, l4netlb.Service.Name)
-		return utils.NewUserError(err)
+		return l4utils.NewUserError(err)
 	}
 	// Don't use the config if it's empty
 	if isSessionAffinityConfigEmpty(l4netlb.Service.Spec.SessionAffinityConfig) {
 		err := fmt.Errorf("session affinity config was not set as required for strong session affinity")
-		return utils.NewUserError(err)
+		return l4utils.NewUserError(err)
 	}
 	idleTimeout := *l4netlb.Service.Spec.SessionAffinityConfig.ClientIP.TimeoutSeconds
 	// idle idleTimeout is not supported
 	if idleTimeout < minStrongSessionAffinityIdleTimeout || idleTimeout > maxSessionAffinityIdleTimeout {
 		err := fmt.Errorf("session affinity config has an unsupported idleTimeout (%d). It should be in [%d, %d]", idleTimeout, minStrongSessionAffinityIdleTimeout, maxSessionAffinityIdleTimeout)
-		return utils.NewUserError(err)
+		return l4utils.NewUserError(err)
 	}
 	return nil
 }
@@ -442,10 +442,10 @@ func (l4netlb *L4NetLB) provideBackendService(syncResult *L4NetLBSyncResult, hcL
 			// Set condition if there is an error and logging control is enabled
 			syncResult.Conditions = append(syncResult.Conditions, l4lbconfig.NewConditionLoggingError(err))
 		}
-		if utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
+		if l4utils.IsUnsupportedFeatureError(err, strongSessionAffinityFeatureName) {
 			syncResult.GCEResourceInError = annotations.BackendServiceResource
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeWarning, strongSessionAffinityFeatureName, strongSessionAffinityConditionedSupportMsg)
-			syncResult.Error = utils.NewUserError(err)
+			syncResult.Error = l4utils.NewUserError(err)
 			syncResult.MetricsLegacyState.IsUserError = true
 		} else { // not UserError but something else
 			syncResult.GCEResourceInError = annotations.BackendServiceResource

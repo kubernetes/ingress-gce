@@ -39,12 +39,12 @@ func TestL4CreateExternalForwardingRuleUserErrors(t *testing.T) {
 		{
 			desc:                  "Address already in-use",
 			insertError:           &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid value for field 'resource.IPAddress': '1.1.1.1'. Specified IP address is in-use and would result in a conflict., invalid"},
-			expectedUserErrorFunc: utils.IsIPConfigurationError,
+			expectedUserErrorFunc: l4utils.IsIPConfigurationError,
 		},
 		{
 			desc:                  "Conflicting port range",
 			insertError:           &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid resource usage: 'Forwarding rule's port range is conflicting with forwarding rule: abcd'."},
-			expectedUserErrorFunc: utils.IsConflictingPortsConfigurationError,
+			expectedUserErrorFunc: l4utils.IsConflictingPortsConfigurationError,
 		},
 	}
 	for _, tc := range testCases {
@@ -365,12 +365,12 @@ func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 		{
 			desc:                  "Address already in-use",
 			insertError:           &googleapi.Error{Code: http.StatusConflict, Message: "IP_IN_USE_BY_ANOTHER_RESOURCE - IP '10.107.116.14' is already being used by another resource."},
-			expectedUserErrorFunc: utils.IsIPConfigurationError,
+			expectedUserErrorFunc: l4utils.IsIPConfigurationError,
 		},
 		{
 			desc:                  "Conflicting port range",
 			insertError:           &googleapi.Error{Code: http.StatusBadRequest, Message: "Invalid resource usage: 'Forwarding rule's port range is conflicting with forwarding rule: abcd'."},
-			expectedUserErrorFunc: utils.IsConflictingPortsConfigurationError,
+			expectedUserErrorFunc: l4utils.IsConflictingPortsConfigurationError,
 		},
 	}
 

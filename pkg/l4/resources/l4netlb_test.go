@@ -296,7 +296,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
 	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
 	result = l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
-	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
+	if result.Error == nil || !l4utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
 	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
@@ -312,7 +312,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	delete(svc.ObjectMeta.Annotations, annotations.NetworkTierAnnotationKey)
 
 	result = l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
-	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
+	if result.Error == nil || !l4utils.IsNetworkTierError(result.Error) {
 		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
 	}
 	if err := checkMetrics(result.MetricsLegacyState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
@@ -455,8 +455,8 @@ func TestEnsureDualStackNetLBNetworkTierChange(t *testing.T) {
 
 	// Ensure dualstack load balancer with Standard Network Tier and verify it did not synced successfully.
 	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
-	if _, ok := result.Error.(*utils.UnsupportedNetworkTierError); !ok {
-		t.Errorf("Expected error to be of type *utils.UnsupportedNetworkTierError, got %T", result.Error)
+	if _, ok := result.Error.(*l4utils.UnsupportedNetworkTierError); !ok {
+		t.Errorf("Expected error to be of type *l4utils.UnsupportedNetworkTierError, got %T", result.Error)
 	}
 
 	// Change network Tier to Premium, and trigger sync.
@@ -971,8 +971,8 @@ func TestEnsureIPv6OnlyNetLBNetworkTierChange(t *testing.T) {
 
 	// Initial Sync with Standard Tier: Expect an error - external IPv6 LoadBalancers require Premium Tier.
 	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
-	if _, ok := result.Error.(*utils.UnsupportedNetworkTierError); !ok {
-		t.Errorf("Expected error to be of type *utils.UnsupportedNetworkTierError for Stanard Tier, got %T", result.Error)
+	if _, ok := result.Error.(*l4utils.UnsupportedNetworkTierError); !ok {
+		t.Errorf("Expected error to be of type *l4utils.UnsupportedNetworkTierError for Stanard Tier, got %T", result.Error)
 	}
 
 	// Change network Tier to Premium, and trigger sync.

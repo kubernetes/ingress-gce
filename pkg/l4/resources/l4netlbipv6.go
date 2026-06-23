@@ -287,7 +287,7 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 	if !hasIPv6SubnetRange {
 		// We don't need to emit custom event, because errors are already emitted to the user as events.
 		l4netlb.svcLogger.Info("Subnet for IPv6 Service does not have external IPv6 ranges", "subnetName", subnetName)
-		return utils.NewUserError(
+		return l4utils.NewUserError(
 			fmt.Errorf(
 				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}

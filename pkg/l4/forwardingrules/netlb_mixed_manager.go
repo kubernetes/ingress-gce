@@ -193,7 +193,7 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 	// Can't update
 	if networkMismatch := existing.NetworkTier != wanted.NetworkTier; networkMismatch {
 		resource := fmt.Sprintf("Forwarding rule (%v)", name)
-		networkTierMismatchErr := utils.NewNetworkTierErr(resource, wanted.NetworkTier, wanted.NetworkTier)
+		networkTierMismatchErr := l4utils.NewNetworkTierErr(resource, wanted.NetworkTier, wanted.NetworkTier)
 		return nil, l4utils.ResourceUpdate, networkTierMismatchErr
 	}
 

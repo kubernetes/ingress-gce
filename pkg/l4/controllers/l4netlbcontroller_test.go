@@ -1660,7 +1660,7 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	key, _ := common.KeyFunc(svc)
 	addUsersStaticAddress(lc, cloud.NetworkTierStandard)
 	// Sync should return error that Network Tier mismatch because we cannot tear User Managed Address.
-	if err := lc.sync(key, klog.TODO()); !utils.IsNetworkTierError(err) {
+	if err := lc.sync(key, klog.TODO()); !l4utils.IsNetworkTierError(err) {
 		t.Errorf("Expected error when trying to ensure service with wrong Network Tier, err: %v", err)
 	}
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)

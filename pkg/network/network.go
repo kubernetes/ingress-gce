@@ -26,7 +26,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/ingress-gce/pkg/utils"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -133,7 +133,7 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 		return nil, err
 	}
 	if !exists {
-		return nil, utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
+		return nil, l4utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
 	}
 	network := obj.(*networkv1.Network)
 	if network == nil {
@@ -141,21 +141,21 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	}
 	svcLogger.Info("Found network for service", "network", network.Name)
 	if network.Spec.Type != networkv1.L3NetworkType {
-		return nil, utils.NewUserError(fmt.Errorf("network.Spec.Type=%s is not supported for multinetwork LoadBalancer services, the only supported network type is L3", network.Spec.Type))
+		return nil, l4utils.NewUserError(fmt.Errorf("network.Spec.Type=%s is not supported for multinetwork LoadBalancer services, the only supported network type is L3", network.Spec.Type))
 	}
 	parametersRef := network.Spec.ParametersRef
 	if !refersGKENetworkParamSet(parametersRef) {
-		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource"))
+		return nil, l4utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef does not refer a GKENetworkParamSet resource"))
 	}
 	if parametersRef.Namespace != nil {
-		return nil, utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource"))
+		return nil, l4utils.NewUserError(fmt.Errorf("network.Spec.ParametersRef.namespace must not be set for GKENetworkParamSet reference as it is a cluster scope resource"))
 	}
 	gkeParamsObj, exists, err := nr.gkeNetworkParamSetLister.GetByKey(parametersRef.Name)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, utils.NewUserError(fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name))
+		return nil, l4utils.NewUserError(fmt.Errorf("GKENetworkParamSet %s was not found", parametersRef.Name))
 	}
 	gkeNetworkParamSet := gkeParamsObj.(*networkv1.GKENetworkParamSet)
 	if gkeNetworkParamSet == nil {

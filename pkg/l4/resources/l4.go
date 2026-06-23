@@ -585,10 +585,10 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			result.Conditions = append(result.Conditions, l4lbconfig.NewConditionLoggingError(err))
 		}
 
-		if utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
+		if l4utils.IsUnsupportedFeatureError(err, string(backends.LocalityLbPolicyRendezvous)) {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "AllowlistingRequired", WeightedLBPodsPerNodeAllowlistMessage)
-			result.Error = utils.NewUserError(err)
+			result.Error = l4utils.NewUserError(err)
 		} else {
 			result.GCEResourceInError = annotations.BackendServiceResource
 			result.Error = err
@@ -799,7 +799,7 @@ func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {
 	subnetwork, err := l4.cloud.GetSubnetwork(l4.cloud.Region(), subnetName)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			return "", utils.NewInvalidSubnetConfigurationError(l4.cloud.ProjectID(), subnetName)
+			return "", l4utils.NewInvalidSubnetConfigurationError(l4.cloud.ProjectID(), subnetName)
 		}
 		return "", err
 	}
