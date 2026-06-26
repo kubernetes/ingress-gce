@@ -29,6 +29,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -236,6 +237,30 @@ func (z *ZoneGetter) ListZones(filter Filter, logger klog.Logger) ([]string, err
 // node filtering mode.
 func (z *ZoneGetter) ListZonesInDefaultSubnet(filter Filter, logger klog.Logger) ([]string, error) {
 	return z.listZones(filter, true, logger)
+}
+
+// ListZonesPerSubnet returns a list of zones containing nodes that satisfy the given node filtering mode per subnet.
+func (z *ZoneGetter) ListZonesPerSubnet(filter Filter, logger klog.Logger) (shared.ZonesPerSubnetMap, error) {
+	subnetConfigs := z.ListSubnets(logger)
+	if subnetConfigs == nil {
+		return shared.ZonesPerSubnetMap{}, nil
+	}
+
+	zones, err := z.ListZones(filter, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Don't return subnets with empty zones set. As ZoneGetter returns all zones per all subnets - don't return any.
+	if len(zones) == 0 {
+		return shared.ZonesPerSubnetMap{}, nil
+	}
+
+	zonesPerSubnet := make(shared.ZonesPerSubnetMap)
+	for _, subnetConfig := range subnetConfigs {
+		zonesPerSubnet[subnetConfig.Name] = sets.New(zones...)
+	}
+	return zonesPerSubnet, nil
 }
 
 func (z *ZoneGetter) listZones(filter Filter, defaultSubnetOnly bool, logger klog.Logger) ([]string, error) {

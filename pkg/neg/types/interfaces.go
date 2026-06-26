@@ -17,10 +17,14 @@ limitations under the License.
 package types
 
 import (
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
+
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
 
@@ -93,4 +97,11 @@ type NetworkEndpointsCalculator interface {
 	Mode() EndpointsCalculatorMode
 	// ValidateEndpoints validates the NEG endpoint information is correct
 	ValidateEndpoints(endpointData []EndpointsData, endpointPodMap EndpointPodMap, endpointsExcludedInCalculation int) error
+}
+
+// TopologyProvider is an interface for looking up zone and subnet information for NEG syncer.
+// It helps to determine GCE locations (subnets and zones) where NEGs should be created and/or synced.
+type TopologyProvider interface {
+	ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig
+	ListZonesPerSubnet(filter zonegetter.Filter, logger klog.Logger) (shared.ZonesPerSubnetMap, error)
 }

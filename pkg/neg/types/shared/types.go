@@ -16,6 +16,24 @@ limitations under the License.
 
 package shared
 
+import "k8s.io/apimachinery/pkg/util/sets"
+
 const (
 	NegReadinessGate = "cloud.google.com/load-balancer-neg-ready"
 )
+
+type ZonesPerSubnetMap map[string]sets.Set[string]
+
+func (m ZonesPerSubnetMap) Equal(other ZonesPerSubnetMap) bool {
+	if len(m) != len(other) {
+		return false
+	}
+
+	for subnet, zones := range m {
+		zones_other, ok := other[subnet]
+		if !ok || !zones.Equal(zones_other) {
+			return false
+		}
+	}
+	return true
+}
