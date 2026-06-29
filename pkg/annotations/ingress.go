@@ -87,6 +87,11 @@ const (
 	//     networking.gke.io/v1beta1.FrontendConfig: 'my-frontendconfig'
 	FrontendConfigKey = "networking.gke.io/v1beta1.FrontendConfig"
 
+	// AllowGlobalAccessKey tells the Ingress controller to allow global access
+	// to the internal load balancer forwarding rule from all regions.
+	// Only applies to gce-internal ingress class.
+	AllowGlobalAccessKey = "networking.gke.io/internal-load-balancer-allow-global-access"
+
 	// UrlMapKey is the annotation key used by controller to record GCP URL map.
 	UrlMapKey = StatusPrefix + "/url-map"
 	// UrlMapKey is the annotation key used by controller to record GCP URL map used for Https Redirects only.
@@ -205,4 +210,18 @@ func (ing *Ingress) FrontendConfig() string {
 		return ""
 	}
 	return val
+}
+
+// AllowGlobalAccess returns whether global access is allowed for the internal
+// load balancer forwarding rule. False by default.
+func (ing *Ingress) AllowGlobalAccess() bool {
+	val, ok := ing.v[AllowGlobalAccessKey]
+	if !ok {
+		return false
+	}
+	v, err := strconv.ParseBool(val)
+	if err != nil {
+		return false
+	}
+	return v
 }

@@ -30,6 +30,7 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/utils/ptr"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -388,6 +389,7 @@ func TestToForwardingRule(t *testing.T) {
 		isL7XLBRegional bool
 		protocol        namer_util.NamerProtocol
 		ipSubnet        string
+		ing             *v1.Ingress
 		want            *composite.ForwardingRule
 	}{
 		{
@@ -500,12 +502,54 @@ func TestToForwardingRule(t *testing.T) {
 				Subnetwork:          "different-subnet",
 			},
 		},
+		{
+			desc:     "http-ilb with allowGlobalAccess annotation",
+			isL7ILB:  true,
+			protocol: namer_util.HTTPProtocol,
+			ing: &v1.Ingress{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.AllowGlobalAccessKey: "true",
+					},
+				},
+			},
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "INTERNAL_MANAGED",
+				Network:             network,
+				Subnetwork:          subnetwork,
+				AllowGlobalAccess:   true,
+			},
+		},
+		{
+			desc:     "http-ilb without allowGlobalAccess annotation defaults to false",
+			isL7ILB:  true,
+			protocol: namer_util.HTTPProtocol,
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "INTERNAL_MANAGED",
+				Network:             network,
+				Subnetwork:          subnetwork,
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			tr := NewTranslator(tc.isL7ILB, tc.isL7XLBRegional, &testNamer{"foo"})
-			env := &Env{VIP: vip, Network: network, Subnetwork: subnetwork}
+			env := &Env{Ing: tc.ing, VIP: vip, Network: network, Subnetwork: subnetwork}
 			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description, tc.ipSubnet)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Got diff for ForwardingRule (-want +got):\n%s", diff)
