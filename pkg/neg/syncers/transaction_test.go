@@ -302,10 +302,26 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to initialize transaction syncer: %v", err)
 		}
-		if err := zonegetter.AddNodeTopologyCR(transactionSyncer.zoneGetter, &nodeTopologyCrWithAdditionalSubnets); err != nil {
+		if err := zonegetter.AddNodeTopologyCR(transactionSyncer.topologyProvider.(*zonegetter.ZoneGetter), &nodeTopologyCrWithAdditionalSubnets); err != nil {
 			t.Fatalf("Failed to add node topology CR: %v", err)
 		}
-		zonegetter.SetNodeTopologyHasSynced(transactionSyncer.zoneGetter, func() bool { return true })
+		zonegetter.SetNodeTopologyHasSynced(transactionSyncer.topologyProvider.(*zonegetter.ZoneGetter), func() bool { return true })
+
+		// Though the test cases below only add instances in zone1 and zone2, NEGs will be created in zone3 or zone4 as well since fakeZoneGetter includes those zones.
+		expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4}
+		if testNegType == negtypes.VmIpEndpointType {
+			expectZones = []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+		}
+
+		zg := transactionSyncer.topologyProvider.(*zonegetter.ZoneGetter)
+		// Add nodes for additionalTestSubnet in expectZones so ListZonesForSubnet finds them
+		for _, zone := range expectZones {
+			nodeName := fmt.Sprintf("additional-node-%s-%s", zone, additionalTestSubnet)
+			if err := addFakeNodeWithSubnet(zg, transactionSyncer.nodeLister, nodeName, zone, additionalTestSubnet); err != nil {
+				t.Fatalf("Failed to add fake node for additional subnet: %v", err)
+			}
+		}
+
 		nonDefaultNegName, err := transactionSyncer.getNonDefaultSubnetNEGName(additionalTestSubnet)
 		if err != nil {
 			t.Fatalf("Failed to get non-default subnet NEG name: %v", err)
@@ -321,13 +337,7 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 
 		// Verify the NEGs are created as expected
 		ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
-		// Though the test cases below only add instances in zone1 and zone2, NEGs will be created in zone3 or zone4 as well since fakeZoneGetter includes those zones.
-		var expectZones []string
-		if testNegType == negtypes.VmIpEndpointType {
-			expectZones = []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
-		} else {
-			expectZones = []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4}
-		}
+
 		retZones := sets.NewString()
 
 		for key := range ret {
@@ -524,15 +534,26 @@ func TestNegNameMultiNetworking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize transaction syncer: %v", err)
 	}
-	zg := transactionSyncer.zoneGetter
-	zonegetter.SetNodeTopologyHasSynced(zg, func() bool { return true })
+
+	subnetName, err := utils.KeyName(subnetInSecondaryNetwork)
+	if err != nil {
+		t.Fatalf("Failed to parse subnet name: %v", err)
+	}
+
+	defaultSubnet, err := utils.KeyName(subnetInDefaultNetwork)
+	if err != nil {
+		t.Fatalf("Failed to parse default subnet name: %v", err)
+	}
+
+	zg := transactionSyncer.topologyProvider.(*zonegetter.ZoneGetter)
 	nodeTopologyCR := &nodetopologyv1.NodeTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: flags.F.NodeTopologyCRName,
 		},
 		Status: nodetopologyv1.NodeTopologyStatus{
 			Subnets: []nodetopologyv1.SubnetConfig{
-				{Name: "multi-net-secondary-subnet", SubnetPath: subnetInSecondaryNetwork},
+				{Name: defaultSubnet, SubnetPath: subnetInDefaultNetwork},
+				{Name: subnetName, SubnetPath: subnetInSecondaryNetwork},
 			},
 		},
 	}
@@ -540,10 +561,11 @@ func TestNegNameMultiNetworking(t *testing.T) {
 		t.Fatalf("failed to add node topology CR: %v", err)
 	}
 
+	zonegetter.SetNodeTopologyHasSynced(zg, func() bool { return true })
 	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3} {
-		nodeName := fmt.Sprintf("node-%s-secondary", zone)
-		if err := addFakeNodeWithSubnet(zg, transactionSyncer.nodeLister, nodeName, zone, "multi-net-secondary-subnet"); err != nil {
-			t.Fatalf("Failed to add fake node: %v", err)
+		nodeName := fmt.Sprintf("additional-node-%s-%s", zone, subnetName)
+		if err := addFakeNodeWithSubnet(zg, transactionSyncer.nodeLister, nodeName, zone, subnetName); err != nil {
+			t.Fatalf("Failed to add fake node for secondary subnet: %v", err)
 		}
 	}
 
@@ -2074,7 +2096,7 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 			if tc.customNEGName != "" {
 				syncer.NegSyncerKey.NegName = tc.customNEGName
 			}
-			zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+			zonegetter.SetNodeTopologyHasSynced(syncer.topologyProvider.(*zonegetter.ZoneGetter), func() bool { return true })
 
 			negName := syncer.NegSyncerKey.NegName
 
@@ -2109,10 +2131,10 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 			syncer.svcNegLister.Add(initialNegCr)
 
 			if tc.nodeTopologyCr != nil {
-				if err := zonegetter.AddNodeTopologyCR(syncer.zoneGetter, tc.nodeTopologyCr); err != nil {
+				if err := zonegetter.AddNodeTopologyCR(syncer.topologyProvider.(*zonegetter.ZoneGetter), tc.nodeTopologyCr); err != nil {
 					t.Fatalf("Failed to create Node Topology CR: %v", err)
 				}
-				zg := syncer.zoneGetter
+				zg := syncer.topologyProvider.(*zonegetter.ZoneGetter)
 				for _, subnetConfig := range tc.nodeTopologyCr.Status.Subnets {
 					if subnetConfig.Name != defaultTestSubnet {
 						for _, zone := range zones {
@@ -2229,7 +2251,7 @@ func TestUpdateInitStatusWithMultiSubnetCluster(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 			nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
 			_, syncer, err := newTestTransactionSyncerWithTopologyInformer(fakeCloud, testNegType, false, nodeTopologyInformer)
-			zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+			zonegetter.SetNodeTopologyHasSynced(syncer.topologyProvider.(*zonegetter.ZoneGetter), func() bool { return true })
 			if err != nil {
 				t.Fatalf("failed to initialize transaction syncer: %v", err)
 			}
@@ -2352,7 +2374,7 @@ func TestUpdateInitStatusTransitions(t *testing.T) {
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
 	nodeTopologyInformer := zonegetter.FakeNodeTopologyInformer()
 	_, syncer, err := newTestTransactionSyncerWithTopologyInformer(fakeCloud, testNegType, false, nodeTopologyInformer)
-	zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+	zonegetter.SetNodeTopologyHasSynced(syncer.topologyProvider.(*zonegetter.ZoneGetter), func() bool { return true })
 	if err != nil {
 		t.Fatalf("failed to initialize transaction syncer: %v", err)
 	}
@@ -2456,7 +2478,7 @@ func TestSubnetChanges(t *testing.T) {
 	// mark syncer as started without starting the syncer routine
 	(ts.syncer.(*syncer)).stopped = false
 	ts.needInit = false
-	zonegetter.SetNodeTopologyHasSynced(ts.zoneGetter, func() bool { return true })
+	zonegetter.SetNodeTopologyHasSynced(ts.topologyProvider.(*zonegetter.ZoneGetter), func() bool { return true })
 
 	svcNegClient := ts.svcNegClient
 	currentSubnets := []nodetopologyv1.SubnetConfig{defaultSubnetConfig}
@@ -2878,8 +2900,8 @@ func TestIsTopologyChange(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize transaction syncer: %v", err)
 			}
-			syncer.zoneGetter = initialZg
-			zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+			syncer.topologyProvider = initialZg
+			zonegetter.SetNodeTopologyHasSynced(initialZg, func() bool { return true })
 
 			var allRefs []negv1beta1.NegObjectReference
 			for subnet, zones := range tc.initialTopology {
@@ -2905,8 +2927,8 @@ func TestIsTopologyChange(t *testing.T) {
 			}
 
 			finalZg, _ := createZoneGetterFromTopology(t, tc.finalTopology, nodeTopologyInformer, !tc.enableMSC)
-			syncer.zoneGetter = finalZg
-			zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+			syncer.topologyProvider = finalZg
+			zonegetter.SetNodeTopologyHasSynced(finalZg, func() bool { return true })
 
 			if tc.addNodeWithInvalidProviderID {
 				if err := zonegetter.AddFakeNode(finalZg, &corev1.Node{
@@ -3036,7 +3058,8 @@ func TestIsTopologyChangeZeroCandidateNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize transaction syncer: %v", err)
 	}
-	zonegetter.SetNodeTopologyHasSynced(syncer.zoneGetter, func() bool { return true })
+	zg := syncer.topologyProvider.(*zonegetter.ZoneGetter)
+	zonegetter.SetNodeTopologyHasSynced(zg, func() bool { return true })
 
 	// Define subnets: default and secondary
 	defaultSubnetName := defaultTestSubnet
@@ -3054,13 +3077,13 @@ func TestIsTopologyChangeZeroCandidateNodes(t *testing.T) {
 			},
 		},
 	}
-	if err := zonegetter.AddNodeTopologyCR(syncer.zoneGetter, nodeTopologyCR); err != nil {
+	if err := zonegetter.AddNodeTopologyCR(zg, nodeTopologyCR); err != nil {
 		t.Fatalf("failed to add node topology CR: %v", err)
 	}
 
 	// Delete all default nodes to ensure 0 candidate nodes.
 	for _, zone := range []string{"zone1", "zone2", "zone3", "zone4"} {
-		zonegetter.DeleteFakeNodesInZone(t, zone, syncer.zoneGetter)
+		zonegetter.DeleteFakeNodesInZone(t, zone, zg)
 	}
 
 	// isTopologyChange should return false because expectedSubnetZones is empty and no NEGs exist.

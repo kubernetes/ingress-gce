@@ -86,7 +86,7 @@ type transactionSyncer struct {
 	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
-	zoneGetter          *zonegetter.ZoneGetter
+	topologyProvider    negtypes.TopologyProvider
 	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
@@ -148,7 +148,7 @@ func NewTransactionSyncer(
 	negSyncerKey negtypes.NegSyncerKey,
 	recorder record.EventRecorder,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	zoneGetter *zonegetter.ZoneGetter,
+	topologyProvider negtypes.TopologyProvider,
 	podLister cache.Indexer,
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
@@ -182,7 +182,7 @@ func NewTransactionSyncer(
 		svcNegLister:              svcNegLister,
 		recorder:                  recorder,
 		cloud:                     cloud,
-		zoneGetter:                zoneGetter,
+		topologyProvider:          topologyProvider,
 		endpointsCalculator:       epc,
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
@@ -300,14 +300,14 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	subnetConfigs := s.zoneGetter.ListSubnets(s.logger)
+	subnetConfigs := s.topologyProvider.ListSubnets(s.logger)
 	subnetToNegMapping, err := s.generateSubnetToNegNameMap(subnetConfigs)
 	if err != nil {
 		s.logger.Error(err, "failed to generate subnet to neg name mapping")
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -532,7 +532,7 @@ func (s *transactionSyncer) candidateNodeFilter() zonegetter.Filter {
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// NEGs should be created in zones with candidate nodes only.
-	zonesPerSubnet, err := s.zoneGetter.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
+	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
 	if err != nil {
 		return err
 	}
@@ -556,7 +556,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		// zoneGetter.
 
 		// List all existing subnets from the cluster.
-		subnetConfigs = s.zoneGetter.ListSubnets(s.logger)
+		subnetConfigs = s.topologyProvider.ListSubnets(s.logger)
 	} else {
 		// This is the multi-networking case where the VPC under consideration
 		// is not the default. Use the pre configured subnet from the
@@ -573,7 +573,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	for _, subnetConfig := range subnetConfigs {
 		zones, ok := zonesPerSubnet[subnetConfig.Name]
 		if !ok {
-			// s.zoneGetter.ListSubnets and s.zoneGetter.ListZonesPerSubnet should return same set of subnets.
+			// s.topologyProvider.ListSubnets and s.topologyProvider.ListZonesPerSubnet should return same set of subnets.
 			// Therefore this condition should be true only for multi-networking where we don't want NEGs in default subnet
 			continue
 		}
@@ -940,7 +940,7 @@ func (s *transactionSyncer) isTopologyChange() bool {
 		existingSubnetZones[subnetName].Insert(id.Key.Zone)
 	}
 
-	wantSubnetZones, err := s.zoneGetter.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
+	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -1045,7 +1045,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	neg := origNeg.DeepCopy()
 	if flags.F.EnableMultiSubnetClusterPhase1 {
-		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.zoneGetter.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
+		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.topologyProvider.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
 		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
 	}
 	neg.Status.NetworkEndpointGroups = negObjRefs
