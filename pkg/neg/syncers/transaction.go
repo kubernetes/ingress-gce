@@ -532,7 +532,7 @@ func (s *transactionSyncer) candidateNodeFilter() zonegetter.Filter {
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// NEGs should be created in zones with candidate nodes only.
-	zones, err := s.zoneGetter.ListZones(s.candidateNodeFilter(), s.logger)
+	zonesPerSubnet, err := s.zoneGetter.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
 	if err != nil {
 		return err
 	}
@@ -571,6 +571,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	for _, subnetConfig := range subnetConfigs {
+		zones, ok := zonesPerSubnet[subnetConfig.Name]
+		if !ok {
+			// s.zoneGetter.ListSubnets and s.zoneGetter.ListZonesPerSubnet should return same set of subnets.
+			// Therefore this condition should be true only for multi-networking where we don't want NEGs in default subnet
+			continue
+		}
 		negName := s.NegSyncerKey.NegName
 		networkInfo := s.networkInfo
 
@@ -594,7 +600,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			networkInfo.SubnetworkURL = cloud.SelfLink(meta.VersionGA, resourceID.ProjectID, resourceID.Resource, resourceID.Key)
 		}
 
-		for _, zone := range zones {
+		for zone := range zones {
 			var negObj negv1beta1.NegObjectReference
 			negObj, err = ensureNetworkEndpointGroup(
 				s.Namespace,

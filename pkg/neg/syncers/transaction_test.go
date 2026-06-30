@@ -524,6 +524,28 @@ func TestNegNameMultiNetworking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize transaction syncer: %v", err)
 	}
+	zg := transactionSyncer.zoneGetter
+	zonegetter.SetNodeTopologyHasSynced(zg, func() bool { return true })
+	nodeTopologyCR := &nodetopologyv1.NodeTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: flags.F.NodeTopologyCRName,
+		},
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: []nodetopologyv1.SubnetConfig{
+				{Name: "multi-net-secondary-subnet", SubnetPath: subnetInSecondaryNetwork},
+			},
+		},
+	}
+	if err := zonegetter.AddNodeTopologyCR(zg, nodeTopologyCR); err != nil {
+		t.Fatalf("failed to add node topology CR: %v", err)
+	}
+
+	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3} {
+		nodeName := fmt.Sprintf("node-%s-secondary", zone)
+		if err := addFakeNodeWithSubnet(zg, transactionSyncer.nodeLister, nodeName, zone, "multi-net-secondary-subnet"); err != nil {
+			t.Fatalf("Failed to add fake node: %v", err)
+		}
+	}
 
 	// Start syncer without starting syncer goroutine
 	(transactionSyncer.syncer.(*syncer)).stopped = false
@@ -2089,6 +2111,17 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 			if tc.nodeTopologyCr != nil {
 				if err := zonegetter.AddNodeTopologyCR(syncer.zoneGetter, tc.nodeTopologyCr); err != nil {
 					t.Fatalf("Failed to create Node Topology CR: %v", err)
+				}
+				zg := syncer.zoneGetter
+				for _, subnetConfig := range tc.nodeTopologyCr.Status.Subnets {
+					if subnetConfig.Name != defaultTestSubnet {
+						for _, zone := range zones {
+							nodeName := fmt.Sprintf("node-%s-%s", zone, subnetConfig.Name)
+							if err := addFakeNodeWithSubnet(zg, syncer.nodeLister, nodeName, zone, subnetConfig.Name); err != nil {
+								t.Fatalf("Failed to add fake node for subnet %s: %v", subnetConfig.Name, err)
+							}
+						}
+					}
 				}
 			}
 
@@ -4785,4 +4818,31 @@ func generateExpectedNegObjReferences(t *testing.T, cloud negtypes.NetworkEndpoi
 	}
 
 	return expectedNegRefs
+}
+
+func addFakeNodeWithSubnet(zg *zonegetter.ZoneGetter, nodeIndexer cache.Indexer, name, zone, subnet string) error {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				utils.LabelNodeSubnet: subnet,
+			},
+		},
+		Spec: corev1.NodeSpec{
+			ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", zone, name),
+			PodCIDR:    "10.100.99.0/24",
+		},
+		Status: corev1.NodeStatus{
+			Conditions: []corev1.NodeCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+	if err := nodeIndexer.Add(node); err != nil {
+		return err
+	}
+	return zonegetter.AddFakeNode(zg, node)
 }
