@@ -28,6 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	compute "google.golang.org/api/compute/v1"
@@ -314,6 +315,78 @@ func TestAddressManagerIPv6(t *testing.T) {
 	}
 }
 
+// TestAddressManagerForwardingRuleConflict tests if reserving the IP fails when the IP
+// is already in use by a Forwarding Rule of another service.
+func TestAddressManagerForwardingRuleConflict(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc        string
+		serviceName string
+		hasConflict bool
+	}{
+		{
+			desc:        "No conflict, forwarding rule belongs to the same service",
+			serviceName: testSvcName,
+			hasConflict: false,
+		},
+		{
+			desc:        "Conflict, forwarding rule belongs to a different service",
+			serviceName: "different-service",
+			hasConflict: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc, err := fakeGCECloud(vals)
+			require.NoError(t, err)
+
+			targetIP := "10.0.0.1"
+
+			// Force a reservation conflict by pre-reserving the IP under a different address name.
+			conflictingAddr := &compute.Address{
+				Name:        "other-addr",
+				Address:     targetIP,
+				AddressType: string(cloud.SchemeInternal),
+			}
+			err = svc.ReserveRegionAddress(conflictingAddr, vals.Region)
+			require.NoError(t, err)
+
+			// Create a forwarding rule associated with the target IP.
+			mockGCE := svc.Compute().(*cloud.MockGCE)
+			frName := "conflicting-fr"
+			frDesc, err := utils.MakeL4LBServiceDescription(tc.serviceName, targetIP, meta.VersionGA, false, utils.ILB)
+			require.NoError(t, err)
+
+			frKey := meta.RegionalKey(frName, vals.Region)
+			mockGCE.MockForwardingRules.Objects[*frKey] = &cloud.MockForwardingRulesObj{
+				Obj: &compute.ForwardingRule{
+					Name:        frName,
+					IPAddress:   targetIP,
+					Description: frDesc,
+				},
+			}
+
+			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
+			_, _, err = mgr.HoldAddress()
+
+			if tc.hasConflict {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "is already in use by forwarding rule")
+			} else {
+				// No conflict is returned because the forwarding rule belongs to the same service.
+				// However, since we pre-reserved the address under "other-addr" name, HoldAddress will get it, validate it,
+				// and return it as IPAddrUnmanaged.
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func testHoldAddress(t *testing.T, mgr *address.Manager, svc gce.CloudAddressService, name, region, targetIP, scheme, netTier string) {
 	ipToUse, ipType, err := mgr.HoldAddress()
 	require.NoError(t, err)
@@ -349,4 +422,72 @@ func fakeGCECloud(vals gce.TestClusterValues) (*gce.Cloud, error) {
 	mockGCE.MockAlphaAddresses.X = mock.AddressAttributes{}
 	mockGCE.MockAddresses.X = mock.AddressAttributes{}
 	return gce, nil
+}
+
+func TestDecompressIPv6(t *testing.T) {
+	testCases := []struct {
+		name     string
+		addr     string
+		expected string
+	}{
+		{
+			name:     "No compression",
+			addr:     "2001:db8:1:2:3:ff00:42:8329",
+			expected: "2001:db8:1:2:3:ff00:42:8329",
+		},
+		{
+			name:     "Compression in middle",
+			addr:     "2001:db8::ff00:42:8329",
+			expected: "2001:db8:0:0:0:ff00:42:8329",
+		},
+		{
+			name:     "Compression in middle (Short)",
+			addr:     "1:2::3",
+			expected: "1:2:0:0:0:0:0:3",
+		},
+		{
+			name:     "Compression in middle (single hextet)",
+			addr:     "1:2:3:4::6:7:8",
+			expected: "1:2:3:4:0:6:7:8",
+		},
+		{
+			name:     "Match-all",
+			addr:     "::",
+			expected: "0:0:0:0:0:0:0:0",
+		},
+		{
+			name:     "Loopback",
+			addr:     "::1",
+			expected: "0:0:0:0:0:0:0:1",
+		},
+		{
+			name:     "Compression at beginning",
+			addr:     "::ff00:42:8329",
+			expected: "0:0:0:0:0:ff00:42:8329",
+		},
+		{
+			name:     "Compression at end",
+			addr:     "2001:db8::",
+			expected: "2001:db8:0:0:0:0:0:0",
+		},
+		{
+			name:     "Compression at beginning (single hextet)",
+			addr:     "::db8:1:2:3:ff00:42:8329",
+			expected: "0:db8:1:2:3:ff00:42:8329",
+		},
+		{
+			name:     "Compression at end (single hextet)",
+			addr:     "2001:db8:1:2:3:ff00:42::",
+			expected: "2001:db8:1:2:3:ff00:42:0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := address.DecompressIPv6(tc.addr)
+			if actual != tc.expected {
+				t.Errorf("DecompressIPv6(%q) = %q; want %q", tc.addr, actual, tc.expected)
+			}
+		})
+	}
 }
