@@ -484,7 +484,7 @@ func TestDecompressIPv6(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := address.DecompressIPv6(tc.addr)
+			actual := address.DecompressAddr(tc.addr)
 			if actual != tc.expected {
 				t.Errorf("DecompressIPv6(%q) = %q; want %q", tc.addr, actual, tc.expected)
 			}

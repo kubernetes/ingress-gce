@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
@@ -185,10 +185,10 @@ func (m *Manager) removeAddress(name, reason string) error {
 	return nil
 }
 
-// DecompressIPv6 re-adds ommited hextets in IPv6 address.
+// DecompressAddr re-adds ommited hextets in IPv6 address.
 // For example, running the function with argument "2001:db8::ff00:42:8329"
 // returns "2001:db8:0:0:0:ff00:42:8329".
-func DecompressIPv6(addr string) string {
+func DecompressAddr(addr string) string {
 	if !strings.Contains(addr, "::") {
 		// no compression
 		return addr
@@ -203,6 +203,39 @@ func DecompressIPv6(addr string) string {
 		expanded += "0"
 	}
 	return strings.Replace(addr, "::", expanded, 1)
+}
+
+func (m *Manager) isAddressInForwardingRules() error {
+	// Check if the address is in forwarding rules. If it is, we don't need to reserve it.
+	if gceCloud, ok := m.svc.(*gce.Cloud); ok {
+		key := meta.RegionalKey(m.name, m.region)
+		fr, err := composite.GetForwardingRule(gceCloud, key, meta.VersionGA, m.frLogger)
+		if err != nil {
+			return fmt.Errorf("failed to lookup forwarding rules, err: %v", err)
+		} else {
+			// We might need to match de-compressed address with mask.
+			ok, err := regexp.MatchString(DecompressAddr(m.targetIP)+"(/\\d+)?", fr.IPAddress)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("forwarding rule IP %q doesn't match requested IP %q", fr.IPAddress, m.targetIP)
+			}
+
+			// If the forwarding rule service name matches.
+			var desc utils.L4LBResourceDescription
+			descErr := desc.Unmarshal(fr.Description)
+			if descErr != nil {
+				return l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("failed to unmarshal forwarding rule, err: %v", err))
+			}
+			if desc.ServiceName != m.serviceName {
+				return l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("is already in use by forwarding rule %s of service %s", fr.Name, desc.ServiceName))
+			}
+			m.frLogger.V(4).Info("Successfully found IP in forwarding rules", "ip", m.targetIP, "forwarding rule", fr.Name)
+			return nil
+		}
+	}
+	return fmt.Errorf("failed to convert provider")
 }
 
 // ensureAddressReservation reserves ip address and returns address as a string,
@@ -246,6 +279,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	}
 
 	reserveErr := m.svc.ReserveRegionAddress(newAddr, m.region)
+
 	if reserveErr == nil {
 		if newAddr.Address != "" {
 			m.frLogger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
@@ -293,32 +327,11 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", m.name, reserveErr)
 	}
 
-	// Check if the address is in forwarding rules. If it is, we don't need to reserve it.
-	if gceCloud, ok := m.svc.(*gce.Cloud); ok {
-		// Create a filter for the IPAddress.
-		// ForwardingRules keep IP addresses in expanded form, mask may be included.
-		ipFilter := filter.Regexp("IPAddress", DecompressIPv6(m.targetIP)+"(/\\d+)?")
-		key := meta.RegionalKey("", m.region)
-
-		// List regional forwarding rules to determine if the target IP is already in use.
-		frList, err := composite.ListForwardingRules(gceCloud, key, meta.VersionGA, m.frLogger, ipFilter)
-		if err != nil {
-			return "", IPAddrUndefined, fmt.Errorf("failed to lookup forwarding rules, err: %v", err)
-		} else {
-			for _, fr := range frList {
-				var desc utils.L4LBResourceDescription
-				descErr := desc.Unmarshal(fr.Description)
-				if descErr != nil {
-					return "", IPAddrUndefined, l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("failed to unmarshal forwarding rule, err: %v", err))
-				}
-				// If the forwarding rule is used by a different service, return a configuration error.
-				if desc.ServiceName != m.serviceName {
-					return "", IPAddrUndefined, l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("is already in use by forwarding rule %s of service %s", fr.Name, desc.ServiceName))
-				}
-				m.frLogger.V(4).Info("Successfully found IP in forwarding rules", "ip", m.targetIP, "forwarding rule", fr.Name)
-				return m.targetIP, IPAddrManaged, nil
-			}
-		}
+	err := m.isAddressInForwardingRules()
+	if err == nil {
+		return m.targetIP, IPAddrManaged, nil
+	} else {
+		m.frLogger.V(4).Info("IP not found in forwarding rules", "ip", m.targetIP, "err", err)
 	}
 
 	// Reserving the address failed due to a conflict or bad request. The address manager just checked that no address
