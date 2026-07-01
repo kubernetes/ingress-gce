@@ -22,13 +22,14 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	compute "google.golang.org/api/compute/v1"
@@ -315,73 +316,103 @@ func TestAddressManagerIPv6(t *testing.T) {
 	}
 }
 
-// TestAddressManagerForwardingRuleConflict tests if reserving the IP fails when the IP
-// is already in use by a Forwarding Rule of another service.
-func TestAddressManagerForwardingRuleConflict(t *testing.T) {
-	t.Parallel()
-
+func TestIsAddressInForwardingRules(t *testing.T) {
 	testCases := []struct {
-		desc        string
-		serviceName string
-		hasConflict bool
+		desc           string
+		address        string
+		ipVersion      address.IPVersion
+		forwardingRule *composite.ForwardingRule
+		serviceName    string
+		wantResult     bool
 	}{
 		{
-			desc:        "No conflict, forwarding rule belongs to the same service",
-			serviceName: testSvcName,
-			hasConflict: false,
+			desc:      "match",
+			address:   "35.190.1.1",
+			ipVersion: address.IPv4Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
 		},
 		{
-			desc:        "Conflict, forwarding rule belongs to a different service",
-			serviceName: "different-service",
-			hasConflict: true,
+			desc:      "match IPv6",
+			address:   "1111:2222:3333:4444:5555::",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "1111:2222:3333:4444:5555:0:0:0", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
+		},
+		{
+			desc:      "IP addres not matching",
+			address:   "35.190.1.3",
+			ipVersion: address.IPv4Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: false,
+		},
+		{desc: "IP addres not matching IPv6",
+			address:   "2222:2222:3333:4444:5555::",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "1111:2222:3333:4444:5555:0:0:0", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: false,
+		},
+		{
+			desc:      "service name not matching",
+			address:   "35.190.1.3",
+			ipVersion: address.IPv4Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.3", Name: testLBName,
+			},
+			serviceName: "wrong-svc-name",
+			wantResult:  false,
+		},
+		{
+			desc:           "no forwarding rule",
+			address:        "35.190.1.1",
+			ipVersion:      address.IPv4Version,
+			forwardingRule: nil,
+			wantResult:     false,
+		},
+		{
+			desc:      "empty address string",
+			address:   "",
+			ipVersion: address.IPv4Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", ServiceName: testLBName,
+			},
+			wantResult: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
 			svc, err := fakeGCECloud(vals)
-			require.NoError(t, err)
-
-			targetIP := "10.0.0.1"
-
-			// Force a reservation conflict by pre-reserving the IP under a different address name.
-			conflictingAddr := &compute.Address{
-				Name:        "other-addr",
-				Address:     targetIP,
-				AddressType: string(cloud.SchemeInternal),
+			if err != nil {
+				t.Fatalf("fakeGCECloud(%v) returned error %v", vals, err)
 			}
-			err = svc.ReserveRegionAddress(conflictingAddr, vals.Region)
-			require.NoError(t, err)
-
-			// Create a forwarding rule associated with the target IP.
-			mockGCE := svc.Compute().(*cloud.MockGCE)
-			frName := "conflicting-fr"
-			frDesc, err := utils.MakeL4LBServiceDescription(tc.serviceName, targetIP, meta.VersionGA, false, utils.ILB)
-			require.NoError(t, err)
-
-			frKey := meta.RegionalKey(frName, vals.Region)
-			mockGCE.MockForwardingRules.Objects[*frKey] = &cloud.MockForwardingRulesObj{
-				Obj: &compute.ForwardingRule{
-					Name:        frName,
-					IPAddress:   targetIP,
-					Description: frDesc,
-				},
+			svcName := testSvcName
+			if tc.serviceName != "" {
+				svcName = tc.serviceName
 			}
 
-			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", targetIP, cloud.SchemeInternal, cloud.NetworkTierDefault, address.IPv4Version, klog.TODO())
-			_, _, err = mgr.HoldAddress()
+			desc, err := utils.MakeL4LBServiceDescription(svcName, tc.address, meta.VersionGA, false, utils.ILB)
+			if err != nil {
+				t.Fatalf("MakeL4LBServiceDescription returned err %v", desc)
+			}
+			if tc.forwardingRule != nil {
+				tc.forwardingRule.Description = desc
+				mustCreateForwardingRules(t, svc, []*composite.ForwardingRule{tc.forwardingRule})
+			}
 
-			if tc.hasConflict {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "is already in use by forwarding rule")
-			} else {
-				// No conflict is returned because the forwarding rule belongs to the same service.
-				// However, since we pre-reserved the address under "other-addr" name, HoldAddress will get it, validate it,
-				// and return it as IPAddrUnmanaged.
-				assert.NoError(t, err)
+			m := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", tc.address, cloud.SchemeInternal, cloud.NetworkTierPremium, tc.ipVersion, klog.TODO())
+			got := m.IsAddressInForwardingRules()
+			if got != tc.wantResult {
+				t.Errorf("IsAddressInForwardingRules() unexpectet result, want = %v, got=%v, svc=%+v", tc.wantResult, tc.address, svc)
 			}
 		})
 	}
@@ -489,5 +520,22 @@ func TestDecompressIPv6(t *testing.T) {
 				t.Errorf("DecompressIPv6(%q) = %q; want %q", tc.addr, actual, tc.expected)
 			}
 		})
+	}
+}
+
+func mustCreateForwardingRules(t *testing.T, cloud *gce.Cloud, frs []*composite.ForwardingRule) {
+	t.Helper()
+	for _, fr := range frs {
+		mustCreateForwardingRule(t, cloud, fr)
+	}
+}
+
+func mustCreateForwardingRule(t *testing.T, cloud *gce.Cloud, fr *composite.ForwardingRule) {
+	t.Helper()
+
+	key := meta.RegionalKey(fr.Name, cloud.Region())
+	err := composite.CreateForwardingRule(cloud, key, fr, klog.TODO())
+	if err != nil {
+		t.Fatalf("composite.CreateForwardingRule(_, %s, %v) returned error %v, want nil", key, fr, err)
 	}
 }

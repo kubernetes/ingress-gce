@@ -205,37 +205,43 @@ func DecompressAddr(addr string) string {
 	return strings.Replace(addr, "::", expanded, 1)
 }
 
-func (m *Manager) isAddressInForwardingRules() error {
+func (m *Manager) IsAddressInForwardingRules() bool {
 	// Check if the address is in forwarding rules. If it is, we don't need to reserve it.
 	if gceCloud, ok := m.svc.(*gce.Cloud); ok {
 		key := meta.RegionalKey(m.name, m.region)
 		fr, err := composite.GetForwardingRule(gceCloud, key, meta.VersionGA, m.frLogger)
 		if err != nil {
-			return fmt.Errorf("failed to lookup forwarding rules, err: %v", err)
-		} else {
-			// We might need to match de-compressed address with mask.
-			ok, err := regexp.MatchString(DecompressAddr(m.targetIP)+"(/\\d+)?", fr.IPAddress)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("forwarding rule IP %q doesn't match requested IP %q", fr.IPAddress, m.targetIP)
-			}
-
-			// If the forwarding rule service name matches.
-			var desc utils.L4LBResourceDescription
-			descErr := desc.Unmarshal(fr.Description)
-			if descErr != nil {
-				return l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("failed to unmarshal forwarding rule, err: %v", err))
-			}
-			if desc.ServiceName != m.serviceName {
-				return l4utils.NewIPConfigurationError(m.targetIP, fmt.Sprintf("is already in use by forwarding rule %s of service %s", fr.Name, desc.ServiceName))
-			}
-			m.frLogger.V(4).Info("Successfully found IP in forwarding rules", "ip", m.targetIP, "forwarding rule", fr.Name)
-			return nil
+			m.frLogger.V(4).Info("failed to lookup forwarding rules, err: %v", err)
+			return false
 		}
+		// We might need to match de-compressed address with mask.
+		pattern := DecompressAddr(m.targetIP) + "(/\\d+)?"
+		ok, err := regexp.MatchString(pattern, fr.IPAddress)
+		if err != nil {
+			m.frLogger.V(4).Info("failed to regexp match %v in %v", pattern, fr.IPAddress)
+			return false
+		}
+		if !ok {
+			m.frLogger.V(4).Info("forwarding rule IP %q doesn't match requested IP %q", fr.IPAddress, m.targetIP)
+			return false
+		}
+
+		// If the forwarding rule service name matches.
+		var desc utils.L4LBResourceDescription
+		descErr := desc.Unmarshal(fr.Description)
+		if descErr != nil {
+			m.frLogger.V(4).Info(m.targetIP, fmt.Sprintf("failed to unmarshal forwarding rule, err: %v", err))
+			return false
+		}
+		if desc.ServiceName != m.serviceName {
+			m.frLogger.V(4).Info(m.targetIP, fmt.Sprintf("is already in use by forwarding rule %s of service %s", fr.Name, desc.ServiceName))
+			return false
+		}
+		m.frLogger.V(4).Info("Successfully found IP in forwarding rules", "ip", m.targetIP, "forwarding rule", fr.Name)
+		return true
 	}
-	return fmt.Errorf("failed to convert provider")
+	m.frLogger.V(4).Info("failed to convert provider")
+	return false
 }
 
 // ensureAddressReservation reserves ip address and returns address as a string,
@@ -327,11 +333,10 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", m.name, reserveErr)
 	}
 
-	err := m.isAddressInForwardingRules()
-	if err == nil {
+	if ok := m.IsAddressInForwardingRules(); ok {
 		return m.targetIP, IPAddrManaged, nil
 	} else {
-		m.frLogger.V(4).Info("IP not found in forwarding rules", "ip", m.targetIP, "err", err)
+		m.frLogger.V(4).Info("IP not found in forwarding rules", "ip", m.targetIP)
 	}
 
 	// Reserving the address failed due to a conflict or bad request. The address manager just checked that no address
