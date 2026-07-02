@@ -41,7 +41,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -54,7 +53,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -97,6 +95,9 @@ type transactionSyncer struct {
 
 	//kubeSystemUID used to populate Cluster UID on Neg Description when using NEG CRD
 	kubeSystemUID string
+
+	// statusHandler is used to manage reporting and retrieving current status of NEGs
+	statusHandler negtypes.NEGStatusHandler
 
 	//svcNegClient used to update status on corresponding NEG CRs when not nil
 	svcNegClient svcnegclient.Interface
@@ -154,6 +155,7 @@ func NewTransactionSyncer(
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
+	statusHandler negtypes.NEGStatusHandler,
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
@@ -186,6 +188,7 @@ func NewTransactionSyncer(
 		endpointsCalculator:       epc,
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
+		statusHandler:             statusHandler,
 		svcNegClient:              svcNegClient,
 		syncMetricsCollector:      syncerMetrics,
 		customName:                customName,
@@ -909,35 +912,11 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.NEGLocation]negt
 // isTopologyChange returns true if a topology (zones/subnets) change has occurred by comparing which zones/subnets have NEGs are initialized in
 // to zones/subnets NEGs are expected to be in
 func (s *transactionSyncer) isTopologyChange() bool {
-	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	existingSubnetZones, err := s.statusHandler.SubnetToZonesMap()
 	if err != nil {
-		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+		s.logger.Error(err, "unable to retrieve subnet-zones mapping from status handler")
 		return false
-	}
-
-	existingSubnetZones := make(shared.ZonesPerSubnetMap)
-	for _, ref := range negCR.Status.NetworkEndpointGroups {
-		subnetURL := ref.SubnetURL
-		if ref.SubnetURL == "" {
-			subnetURL = s.networkInfo.SubnetworkURL
-		}
-		subnetName, err := utils.KeyName(subnetURL)
-		if err != nil {
-			s.logger.Error(err, "unable to parse subnet url", "url", subnetURL)
-			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-			continue
-		}
-		id, err := cloud.ParseResourceURL(ref.SelfLink)
-		if err != nil {
-			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
-			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-			continue
-		}
-		if _, ok := existingSubnetZones[subnetName]; !ok {
-			existingSubnetZones[subnetName] = sets.New[string]()
-		}
-		existingSubnetZones[subnetName].Insert(id.Key.Zone)
 	}
 
 	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)

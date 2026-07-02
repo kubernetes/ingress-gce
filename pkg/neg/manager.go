@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -246,6 +247,17 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				nonDefaultSubnetNEGNamer = manager.l4Namer
 			}
 
+			statusHandler := negstatushandler.NewSvcNegStatusHandler(
+				manager.svcNegClient,
+				manager.svcNegLister,
+				syncerKey.Namespace,
+				syncerKey.NegName,
+				portInfo.NetworkInfo,
+				manager.zoneGetter,
+				manager.negMetrics,
+				manager.logger,
+			)
+
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
@@ -256,6 +268,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.endpointSliceLister,
 				manager.nodeLister,
 				manager.svcNegLister,
+				statusHandler,
 				manager.reflector,
 				epc,
 				string(manager.kubeSystemUID),
