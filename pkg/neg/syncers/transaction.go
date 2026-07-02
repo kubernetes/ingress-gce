@@ -541,7 +541,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	var errList []error
-	var negObjRefs []negv1beta1.NegObjectReference
+	var negObjs []*composite.NetworkEndpointGroup
 	updateNEGStatus := true
 	negsByLocation := make(map[string]int)
 
@@ -604,7 +604,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		}
 
 		for zone := range zones {
-			var negObj negv1beta1.NegObjectReference
+			var negObj *composite.NetworkEndpointGroup
 			negObj, err = ensureNetworkEndpointGroup(
 				s.Namespace,
 				s.Name,
@@ -633,15 +633,17 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 				}
 			}
 
-			if s.svcNegClient != nil && err == nil {
-				negObjRefs = append(negObjRefs, negObj)
+			if err == nil {
+				negObjs = append(negObjs, negObj)
 				negsByLocation[zone]++
 			}
 		}
 	}
 
 	if updateNEGStatus {
-		s.updateInitStatus(negObjRefs, errList)
+		if err := s.statusHandler.ReportStatus(negObjs, errList); err != nil {
+			s.logger.Error(err, "Failed to report ensured NEGs on Status reporter")
+		}
 	}
 
 	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
@@ -1004,42 +1006,6 @@ func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.NEGLocation]ne
 	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", fmt.Sprintf("%+v", endpointMap))
 }
 
-// updateInitStatus takes in the NEG refs based on the existing node zones,
-// then queries the k8s api server for the current NEG CR and updates the
-// Initialized condition and neg objects as appropriate.
-// Before patching the NEG CR, it also includes NEG refs for NEGs are no longer
-// needed and change status as INACTIVE.
-// If neg client is nil, will return immediately.
-func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectReference, errList []error) {
-	if s.svcNegClient == nil {
-		return
-	}
-
-	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
-	if err != nil {
-		s.logger.Error(err, "Error updating init status for neg, failed to get neg from store.")
-		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-		return
-	}
-
-	neg := origNeg.DeepCopy()
-	if flags.F.EnableMultiSubnetClusterPhase1 {
-		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.topologyProvider.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
-		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
-	}
-	neg.Status.NetworkEndpointGroups = negObjRefs
-
-	initializedCondition := getInitializedCondition(utilerrors.NewAggregate(errList))
-	finalCondition := ensureCondition(neg, initializedCondition)
-	s.negMetrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origNeg.GetCreationTimestamp().Time))
-
-	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName, s.negMetrics)
-	if err != nil {
-		s.logger.Error(err, "Error updating Neg CR")
-		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-	}
-}
-
 // updateStatus will update the Synced condition as needed on the corresponding neg cr. If the Initialized condition or NetworkEndpointGroups are missing, needInit will be set to true. LastSyncTime will be updated as well.
 func (s *transactionSyncer) updateStatus(syncErr error) {
 	if s.svcNegClient == nil {
@@ -1173,68 +1139,6 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 	return expectedCondition
 }
 
-// getNonActiveNegRefs creates NEG references for NEGs in Inactive State and ToBeDeleted state.
-// Inactive NEG are NEGs that are in zones that cluster is no longer in.
-// ToBeDeleted NEGs are NEGs in subnets that no longer exist on the Topology CRD
-func getNonActiveNegRefs(oldNegRefs []negv1beta1.NegObjectReference, currentNegRefs []negv1beta1.NegObjectReference, subnetConfigs []nodetopologyv1.SubnetConfig, defaultSubnetURL string, logger klog.Logger) []negv1beta1.NegObjectReference {
-
-	subnetMap := make(map[string]struct{})
-	for _, subnet := range subnetConfigs {
-		subnetMap[subnet.Name] = struct{}{}
-	}
-
-	activeNegs := make(map[negtypes.NegInfo]struct{})
-	for _, negRef := range currentNegRefs {
-		negInfo, err := negtypes.NegInfoFromNegRef(negRef)
-		if err != nil {
-			logger.Error(err, "Failed to extract name and zone information of a neg from the current snapshot", "negId", negRef.Id, "negSelfLink", negRef.SelfLink)
-			continue
-		}
-		activeNegs[negInfo] = struct{}{}
-	}
-
-	var nonActiveNegRefs []negv1beta1.NegObjectReference
-	for _, origNegRef := range oldNegRefs {
-		negInfo, err := negtypes.NegInfoFromNegRef(origNegRef)
-		if err != nil {
-			logger.Error(err, "Failed to extract name and zone information of a neg from the previous snapshot, skipping validating if it is an Inactive NEG", "negId", origNegRef.Id, "negSelfLink", origNegRef.SelfLink)
-			continue
-		}
-
-		if _, exists := activeNegs[negInfo]; exists {
-			continue
-		}
-		// NEGs are listed based on the current node zones. If a NEG no longer
-		// exists in the current list, it means there are no nodes/endpoints
-		// in that specific zone, and we mark it as INACTIVE.
-		// We use SelfLink as identifier since it contains the unique NEG zone
-		// and name pair.
-
-		nonActiveNegRef := origNegRef.DeepCopy()
-		nonActiveNegRef.State = negv1beta1.InactiveState
-
-		// Empty subnet is a remanent from a previous version and is only possible
-		// with a NEG from the default subnet. The ref should be updated with default
-		// subnet.
-		if nonActiveNegRef.SubnetURL == "" {
-			nonActiveNegRef.SubnetURL = defaultSubnetURL
-		}
-
-		resID, err := cloud.ParseResourceURL(nonActiveNegRef.SubnetURL)
-		if err != nil {
-			logger.Error(err, "Failed to extract subnet information from the previous snapshot, skipping validating if it is an Inactive or to-be-deleted NEG", "negId", nonActiveNegRef.Id, "negSelfLink", nonActiveNegRef.SelfLink)
-			continue
-		}
-
-		if _, exists := subnetMap[resID.Key.Name]; !exists {
-			nonActiveNegRef.State = negv1beta1.ToBeDeletedState
-		}
-
-		nonActiveNegRefs = append(nonActiveNegRefs, *nonActiveNegRef)
-	}
-	return nonActiveNegRefs
-}
-
 // getSyncedCondition returns the expected synced condition based on given error
 func getSyncedCondition(err error) negv1beta1.Condition {
 	if err != nil {
@@ -1251,26 +1155,6 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 		Type:               negv1beta1.Synced,
 		Status:             v1.ConditionTrue,
 		Reason:             negtypes.NegSyncSuccessful,
-		LastTransitionTime: metav1.Now(),
-	}
-}
-
-// getInitializedCondition returns the expected initialized condition based on given error
-func getInitializedCondition(err error) negv1beta1.Condition {
-	if err != nil {
-		return negv1beta1.Condition{
-			Type:               negv1beta1.Initialized,
-			Status:             v1.ConditionFalse,
-			Reason:             negtypes.NegInitializationFailed,
-			LastTransitionTime: metav1.Now(),
-			Message:            err.Error(),
-		}
-	}
-
-	return negv1beta1.Condition{
-		Type:               negv1beta1.Initialized,
-		Status:             v1.ConditionTrue,
-		Reason:             negtypes.NegInitializationSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
 }
