@@ -36,7 +36,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
-	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -1922,22 +1921,8 @@ func TestNegObjectCrd(t *testing.T) {
 			t.Errorf("Failed to find neg")
 		}
 
-		var subnetURL string
-		if networkEndpointType != negtypes.NonGCPPrivateEndpointType {
-			subnetURL = testSubnetwork
-		}
-		expectedNegObj := negv1beta1.NegObjectReference{
-			Id:                  fmt.Sprint(neg.Id),
-			SelfLink:            neg.SelfLink,
-			NetworkEndpointType: negv1beta1.NetworkEndpointType(networkEndpointType),
-		}
-		if flags.F.EnableMultiSubnetClusterPhase1 {
-			expectedNegObj.State = negv1beta1.ActiveState
-			expectedNegObj.SubnetURL = subnetURL
-		}
-
-		if negObj != expectedNegObj {
-			t.Errorf("Expected neg object %+v, but received %+v", expectedNegObj, negObj)
+		if !reflect.DeepEqual(negObj, neg) {
+			t.Errorf("Expected neg object %+v, but received %+v", neg, negObj)
 		}
 
 		// Call ensureNetworkEndpointGroup with the same NEG name and different service name
@@ -1964,8 +1949,8 @@ func TestNegObjectCrd(t *testing.T) {
 			t.Errorf("Unexpected error when ensuring NEG: %s", err)
 		}
 
-		if negObj != expectedNegObj {
-			t.Errorf("Expected neg object %+v, but received %+v", expectedNegObj, negObj)
+		if !reflect.DeepEqual(negObj, neg) {
+			t.Errorf("Expected neg object %+v, but received %+v", neg, negObj)
 		}
 	}
 }

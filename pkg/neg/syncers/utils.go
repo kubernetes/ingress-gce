@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -125,14 +124,13 @@ func getService(serviceLister cache.Indexer, namespace, name string, logger klog
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (negv1beta1.NegObjectReference, error) {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (*composite.NetworkEndpointGroup, error) {
 	negLogger := logger.WithValues("negName", negName, "zone", zone)
-	var negRef negv1beta1.NegObjectReference
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
 			negLogger.Error(err, "Failed to get Neg")
-			return negRef, err
+			return nil, err
 		}
 		negLogger.Info("Neg was not found", "err", err)
 		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -150,12 +148,12 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 		if customName && neg.Description == "" {
 			negLogger.Error(nil, "Found Neg with custom name but empty description")
-			return negv1beta1.NegObjectReference{}, fmt.Errorf("found a custom named neg %s with an empty description", negName)
+			return nil, fmt.Errorf("found a custom named neg %s with an empty description", negName)
 		}
 		if matches, err := utils.VerifyDescription(expectedDesc, neg.Description, negName, zone); !matches {
 			negLogger.Error(err, "Neg Name is already in use")
 			// Wrap returned error from VerifyDescription() since we need to check if error is ErrNEGUsedByAnotherSyncer.
-			return negv1beta1.NegObjectReference{}, fmt.Errorf("found conflicting description in neg %s: %w", negName, err)
+			return nil, fmt.Errorf("found conflicting description in neg %s: %w", negName, err)
 		}
 
 		if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
@@ -168,7 +166,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			negLogger.Info("NEG does not match network and subnetwork of the cluster. Deleting NEG")
 			err = cloud.DeleteNetworkEndpointGroup(negName, zone, version, logger)
 			if err != nil {
-				return negRef, err
+				return nil, err
 			}
 			if recorder != nil && serviceLister != nil {
 				if svc := getService(serviceLister, svcNamespace, svcName, logger, negMetrics); svc != nil {
@@ -205,7 +203,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			Description:         desc,
 		}, zone, logger)
 		if err != nil {
-			return negRef, err
+			return nil, err
 		}
 		if recorder != nil && serviceLister != nil {
 			if svc := getService(serviceLister, svcNamespace, svcName, logger, negMetrics); svc != nil {
@@ -219,20 +217,11 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 		if err != nil {
 			negLogger.Error(err, "Error while retrieving NEG after initialization")
-			return negRef, err
+			return nil, err
 		}
 	}
 
-	negRef = negv1beta1.NegObjectReference{
-		Id:                  fmt.Sprint(neg.Id),
-		SelfLink:            neg.SelfLink,
-		NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
-	}
-	if flags.F.EnableMultiSubnetClusterPhase1 {
-		negRef.State = negv1beta1.ActiveState
-		negRef.SubnetURL = neg.Subnetwork
-	}
-	return negRef, nil
+	return neg, nil
 }
 
 type ZoneNetworkEndpointMapResult struct {

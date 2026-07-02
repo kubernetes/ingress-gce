@@ -17,7 +17,10 @@ limitations under the License.
 package types
 
 import (
+	"time"
+
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 
@@ -104,4 +107,20 @@ type NetworkEndpointsCalculator interface {
 type TopologyProvider interface {
 	ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig
 	ListZonesPerSubnet(filter zonegetter.Filter, logger klog.Logger) (shared.ZonesPerSubnetMap, error)
+}
+
+// NEGStatusHandler defines interface for reporting NEG syncer status.
+type NEGStatusHandler interface {
+	// ReportSyncStatus reports the result of a sync operation.
+	// It returns true if the syncer needs to re-initialize NEGs on next sync.
+	ReportSyncStatus(syncErr error) (needInit bool, err error)
+
+	// ReportStatus reports the status after NEGs are ensured.
+	ReportStatus(negs []*composite.NetworkEndpointGroup, errList []error) error
+
+	// SubnetToZonesMap returns the current subnet-to-zones mapping reported in status.
+	SubnetToZonesMap() (shared.ZonesPerSubnetMap, error)
+
+	// LastSyncTime returns the last time the NEG syncer synced associated NEGs.
+	LastSyncTime() (time.Time, error)
 }
