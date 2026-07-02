@@ -41,7 +41,6 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/backoff"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -50,7 +49,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -77,7 +75,6 @@ type transactionSyncer struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	nodeLister          cache.Indexer
-	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
 	topologyProvider    negtypes.TopologyProvider
@@ -94,9 +91,6 @@ type transactionSyncer struct {
 
 	// statusHandler is used to manage reporting and retrieving current status of NEGs
 	statusHandler negtypes.NEGStatusHandler
-
-	//svcNegClient used to update status on corresponding NEG CRs when not nil
-	svcNegClient svcnegclient.Interface
 
 	// customName indicates whether the NEG name is a generated one or custom one
 	customName bool
@@ -150,12 +144,10 @@ func NewTransactionSyncer(
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
-	svcNegLister cache.Indexer,
 	statusHandler negtypes.NEGStatusHandler,
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
-	svcNegClient svcnegclient.Interface,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	customName bool,
 	log klog.Logger,
@@ -177,7 +169,6 @@ func NewTransactionSyncer(
 		podLister:                 podLister,
 		serviceLister:             serviceLister,
 		endpointSliceLister:       endpointSliceLister,
-		svcNegLister:              svcNegLister,
 		recorder:                  recorder,
 		cloud:                     cloud,
 		topologyProvider:          topologyProvider,
@@ -185,7 +176,6 @@ func NewTransactionSyncer(
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
 		statusHandler:             statusHandler,
-		svcNegClient:              svcNegClient,
 		syncMetricsCollector:      syncerMetrics,
 		customName:                customName,
 		errorState:                false,
@@ -1018,19 +1008,18 @@ func convertUntypedToEPS(endpointSliceUntyped []interface{}) []*discovery.Endpoi
 }
 
 func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.EndpointSlice) {
-	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	lastSyncTimestamp, err := s.statusHandler.LastSyncTime()
 	if err != nil {
-		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
+		s.logger.Error(err, "unable to retrieve last sync time from status reporter")
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return
 	}
-	lastSyncTimestamp := negCR.Status.LastSyncTime
 	for _, endpointSlice := range endpointSlices {
 		epsCreationTimestamp := endpointSlice.ObjectMeta.CreationTimestamp
 
-		epsStaleness := time.Since(lastSyncTimestamp.Time)
+		epsStaleness := time.Since(lastSyncTimestamp)
 		// if this endpoint slice is newly created/created after last sync
-		if lastSyncTimestamp.Before(&epsCreationTimestamp) {
+		if lastSyncTimestamp.Before(epsCreationTimestamp.Time) {
 			epsStaleness = time.Since(epsCreationTimestamp.Time)
 		}
 		s.negMetrics.PublishNegEPSStalenessMetrics(epsStaleness)
@@ -1064,19 +1053,6 @@ func computeDegradedModeCorrectness(notInDegraded, onlyInDegraded map[negtypes.N
 		onlyInDegradedEndpoints += len(val)
 	}
 	m.PublishDegradedModeCorrectnessMetrics(onlyInDegradedEndpoints, metrics.OnlyInDegradedEndpoints, negType)
-}
-
-// getNegFromStore returns the neg associated with the provided namespace and neg name if it exists otherwise throws an error
-func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
-	n, exists, err := svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
-	if err != nil {
-		return nil, fmt.Errorf("error getting neg %s/%s from cache: %w", namespace, negName, err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("neg %s/%s is not in store", namespace, negName)
-	}
-
-	return n.(*negv1beta1.ServiceNetworkEndpointGroup), nil
 }
 
 // getEndpointPodLabelMap goes through all the endpoints to be attached and fetches the labels from the endpoint pods.
