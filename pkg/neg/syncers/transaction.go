@@ -17,7 +17,6 @@ limitations under the License.
 package syncers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -38,8 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -54,7 +51,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -276,7 +272,13 @@ func (s *transactionSyncer) syncInternal() error {
 			s.setErrorState()
 		}
 	}
-	s.updateStatus(err)
+	needInit, reportErr := s.statusHandler.ReportSyncStatus(err)
+	if reportErr != nil {
+		s.logger.Error(reportErr, "Failed to report sync status on Status reporter")
+	}
+	if needInit {
+		s.needInit = true
+	}
 	s.negMetrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
 	s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, err, s.inErrorState())
 	return err
@@ -1006,39 +1008,6 @@ func (s *transactionSyncer) logEndpoints(endpointMap map[negtypes.NEGLocation]ne
 	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", fmt.Sprintf("%+v", endpointMap))
 }
 
-// updateStatus will update the Synced condition as needed on the corresponding neg cr. If the Initialized condition or NetworkEndpointGroups are missing, needInit will be set to true. LastSyncTime will be updated as well.
-func (s *transactionSyncer) updateStatus(syncErr error) {
-	if s.svcNegClient == nil {
-		return
-	}
-	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
-	if err != nil {
-		s.logger.Error(err, "Error updating status for neg, failed to get neg from store")
-		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-		return
-	}
-	neg := origNeg.DeepCopy()
-
-	ts := metav1.Now()
-	if _, _, exists := findCondition(neg.Status.Conditions, negv1beta1.Initialized); !exists {
-		s.needInit = true
-	}
-	s.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(neg.Status.LastSyncTime.Time))
-
-	ensureCondition(neg, getSyncedCondition(syncErr))
-	neg.Status.LastSyncTime = ts
-
-	if len(neg.Status.NetworkEndpointGroups) == 0 {
-		s.needInit = true
-	}
-
-	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName, s.negMetrics)
-	if err != nil {
-		s.logger.Error(err, "Error updating Neg CR")
-		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-	}
-}
-
 func convertUntypedToEPS(endpointSliceUntyped []interface{}) []*discovery.EndpointSlice {
 	endpointSlices := make([]*discovery.EndpointSlice, len(endpointSliceUntyped))
 	for i, slice := range endpointSliceUntyped {
@@ -1108,67 +1077,6 @@ func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*ne
 	}
 
 	return n.(*negv1beta1.ServiceNetworkEndpointGroup), nil
-}
-
-// patchNegStatus patches the specified NegCR status with the provided new status
-func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string, m *metrics.NegMetrics) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
-	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare patch bytes: %w", err)
-	}
-
-	start := time.Now()
-	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	m.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
-	return neg, err
-}
-
-// ensureCondition will update the condition on the neg object if necessary
-func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondition negv1beta1.Condition) negv1beta1.Condition {
-	condition, index, exists := findCondition(neg.Status.Conditions, expectedCondition.Type)
-	if !exists {
-		neg.Status.Conditions = append(neg.Status.Conditions, expectedCondition)
-		return expectedCondition
-	}
-
-	if condition.Status == expectedCondition.Status {
-		expectedCondition.LastTransitionTime = condition.LastTransitionTime
-	}
-
-	neg.Status.Conditions[index] = expectedCondition
-	return expectedCondition
-}
-
-// getSyncedCondition returns the expected synced condition based on given error
-func getSyncedCondition(err error) negv1beta1.Condition {
-	if err != nil {
-		return negv1beta1.Condition{
-			Type:               negv1beta1.Synced,
-			Status:             v1.ConditionFalse,
-			Reason:             negtypes.NegSyncFailed,
-			LastTransitionTime: metav1.Now(),
-			Message:            err.Error(),
-		}
-	}
-
-	return negv1beta1.Condition{
-		Type:               negv1beta1.Synced,
-		Status:             v1.ConditionTrue,
-		Reason:             negtypes.NegSyncSuccessful,
-		LastTransitionTime: metav1.Now(),
-	}
-}
-
-// findCondition finds a condition in the given list of conditions that has the type conditionType and returns the condition and its index.
-// If no condition is found, an empty condition, -1 and false will be returned to indicate the condition does not exist.
-func findCondition(conditions []negv1beta1.Condition, conditionType string) (negv1beta1.Condition, int, bool) {
-	for i, c := range conditions {
-		if c.Type == conditionType {
-			return c, i, true
-		}
-	}
-
-	return negv1beta1.Condition{}, -1, false
 }
 
 // getEndpointPodLabelMap goes through all the endpoints to be attached and fetches the labels from the endpoint pods.

@@ -2347,7 +2347,7 @@ func TestReportStatusWithMultiSubnetCluster(t *testing.T) {
 }
 
 // Test transition from only having the default subnet to multiple subnets
-func TestUpdateInitStatusTransitions(t *testing.T) {
+func TestReportStatusTransitions(t *testing.T) {
 	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
 	testNegType := negtypes.VmIpPortEndpointType
 	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
@@ -2691,7 +2691,11 @@ func TestUpdateStatus(t *testing.T) {
 				}
 				syncer.svcNegLister.Add(origCR)
 
-				syncer.updateStatus(syncErr)
+				// Call ReportSyncStatus
+				needInit, reportErr := syncer.statusHandler.ReportSyncStatus(syncErr)
+				if reportErr != nil {
+					t.Fatalf("Failed to report sync status: %v", reportErr)
+				}
 
 				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Get(context.Background(), testNegName, metav1.GetOptions{})
 				if err != nil {
@@ -2706,8 +2710,8 @@ func TestUpdateStatus(t *testing.T) {
 					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, corev1.ConditionTrue, true)
 				}
 
-				if syncer.needInit != tc.expectedNeedInit {
-					t.Errorf("expected manager.needInit to be %t, but was %t", tc.expectedNeedInit, syncer.needInit)
+				if needInit != tc.expectedNeedInit {
+					t.Errorf("expected needInit to be %t, but was %t", tc.expectedNeedInit, needInit)
 				}
 
 				if !creationTS.Before(&negCR.Status.LastSyncTime) {
