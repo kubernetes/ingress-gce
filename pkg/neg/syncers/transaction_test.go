@@ -48,6 +48,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/network"
@@ -4409,6 +4410,18 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		negNamer = testContext.L4Namer
 	}
 
+	handler := negstatushandler.NewSvcNegStatusHandler(
+		testContext.SvcNegClient,
+		testContext.SvcNegInformer.GetIndexer(),
+		svcPort.Namespace,
+		svcPort.NegName,
+		netInfo,
+		fakeZoneGetter,
+		testContext.NegMetrics,
+		klog.TODO(),
+	)
+	statusReporter := negstatushandler.NewTestSvcNegStatusHandler(handler)
+
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
 		fakeGCE,
@@ -4418,6 +4431,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
 		testContext.SvcNegInformer.GetIndexer(),
+		statusReporter,
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
 			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: test.DefaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics),
