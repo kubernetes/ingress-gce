@@ -28,7 +28,9 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -724,13 +726,35 @@ func TestNonGCPZoneGetter(t *testing.T) {
 	zone := "foo"
 	subnet := ""
 	zoneGetter := NewNonGCPZoneGetter(zone)
+	SetNodeTopologyHasSynced(zoneGetter, func() bool { return false })
+	expectZones := []string{zone}
+
+	// ListZones
 	ret, err := zoneGetter.ListZones(AllNodesFilter, klog.TODO())
 	if err != nil {
-		t.Errorf("expect err = nil, but got %v", err)
+		t.Errorf("expect err = nil for ListZones, but got %v", err)
 	}
-	expectZones := []string{zone}
 	if !reflect.DeepEqual(expectZones, ret) {
-		t.Errorf("expect list zones = %v, but got %v", expectZones, ret)
+		t.Errorf("expect ListZones = %v, but got %v", expectZones, ret)
+	}
+
+	// ListZonesInDefaultSubnet
+	retInDefault, err := zoneGetter.ListZonesInDefaultSubnet(AllNodesFilter, klog.TODO())
+	if err != nil {
+		t.Errorf("expect err = nil for ListZonesInDefaultSubnet, but got %v", err)
+	}
+	if !reflect.DeepEqual(expectZones, retInDefault) {
+		t.Errorf("expect ListZonesInDefaultSubnet = %v, but got %v", expectZones, retInDefault)
+	}
+
+	// ListZonesPerSubnet
+	retPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, klog.TODO())
+	if err != nil {
+		t.Errorf("expect err = nil for ListZonesPerSubnet, but got %v", err)
+	}
+	expectZonesPerSubnet := shared.ZonesPerSubnetMap{"": sets.New(expectZones...)}
+	if !reflect.DeepEqual(expectZonesPerSubnet, retPerSubnet) {
+		t.Errorf("expect ListZonesPerSubnet = %v, but got %v", expectZonesPerSubnet, retPerSubnet)
 	}
 
 	validateGetZoneForNode := func(node string) {
@@ -1610,7 +1634,7 @@ func TestListSubnets(t *testing.T) {
 			fakeTopologyInformer := FakeNodeTopologyInformer()
 			zoneGetter, err := NewFakeZoneGetter(FakeNodeInformer(), fakeTopologyInformer, defaultTestSubnetURL, !tc.enableMSC)
 			if err != nil {
-				t.Fatalf("failed to initialize zone getter")
+				t.Fatalf("failed to initialize zone getter: %v", err)
 			}
 
 			zoneGetter.nodeTopologyHasSynced = func() bool { return tc.nodeTopologySynced }
@@ -1637,5 +1661,117 @@ func TestLegacyListSubnets(t *testing.T) {
 	subnets := zoneGetter.ListSubnets(klog.TODO())
 	if len(subnets) != 0 {
 		t.Errorf("In legacy mode, ListSubnets() returned %d, expected 0 subnets", len(subnets))
+	}
+}
+
+func TestLegacyListZonesPerSubnet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
+
+	zonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, klog.TODO())
+	if err != nil {
+		t.Errorf("expect err = nil for ListZonesPerSubnet, but got %v", err)
+	}
+
+	expectZonesPerSubnet := shared.ZonesPerSubnetMap{}
+	if !reflect.DeepEqual(expectZonesPerSubnet, zonesPerSubnet) {
+		t.Errorf("expect ListZonesPerSubnet = %v, but got %v", expectZonesPerSubnet, zonesPerSubnet)
+	}
+}
+
+func TestListZonesPerSubnet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter")
+	}
+	nodeTopologyCR := &nodetopologyv1.NodeTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: flags.F.NodeTopologyCRName,
+		},
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultTestSubnet, SubnetPath: defaultTestSubnetURL},
+				{Name: nonDefaultTestSubnet, SubnetPath: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/non-default"},
+			},
+		},
+	}
+	if err := AddNodeTopologyCR(zoneGetter, nodeTopologyCR); err != nil {
+		t.Fatalf("failed to add node topology CR: %v", err)
+	}
+	SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+
+	testCases := []struct {
+		desc                          string
+		filter                        Filter
+		wantZonesPerSubnetOnlyDefault shared.ZonesPerSubnetMap
+		wantZonesPerSubnetAllSubnets  shared.ZonesPerSubnetMap
+	}{
+		{
+			desc:   "List with AllNodesFilter",
+			filter: AllNodesFilter,
+			wantZonesPerSubnetOnlyDefault: shared.ZonesPerSubnetMap{
+				"default": sets.New("zone1", "zone2", "zone3", "zone4", "zone5", "zone6"),
+			},
+			wantZonesPerSubnetAllSubnets: shared.ZonesPerSubnetMap{
+				"default":     sets.New("zone1", "zone2", "zone3", "zone4", "zone5", "zone6", "zone7", "zone8"),
+				"non-default": sets.New("zone1", "zone2", "zone3", "zone4", "zone5", "zone6", "zone7", "zone8"),
+			},
+		},
+		{
+			desc:   "List with CandidateNodesFilter",
+			filter: CandidateNodesFilter,
+			wantZonesPerSubnetOnlyDefault: shared.ZonesPerSubnetMap{
+				"default": sets.New("zone1", "zone2", "zone4", "zone5", "zone6"),
+			},
+			wantZonesPerSubnetAllSubnets: shared.ZonesPerSubnetMap{
+				"default":     sets.New("zone1", "zone2", "zone4", "zone5", "zone6", "zone7", "zone8"),
+				"non-default": sets.New("zone1", "zone2", "zone4", "zone5", "zone6", "zone7", "zone8"),
+			},
+		},
+		{
+			desc:   "List with CandidateAndUnreadyNodesFilter",
+			filter: CandidateAndUnreadyNodesFilter,
+			wantZonesPerSubnetOnlyDefault: shared.ZonesPerSubnetMap{
+				"default": sets.New("zone1", "zone2", "zone3", "zone5", "zone6"),
+			},
+			wantZonesPerSubnetAllSubnets: shared.ZonesPerSubnetMap{
+				"default":     sets.New("zone1", "zone2", "zone3", "zone5", "zone6", "zone7", "zone8"),
+				"non-default": sets.New("zone1", "zone2", "zone3", "zone5", "zone6", "zone7", "zone8"),
+			},
+		},
+		{
+			desc:                          "List with filter matching no nodes",
+			filter:                        Filter("non-existent-filter"),
+			wantZonesPerSubnetOnlyDefault: shared.ZonesPerSubnetMap{},
+			wantZonesPerSubnetAllSubnets:  shared.ZonesPerSubnetMap{},
+		},
+	}
+
+	for _, tc := range testCases {
+		for _, onlyIncludeDefaultSubnetNodes := range []bool{true, false} {
+			t.Run(tc.desc, func(t *testing.T) {
+				zoneGetter.onlyIncludeDefaultSubnetNodes = onlyIncludeDefaultSubnetNodes
+				gotZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(tc.filter, klog.TODO())
+				if err != nil {
+					t.Errorf("expect err = nil, but got %v", err)
+				}
+
+				wantZonesPerSubnet := tc.wantZonesPerSubnetAllSubnets
+				if onlyIncludeDefaultSubnetNodes {
+					wantZonesPerSubnet = tc.wantZonesPerSubnetOnlyDefault
+				}
+
+				if diff := cmp.Diff(wantZonesPerSubnet, gotZonesPerSubnet); diff != "" {
+					t.Errorf("ListZonesPerSubnet() mismatch (-want +got):\n%s", diff)
+				}
+			})
+		}
 	}
 }

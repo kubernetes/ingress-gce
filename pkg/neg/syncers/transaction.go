@@ -54,6 +54,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -85,7 +86,7 @@ type transactionSyncer struct {
 	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
-	zoneGetter          *zonegetter.ZoneGetter
+	topologyProvider    negtypes.TopologyProvider
 	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
@@ -147,7 +148,7 @@ func NewTransactionSyncer(
 	negSyncerKey negtypes.NegSyncerKey,
 	recorder record.EventRecorder,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	zoneGetter *zonegetter.ZoneGetter,
+	topologyProvider negtypes.TopologyProvider,
 	podLister cache.Indexer,
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
@@ -181,7 +182,7 @@ func NewTransactionSyncer(
 		svcNegLister:              svcNegLister,
 		recorder:                  recorder,
 		cloud:                     cloud,
-		zoneGetter:                zoneGetter,
+		topologyProvider:          topologyProvider,
 		endpointsCalculator:       epc,
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
@@ -285,14 +286,13 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		s.logger.Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String(), "syncerStopped", isStopped, "syncerShuttingDown", isShuttingDown)
 		return nil
 	}
-	zoneChange := s.isZoneChange()
-	subnetChange := s.isSubnetChange()
+	topologyChange := s.isTopologyChange()
 	// Decide if endpoint health should be retrieved when listing endpoints.
 	// Only matters for L4 Local mode.
 	needInitDrainStatus := s.needInit && s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode
 
-	if s.needInit || zoneChange || subnetChange {
-		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "zoneChange", zoneChange, "subnetChange", subnetChange)
+	if s.needInit || topologyChange {
+		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "topologyChange", topologyChange)
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
 		}
@@ -300,14 +300,14 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
-	subnetConfigs := s.zoneGetter.ListSubnets(s.logger)
+	subnetConfigs := s.topologyProvider.ListSubnets(s.logger)
 	subnetToNegMapping, err := s.generateSubnetToNegNameMap(subnetConfigs)
 	if err != nil {
 		s.logger.Error(err, "failed to generate subnet to neg name mapping")
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -532,7 +532,7 @@ func (s *transactionSyncer) candidateNodeFilter() zonegetter.Filter {
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// NEGs should be created in zones with candidate nodes only.
-	zones, err := s.zoneGetter.ListZones(s.candidateNodeFilter(), s.logger)
+	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
 	if err != nil {
 		return err
 	}
@@ -556,7 +556,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 		// zoneGetter.
 
 		// List all existing subnets from the cluster.
-		subnetConfigs = s.zoneGetter.ListSubnets(s.logger)
+		subnetConfigs = s.topologyProvider.ListSubnets(s.logger)
 	} else {
 		// This is the multi-networking case where the VPC under consideration
 		// is not the default. Use the pre configured subnet from the
@@ -571,6 +571,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	for _, subnetConfig := range subnetConfigs {
+		zones, ok := zonesPerSubnet[subnetConfig.Name]
+		if !ok {
+			// s.topologyProvider.ListSubnets and s.topologyProvider.ListZonesPerSubnet should return same set of subnets.
+			// Therefore this condition should be true only for multi-networking where we don't want NEGs in default subnet
+			continue
+		}
 		negName := s.NegSyncerKey.NegName
 		networkInfo := s.networkInfo
 
@@ -594,7 +600,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			networkInfo.SubnetworkURL = cloud.SelfLink(meta.VersionGA, resourceID.ProjectID, resourceID.Resource, resourceID.Key)
 		}
 
-		for _, zone := range zones {
+		for zone := range zones {
 			var negObj negv1beta1.NegObjectReference
 			negObj, err = ensureNetworkEndpointGroup(
 				s.Namespace,
@@ -900,9 +906,9 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.NEGLocation]negt
 	}
 }
 
-// isZoneChange returns true if a zone change has occurred by comparing which zones the nodes are in
-// with the zones that NEGs are initialized in
-func (s *transactionSyncer) isZoneChange() bool {
+// isTopologyChange returns true if a topology (zones/subnets) change has occurred by comparing which zones/subnets have NEGs are initialized in
+// to zones/subnets NEGs are expected to be in
+func (s *transactionSyncer) isTopologyChange() bool {
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
 		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
@@ -910,63 +916,38 @@ func (s *transactionSyncer) isZoneChange() bool {
 		return false
 	}
 
-	existingZones := sets.NewString()
+	existingSubnetZones := make(shared.ZonesPerSubnetMap)
 	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		subnetURL := ref.SubnetURL
+		if ref.SubnetURL == "" {
+			subnetURL = s.networkInfo.SubnetworkURL
+		}
+		subnetName, err := utils.KeyName(subnetURL)
+		if err != nil {
+			s.logger.Error(err, "unable to parse subnet url", "url", subnetURL)
+			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+			continue
+		}
 		id, err := cloud.ParseResourceURL(ref.SelfLink)
 		if err != nil {
 			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
 			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 			continue
 		}
-		existingZones.Insert(id.Key.Zone)
+		if _, ok := existingSubnetZones[subnetName]; !ok {
+			existingSubnetZones[subnetName] = sets.New[string]()
+		}
+		existingSubnetZones[subnetName].Insert(id.Key.Zone)
 	}
 
-	zones, err := s.zoneGetter.ListZones(s.candidateNodeFilter(), s.logger)
+	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false
 	}
-	currZones := sets.NewString(zones...)
 
-	return !currZones.Equal(existingZones)
-}
-
-func (s *transactionSyncer) isSubnetChange() bool {
-	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
-	if err != nil {
-		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
-		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-		return false
-	}
-
-	existingSubnets := sets.New[string]()
-	for _, ref := range negCR.Status.NetworkEndpointGroups {
-		// If the subnet url is empty it means that the reference was created before
-		// Subnets were populated by the controller. This is only possible with the subnetwork
-		// that is specificed in networkInfo, and therefore we can assume which subnetwork was
-		// used for this NEG
-		subnetURL := s.networkInfo.SubnetworkURL
-		if ref.SubnetURL != "" {
-			subnetURL = ref.SubnetURL
-		}
-		id, err := cloud.ParseResourceURL(subnetURL)
-		if err != nil {
-			s.logger.Error(err, "unable to parse subnet url", "url", ref.SubnetURL)
-			s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
-			continue
-		}
-
-		existingSubnets.Insert(id.Key.Name)
-	}
-
-	currSubnets := sets.New[string]()
-	subnets := s.zoneGetter.ListSubnets(s.logger)
-	for _, subnet := range subnets {
-		currSubnets.Insert(subnet.Name)
-	}
-
-	return !currSubnets.Equal(existingSubnets)
+	return !wantSubnetZones.Equal(existingSubnetZones)
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
@@ -1064,7 +1045,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	neg := origNeg.DeepCopy()
 	if flags.F.EnableMultiSubnetClusterPhase1 {
-		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.zoneGetter.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
+		nonActiveNegRefs := getNonActiveNegRefs(origNeg.Status.NetworkEndpointGroups, negObjRefs, s.topologyProvider.ListSubnets(s.logger), s.networkInfo.SubnetworkURL, s.logger)
 		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
 	}
 	neg.Status.NetworkEndpointGroups = negObjRefs
