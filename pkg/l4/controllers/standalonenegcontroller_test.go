@@ -22,15 +22,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -306,6 +309,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
+			expectError:        true,
 			expectEventReasons: []string{"NoForwardingRuleRef"},
 		},
 		{
@@ -323,6 +327,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
+			expectError:        true,
 			expectEventReasons: []string{"NoForwardingRuleRef"},
 		},
 		{
@@ -340,6 +345,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
+			expectError:        true,
 			expectEventReasons: []string{"NoForwardingRuleRef"},
 		},
 		{
@@ -361,7 +367,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
 		},
 		{
-			desc: "Service with Type != ServiceTypeLoadBalancer is ignored",
+			desc: "Clear status ingress IP when Service type is not LoadBalancer",
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "svc-not-lb",
@@ -393,7 +399,6 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionGA,
 				},
 			},
-			expectIPs:   []string{"1.2.3.4"},
 			expectError: false,
 		},
 		{
@@ -416,6 +421,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				},
 			},
 			expectIPs:          nil,
+			expectError:        true,
 			expectEventReasons: []string{"NoForwardingRuleRef"},
 		},
 		{
@@ -478,6 +484,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				},
 			},
 			expectIPs:          nil,
+			expectError:        true,
 			expectEventReasons: []string{"NoForwardingRuleRef"},
 		},
 		{
@@ -621,14 +628,23 @@ func TestValidateForwardingRule(t *testing.T) {
 			expectError: false,
 		},
 		{
-			desc: "Internal scheme unsupported",
+			desc: "Internal scheme not supported",
 			fr: &composite.ForwardingRule{
 				LoadBalancingScheme: "INTERNAL",
 				IPProtocol:          "TCP",
 			},
 			frName:         "internal-scheme",
 			expectError:    true,
-			expectErrorMsg: "forwarding rule internal-scheme has unsupported load balancing scheme: INTERNAL",
+			expectErrorMsg: "forwarding rule internal-scheme has unsupported load balancing scheme: INTERNAL, supported schemes are: EXTERNAL, EXTERNAL_PASSTHROUGH",
+		},
+		{
+			desc: "Valid EXTERNAL_PASSTHROUGH rule",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+			},
+			frName:      "valid-ext-passthrough",
+			expectError: false,
 		},
 		{
 			desc: "Unsupported scheme",
@@ -638,7 +654,7 @@ func TestValidateForwardingRule(t *testing.T) {
 			},
 			frName:         "invalid-scheme",
 			expectError:    true,
-			expectErrorMsg: "forwarding rule invalid-scheme has unsupported load balancing scheme: INTERNAL_SELF_MANAGED",
+			expectErrorMsg: "forwarding rule invalid-scheme has unsupported load balancing scheme: INTERNAL_SELF_MANAGED, supported schemes are: EXTERNAL, EXTERNAL_PASSTHROUGH",
 		},
 		{
 			desc: "Unsupported protocol",
@@ -648,7 +664,7 @@ func TestValidateForwardingRule(t *testing.T) {
 			},
 			frName:         "invalid-protocol",
 			expectError:    true,
-			expectErrorMsg: "forwarding rule invalid-protocol has unsupported protocol: ESP",
+			expectErrorMsg: "forwarding rule invalid-protocol has unsupported protocol: ESP, supported protocols are: TCP, UDP, L3_DEFAULT",
 		},
 	}
 
@@ -662,5 +678,451 @@ func TestValidateForwardingRule(t *testing.T) {
 				t.Errorf("validateForwardingRule() error message = %q, expected = %q", err.Error(), tc.expectErrorMsg)
 			}
 		})
+	}
+}
+
+func setupControllerContext(t *testing.T) (*fake.Clientset, *gce.Cloud, *StandaloneNEGLBController, chan struct{}) {
+	kubeClient := fake.NewSimpleClientset()
+	fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+	namer := namer.NewNamer("cluster-uid", "firewall-name", klog.TODO())
+
+	stopCh := make(chan struct{})
+
+	ctxConfig := ingctx.ControllerContextConfig{Namespace: v1.NamespaceAll}
+	c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to create controller context: %v", err)
+	}
+
+	lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+	return kubeClient, fakeGCE, lc, stopCh
+}
+
+func TestStandaloneNEGLBControllerMetrics_Success(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	frName := "custom-fr"
+	frIP := "10.0.0.100"
+	project := "test-project"
+	region := "us-central1"
+	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+
+	kubeClient, fakeGCE, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// Create a valid forwarding rule
+	key, err := composite.CreateKey(fakeGCE, frName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key for forwarding rule: %v", err)
+	}
+	fr := &composite.ForwardingRule{
+		Name:                frName,
+		IPAddress:           frIP,
+		BackendService:      bsURL,
+		LoadBalancingScheme: "EXTERNAL",
+		IPProtocol:          "TCP",
+		Scope:               meta.Regional,
+		Version:             meta.VersionGA,
+	}
+	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to create forwarding rule: %v", err)
+	}
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				annotations.CustomForwardingRuleKey: frName,
+			},
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+
+	// Add service to informer and fake kube client
+	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
+	kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	err = lc.sync(svcKey)
+	if err != nil {
+		t.Fatalf("sync() error = %v", err)
+	}
+
+	state, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+	if !ok {
+		t.Fatalf("Expected service %s in metrics map", svcKey)
+	}
+	if state.Status != l4metrics.StatusSuccess {
+		t.Errorf("Expected status %s, got %s", l4metrics.StatusSuccess, state.Status)
+	}
+	if !state.LBSchemeExternal {
+		t.Errorf("Expected LBSchemeExternal to be true")
+	}
+}
+
+func TestStandaloneNEGLBControllerMetrics_UserError(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	frName := "custom-fr"
+	frIP := "10.0.0.100"
+	project := "test-project"
+	region := "us-central1"
+	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+
+	kubeClient, fakeGCE, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// Create a forwarding rule with invalid scheme
+	key, err := composite.CreateKey(fakeGCE, frName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key for forwarding rule: %v", err)
+	}
+	fr := &composite.ForwardingRule{
+		Name:                frName,
+		IPAddress:           frIP,
+		BackendService:      bsURL,
+		LoadBalancingScheme: "INTERNAL_SELF_MANAGED", // Invalid
+		IPProtocol:          "TCP",
+		Scope:               meta.Regional,
+		Version:             meta.VersionGA,
+	}
+	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to create forwarding rule: %v", err)
+	}
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				annotations.CustomForwardingRuleKey: frName,
+			},
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+
+	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
+	kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	err = lc.sync(svcKey)
+	if err == nil {
+		t.Fatalf("Expected sync to fail")
+	}
+
+	state, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+	if !ok {
+		t.Fatalf("Expected service %s in metrics map", svcKey)
+	}
+	if state.Status != l4metrics.StatusUserError {
+		t.Errorf("Expected status %s, got %s", l4metrics.StatusUserError, state.Status)
+	}
+}
+
+func TestStandaloneNEGLBControllerMetrics_SystemError(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	frName := "custom-fr"
+
+	kubeClient, fakeGCE, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// Create a valid forwarding rule key
+	key, err := composite.CreateKey(fakeGCE, frName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key for forwarding rule: %v", err)
+	}
+
+	// Inject GCE error
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	if mockGCE.MockForwardingRules.GetError == nil {
+		mockGCE.MockForwardingRules.GetError = make(map[meta.Key]error)
+	}
+	mockGCE.MockForwardingRules.GetError[*key] = fmt.Errorf("internal GCE error")
+	defer delete(mockGCE.MockForwardingRules.GetError, *key)
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				annotations.CustomForwardingRuleKey: frName,
+			},
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+
+	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
+	kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	err = lc.sync(svcKey)
+	if err == nil {
+		t.Fatalf("Expected sync to fail due to GCE error")
+	}
+
+	state, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+	if !ok {
+		t.Fatalf("Expected service %s in metrics map", svcKey)
+	}
+	if state.Status != l4metrics.StatusError {
+		t.Errorf("Expected status %s, got %s", l4metrics.StatusError, state.Status)
+	}
+	if state.FirstSyncErrorTime == nil {
+		t.Errorf("Expected FirstSyncErrorTime to be set for system error")
+	}
+}
+
+func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	frName := "custom-fr"
+	frIP := "10.0.0.100"
+	project := "test-project"
+	region := "us-central1"
+	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+
+	kubeClient, fakeGCE, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// Create a valid forwarding rule
+	key, err := composite.CreateKey(fakeGCE, frName, meta.Regional)
+	if err != nil {
+		t.Fatalf("Failed to create key for forwarding rule: %v", err)
+	}
+	fr := &composite.ForwardingRule{
+		Name:                frName,
+		IPAddress:           frIP,
+		BackendService:      bsURL,
+		LoadBalancingScheme: "EXTERNAL",
+		IPProtocol:          "TCP",
+		Scope:               meta.Regional,
+		Version:             meta.VersionGA,
+	}
+	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to create forwarding rule: %v", err)
+	}
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				annotations.CustomForwardingRuleKey: frName,
+			},
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+
+	// Add service to informer and fake kube client
+	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
+	kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	// Initial sync to establish state in metrics
+	err = lc.sync(svcKey)
+	if err != nil {
+		t.Fatalf("sync() error = %v", err)
+	}
+	_, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+	if !ok {
+		t.Fatalf("Expected service %s in metrics map", svcKey)
+	}
+
+	// Act - Deletion
+	err = kubeClient.CoreV1().Services(svc.Namespace).Delete(context.TODO(), svc.Name, metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("Failed to delete service: %v", err)
+	}
+	lc.ctx.ServiceInformer.GetIndexer().Delete(svc)
+
+	err = lc.sync(svcKey)
+	if err != nil {
+		t.Fatalf("sync() error = %v", err)
+	}
+
+	// Assert
+	_, ok = lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+	if ok {
+		t.Errorf("Expected service %s to be removed from metrics map", svcKey)
+	}
+}
+
+func TestStandaloneNEGLBControllerEventHandlers_Add(t *testing.T) {
+	kubeClient, _, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// Start the informer
+	go lc.ctx.ServiceInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, lc.ctx.ServiceInformer.HasSynced) {
+		t.Fatalf("Failed to sync cache")
+	}
+
+	// Start the queue workers
+	go lc.svcQueue.Run()
+	defer lc.svcQueue.Shutdown()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: new(annotations.StandalonePassthroughNegLoadBalancerClass),
+		},
+	}
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	// Act
+	_, err := kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create service: %v", err)
+	}
+
+	// Assert - Wait for metrics to be updated (should be UserError because no annotation)
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		state, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+		return ok && state.Status == l4metrics.StatusUserError, nil
+	})
+	if err != nil {
+		t.Errorf("Failed to verify AddFunc via metrics: %v", err)
+	}
+}
+
+func TestStandaloneNEGLBControllerEventHandlers_Update(t *testing.T) {
+	kubeClient, _, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: new(annotations.StandalonePassthroughNegLoadBalancerClass),
+		},
+	}
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	// Setup initial state (service exists and is enqueued/processed once)
+	_, err := kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create service: %v", err)
+	}
+
+	// Start the informer
+	go lc.ctx.ServiceInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, lc.ctx.ServiceInformer.HasSynced) {
+		t.Fatalf("Failed to sync cache")
+	}
+
+	// Start the queue workers
+	go lc.svcQueue.Run()
+	defer lc.svcQueue.Shutdown()
+
+	// Wait for initial metrics to be created
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		_, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+		return ok, nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to establish initial metrics state: %v", err)
+	}
+
+	// Act - Modify to not match shouldProcess (remove load balancer class)
+	currentSvc, err := kubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get service: %v", err)
+	}
+	currentSvc.Spec.LoadBalancerClass = nil
+	_, err = kubeClient.CoreV1().Services(svc.Namespace).Update(context.TODO(), currentSvc, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to update service: %v", err)
+	}
+
+	// Assert - Wait for metrics to be deleted
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		_, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+		return !ok, nil
+	})
+	if err != nil {
+		t.Errorf("Failed to verify UpdateFunc (non-matching) via metrics: %v", err)
+	}
+}
+
+func TestStandaloneNEGLBControllerEventHandlers_Delete(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+
+	kubeClient, _, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc1",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+	svcKey := svc.Namespace + "/" + svc.Name
+
+	// Setup initial state
+	_, err := kubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create service: %v", err)
+	}
+
+	// Start the informer
+	go lc.ctx.ServiceInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, lc.ctx.ServiceInformer.HasSynced) {
+		t.Fatalf("Failed to sync cache")
+	}
+
+	// Start the queue workers
+	go lc.svcQueue.Run()
+	defer lc.svcQueue.Shutdown()
+
+	// Wait for initial metrics to be created
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		_, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+		return ok, nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to establish initial metrics state: %v", err)
+	}
+
+	// Act - Delete service
+	err = kubeClient.CoreV1().Services(svc.Namespace).Delete(context.TODO(), svc.Name, metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("Failed to delete service: %v", err)
+	}
+
+	// Assert - Wait for metrics to be deleted
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		_, ok := lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
+		return !ok, nil
+	})
+	if err != nil {
+		t.Errorf("Failed to verify DeleteFunc via metrics: %v", err)
 	}
 }

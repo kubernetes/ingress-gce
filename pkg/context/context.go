@@ -127,6 +127,7 @@ type ControllerContextConfig struct {
 	MaxIGSize                            int
 	RunL4ILBController                   bool
 	RunL4NetLBController                 bool
+	RunL4StandaloneNEGController         bool
 	EnableL4ILBDualStack                 bool
 	EnableL4NetLBDualStack               bool
 	EnableL4StrongSessionAffinity        bool
@@ -374,7 +375,7 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
 
-	if runL4 := ctx.RunL4ILBController || ctx.RunL4NetLBController; runL4 {
+	if runL4 := ctx.RunL4ILBController || ctx.RunL4NetLBController || ctx.RunL4StandaloneNEGController; runL4 {
 		// Export L4LB usage metrics
 		go ctx.L4Metrics.Run(stopCh)
 	}

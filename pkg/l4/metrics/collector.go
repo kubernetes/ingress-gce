@@ -20,6 +20,8 @@ type Collector struct {
 	l4ILBServiceMap map[string]L4ServiceState
 	// l4NetLBServiceMap is a map between service key and L4 NetLB service state.
 	l4NetLBServiceMap map[string]L4ServiceState
+	// l4StandaloneNEGServiceMap is a map between service key and L4 Standalone NEG service state.
+	l4StandaloneNEGServiceMap map[string]L4StandaloneNEGServiceState
 
 	sync.Mutex
 
@@ -40,6 +42,7 @@ func NewCollector(exportInterval, l4NetLBProvisionDeadline time.Duration, enable
 		l4NetLBServiceLegacyMap:                 make(map[string]L4NetLBServiceLegacyState),
 		l4ILBServiceMap:                         make(map[string]L4ServiceState),
 		l4NetLBServiceMap:                       make(map[string]L4ServiceState),
+		l4StandaloneNEGServiceMap:               make(map[string]L4StandaloneNEGServiceState),
 		l4NetLBProvisionDeadlineForLegacyMetric: l4NetLBProvisionDeadline,
 		enableILBDualStack:                      enableILBDualStack,
 		enableNetLBDualStack:                    enableNetLBDualStack,
@@ -78,4 +81,5 @@ func (c *Collector) export() {
 	c.exportIPv4()
 	c.exportDualStack()
 	c.exportLegacy()
+	c.exportStandaloneNEG()
 }
