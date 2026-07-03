@@ -728,11 +728,18 @@ func verifyCloudNEG(
 	t.Helper()
 
 	const defaultRegion = "us-central1"
-	neg, err := gceCloud.GetNetworkEndpointGroup(negName, defaultRegion)
+	var lastErr error
+	err := wait.PollImmediate(shortTimeout, defaultTimeout, func() (bool, error) {
+		_, lastErr = gceCloud.GetNetworkEndpointGroup(negName, defaultRegion)
+		if lastErr != nil {
+			return false, nil
+		}
+		return true, nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to get NEG %q from cloud in region %s: %v", negName, defaultRegion, err)
+		return fmt.Errorf("failed to get NEG %q from cloud in region %s: %v (last error: %v)", negName, defaultRegion, err, lastErr)
 	}
-	t.Logf("Verified cloud NEG: %s in region %s", neg.Name, defaultRegion)
+	t.Logf("Verified cloud NEG: %s in region %s", negName, defaultRegion)
 	return nil
 }
 
