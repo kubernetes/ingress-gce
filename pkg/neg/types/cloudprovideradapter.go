@@ -19,6 +19,7 @@ package types
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
@@ -74,11 +75,13 @@ func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string, provider network
 // cloudProviderAdapter is a temporary shim to consolidate accesses to
 // Cloud and push them outside of this package.
 type cloudProviderAdapter struct {
-	c             *gce.Cloud
-	networkURL    string
-	subnetworkURL string
-	strategyKeys  map[string]struct{}
-	negMetrics    *metrics.NegMetrics
+	c                  *gce.Cloud
+	networkURL         string
+	subnetworkURL      string
+	strategyKeys       map[string]struct{}
+	negMetrics         *metrics.NegMetrics
+	regionZonesCache   []string
+	regionZonesCacheMu sync.Mutex
 }
 
 // GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
@@ -188,4 +191,23 @@ func (a *cloudProviderAdapter) Region() string {
 
 func (a *cloudProviderAdapter) GetNetwork(networkName string) (*compute.Network, error) {
 	return a.c.GetNetwork(networkName)
+}
+
+func (a *cloudProviderAdapter) Zones() ([]string, error) {
+	a.regionZonesCacheMu.Lock()
+	defer a.regionZonesCacheMu.Unlock()
+	if len(a.regionZonesCache) > 0 {
+		return a.regionZonesCache, nil
+	}
+
+	zones, err := a.c.ListZonesInRegion(a.Region())
+	if err != nil {
+		return nil, err
+	}
+	var zoneNames []string
+	for _, z := range zones {
+		zoneNames = append(zoneNames, z.Name)
+	}
+	a.regionZonesCache = zoneNames
+	return zoneNames, nil
 }

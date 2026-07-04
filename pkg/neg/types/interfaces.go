@@ -47,6 +47,7 @@ type NetworkEndpointGroupCloud interface {
 	NetworkProjectID() string
 	Region() string
 	GetNetwork(networkName string) (*compute.Network, error)
+	Zones() ([]string, error)
 }
 
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.

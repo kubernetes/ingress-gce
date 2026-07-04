@@ -71,6 +71,9 @@ type NegAnnotation struct {
 	// ExposedPorts maps ServicePort to attributes of the NEG that should be
 	// associated with the ServicePort.
 	ExposedPorts map[int32]NegAttributes `json:"exposed_ports,omitempty"`
+	// Zones specifies the zones where the exposed standalone NEGs should be pre-provisioned.
+	// If wildcard is specified like ["*"], then NEGs will be pre-provisioned in all zones in the cluster's region.
+	Zones []string `json:"zones,omitempty"`
 }
 
 // NegAttributes houses the attributes of the NEGs that are associated with the

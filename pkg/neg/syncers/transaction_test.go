@@ -51,6 +51,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/test"
@@ -4897,4 +4898,169 @@ func addFakeNodeWithSubnet(zg *zonegetter.ZoneGetter, nodeIndexer cache.Indexer,
 		return err
 	}
 	return zonegetter.AddFakeNode(zg, node)
+}
+
+// TestNEGPreprovisioningTransition tests the complete lifecycle transition of NEG pre-provisioning:
+//  1. Starts with a "usual" annotation (workload-only zones). Verifies that NEGs are only created in zones
+//     with workload nodes (zone1) and marked as ActiveState in the NEG CR.
+//  2. Transitions to "pre-provisioning" by adding "zone2" explicitly to the zones annotation. Verifies that
+//     the NEG in the pre-provisioned zone2 is successfully created in the cloud and its NEG CR status is ActiveState.
+//  3. Transitions back to "usual" by removing pre-provisioning zones annotation. Verifies that the active workload
+//     NEG in zone1 remains in ActiveState, while the pre-provisioned NEG in zone2 transitions cleanly to InactiveState
+//     in the NEG CR status as expected.
+func TestNEGPreprovisioningTransition(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
+	testNegType := negtypes.VmIpPortEndpointType
+
+	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+	}()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	flags.F.NodeTopologyCRName = "default"
+
+	_, ts, err := newTestTransactionSyncer(fakeCloud, testNegType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	// Clear pre-populated nodes in zone1, zone2, zone4 from zoneGetter
+	zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone1, ts.topologyProvider.(*zonegetter.ZoneGetter))
+	zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone2, ts.topologyProvider.(*zonegetter.ZoneGetter))
+	zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone4, ts.topologyProvider.(*zonegetter.ZoneGetter))
+
+	// Mock the zoneGetter to return only zone1 (TestZone1)
+	err = zonegetter.AddFakeNodes(ts.topologyProvider.(*zonegetter.ZoneGetter), negtypes.TestZone1, "node-1")
+	if err != nil {
+		t.Fatalf("failed to add fake node: %v", err)
+	}
+
+	// Setup Service with usual annotation
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ts.Name,
+			Namespace: ts.Namespace,
+			Annotations: map[string]string{
+				negannotation.NEGAnnotationKey: `{"exposed_ports":{"80":{}}}`,
+			},
+		},
+	}
+	ts.serviceLister.Add(svc)
+
+	svcNegClient := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGClient()
+	svcNegLister := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGLister()
+
+	// Create initial empty NEG CR
+	origCR := createNegCR(ts.NegName, metav1.Now(), true, true, []negv1beta1.NegObjectReference{})
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Create(context.Background(), origCR, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create test NEG CR: %v", err)
+	}
+	svcNegLister.Add(svcNeg)
+
+	// Step 1: Sync Usual Annotation (should only create NEG in zone1)
+	err = ts.ensureNetworkEndpointGroups()
+	if err != nil {
+		t.Fatalf("ensureNetworkEndpointGroups (usual) failed: %v", err)
+	}
+
+	ret, _ := ts.cloud.AggregatedListNetworkEndpointGroup(ts.NegSyncerKey.GetAPIVersion(), klog.TODO())
+	actualZones := sets.NewString()
+	for key := range ret {
+		actualZones.Insert(key.Zone)
+	}
+	if !actualZones.Equal(sets.NewString("zone1")) {
+		t.Errorf("Step 1: expected NEG created in zone1, but got actual zones: %v", actualZones.List())
+	}
+
+	// Update NEG CR status
+	neg1, err := ts.cloud.GetNetworkEndpointGroup(ts.NegSyncerKey.NegName, negtypes.TestZone1, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get NEG in zone1: %v", err)
+	}
+	err = ts.statusHandler.ReportStatus([]*composite.NetworkEndpointGroup{neg1}, nil)
+	if err != nil {
+		t.Fatalf("Failed to report status (Step 1): %v", err)
+	}
+
+	negCR, _ := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Get(context.Background(), ts.NegName, metav1.GetOptions{})
+	if len(negCR.Status.NetworkEndpointGroups) != 1 || negCR.Status.NetworkEndpointGroups[0].State != negv1beta1.ActiveState {
+		t.Errorf("Step 1: expected NEG CR to have 1 active ref, got status: %+v", negCR.Status)
+	}
+	svcNegLister.Update(negCR)
+
+	// Step 2: Transition to Pre-provisioning (zones=["zone2"])
+	svc.Annotations[negannotation.NEGAnnotationKey] = `{"exposed_ports":{"80":{}},"zones":["zone2"]}`
+	ts.serviceLister.Update(svc)
+
+	err = ts.ensureNetworkEndpointGroups()
+	if err != nil {
+		t.Fatalf("ensureNetworkEndpointGroups (pre-provisioning) failed: %v", err)
+	}
+
+	ret, _ = ts.cloud.AggregatedListNetworkEndpointGroup(ts.NegSyncerKey.GetAPIVersion(), klog.TODO())
+	actualZones = sets.NewString()
+	for key := range ret {
+		actualZones.Insert(key.Zone)
+	}
+	if !actualZones.Equal(sets.NewString("zone1", "zone2")) {
+		t.Errorf("Step 2: expected NEGs created in zone1 and zone2, but got actual zones: %v", actualZones.List())
+	}
+
+	// Update NEG CR status
+	neg2, err := ts.cloud.GetNetworkEndpointGroup(ts.NegSyncerKey.NegName, negtypes.TestZone2, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get NEG in zone2: %v", err)
+	}
+	err = ts.statusHandler.ReportStatus([]*composite.NetworkEndpointGroup{neg1, neg2}, nil)
+	if err != nil {
+		t.Fatalf("Failed to report status (Step 2): %v", err)
+	}
+
+	negCR, _ = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Get(context.Background(), ts.NegName, metav1.GetOptions{})
+	if len(negCR.Status.NetworkEndpointGroups) != 2 ||
+		negCR.Status.NetworkEndpointGroups[0].State != negv1beta1.ActiveState ||
+		negCR.Status.NetworkEndpointGroups[1].State != negv1beta1.ActiveState {
+		t.Errorf("Step 2: expected NEG CR to have 2 active refs, got status: %+v", negCR.Status)
+	}
+	svcNegLister.Update(negCR)
+
+	// Step 3: Transition Back to Usual Annotation (removing pre-provisioning)
+	svc.Annotations[negannotation.NEGAnnotationKey] = `{"exposed_ports":{"80":{}}}`
+	ts.serviceLister.Update(svc)
+
+	err = ts.ensureNetworkEndpointGroups()
+	if err != nil {
+		t.Fatalf("ensureNetworkEndpointGroups (transition back) failed: %v", err)
+	}
+
+	// Update NEG CR status. Since zone2 NEG is no longer in targeted zones, we only pass neg1 as active
+	err = ts.statusHandler.ReportStatus([]*composite.NetworkEndpointGroup{neg1}, nil)
+	if err != nil {
+		t.Fatalf("Failed to report status (Step 3): %v", err)
+	}
+
+	negCR, _ = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Get(context.Background(), ts.NegName, metav1.GetOptions{})
+
+	foundActiveZone1 := false
+	foundInactiveZone2 := false
+	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		id, _ := cloud.ParseResourceURL(ref.SelfLink)
+		if id.Key.Zone == negtypes.TestZone1 && ref.State == negv1beta1.ActiveState {
+			foundActiveZone1 = true
+		}
+		if id.Key.Zone == negtypes.TestZone2 && ref.State == negv1beta1.InactiveState {
+			foundInactiveZone2 = true
+		}
+	}
+
+	if !foundActiveZone1 {
+		t.Errorf("Step 3: expected NEG in zone1 to be ActiveState, got status: %+v", negCR.Status)
+	}
+	if !foundInactiveZone2 {
+		t.Errorf("Step 3: expected NEG in zone2 to be InactiveState, got status: %+v", negCR.Status)
+	}
 }

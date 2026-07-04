@@ -135,6 +135,78 @@ func TestNEGAnnotation(t *testing.T) {
 			ingress:    true,
 			exposed:    true,
 		},
+		{
+			desc: "NEG exposed with pre-provisioned zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a","us-central1-b"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"us-central1-a", "us-central1-b"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with pre-provisioned wildcard zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["*"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"*"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with empty zones list",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":[]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with incorrect zone values list",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["incorrect values"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"incorrect values"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
 	} {
 		negAnnotation, found, err := FromService(tc.svc).NEGAnnotation()
 		if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {

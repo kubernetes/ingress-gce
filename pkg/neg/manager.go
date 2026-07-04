@@ -43,6 +43,7 @@ import (
 	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -82,6 +83,9 @@ type syncerManager struct {
 	// key consists of service namespace and name. Value is a map of ServicePort
 	// Port:TargetPort, which represents ports that require NEG
 	svcPortMap map[serviceKey]negtypes.PortInfoMap
+	// svcPreprovisioningZonesMap keeps track of services only with pre-provisioning zones in neg annotation.
+	// key consists of service namespace and name. Value contains the last known set of zone names
+	svcPreprovisioningZonesMap map[serviceKey]sets.String
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
@@ -149,29 +153,30 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger, negMetrics)
 
 	return &syncerManager{
-		namer:                    namer,
-		l4Namer:                  l4Namer,
-		recorder:                 recorder,
-		cloud:                    cloud,
-		zoneGetter:               zoneGetter,
-		nodeLister:               nodeLister,
-		podLister:                podLister,
-		serviceLister:            serviceLister,
-		endpointSliceLister:      endpointSliceLister,
-		svcNegLister:             svcNegLister,
-		svcPortMap:               make(map[serviceKey]negtypes.PortInfoMap),
-		syncerMap:                make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
-		syncerMetrics:            syncerMetrics,
-		svcNegClient:             svcNegClient,
-		kubeSystemUID:            kubeSystemUID,
-		enableNonGcpMode:         enableNonGcpMode,
-		enableDualStackNEG:       enableDualStackNEG,
-		numGCWorkers:             numGCWorkers,
-		logger:                   logger,
-		vmIpPortZoneMap:          vmIpPortZoneMap,
-		lpConfig:                 lpConfig,
-		includeDrainNodesL4Local: includeDrainNodesL4Local,
-		negMetrics:               negMetrics,
+		namer:                      namer,
+		l4Namer:                    l4Namer,
+		recorder:                   recorder,
+		cloud:                      cloud,
+		zoneGetter:                 zoneGetter,
+		nodeLister:                 nodeLister,
+		podLister:                  podLister,
+		serviceLister:              serviceLister,
+		endpointSliceLister:        endpointSliceLister,
+		svcNegLister:               svcNegLister,
+		svcPortMap:                 make(map[serviceKey]negtypes.PortInfoMap),
+		svcPreprovisioningZonesMap: make(map[serviceKey]sets.String),
+		syncerMap:                  make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
+		syncerMetrics:              syncerMetrics,
+		svcNegClient:               svcNegClient,
+		kubeSystemUID:              kubeSystemUID,
+		enableNonGcpMode:           enableNonGcpMode,
+		enableDualStackNEG:         enableDualStackNEG,
+		numGCWorkers:               numGCWorkers,
+		logger:                     logger,
+		vmIpPortZoneMap:            vmIpPortZoneMap,
+		lpConfig:                   lpConfig,
+		includeDrainNodesL4Local:   includeDrainNodesL4Local,
+		negMetrics:                 negMetrics,
 	}
 }
 
@@ -182,6 +187,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	defer manager.mu.Unlock()
 	start := time.Now()
 	key := getServiceKey(namespace, name)
+
+	preprovisioningZonesChanged := manager.updatePreprovisioningZones(key)
+
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
 		currentPorts = make(negtypes.PortInfoMap)
@@ -289,6 +297,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				errorSyncers += 1
 				continue
 			}
+		} else if preprovisioningZonesChanged {
+			// directly run the sync if user changed 'zones' in neg annotation
+			syncer.Sync()
 		}
 		successfulSyncers += 1
 	}
@@ -296,6 +307,42 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
 
 	return successfulSyncers, errorSyncers, err
+}
+
+// updatePreprovisioningZones updates the tracked pre-provisioning zones for the service
+// and returns true if they have changed.
+func (manager *syncerManager) updatePreprovisioningZones(key serviceKey) bool {
+	// get preprovisioning zones from service annotation
+	var newZones sets.String
+	obj, exists, err := manager.serviceLister.GetByKey(key.Key())
+	if err == nil && exists {
+		service := obj.(*v1.Service)
+		if svcAnnotations := negannotation.FromService(service); svcAnnotations != nil {
+			if negAnnotation, ok, err := svcAnnotations.NEGAnnotation(); err == nil && ok && negAnnotation != nil {
+				newZones = sets.NewString(negAnnotation.Zones...)
+			}
+		}
+	}
+	if newZones == nil {
+		newZones = sets.NewString()
+	}
+
+	// get last known preprovisioning zones for the service
+	oldZones, ok := manager.svcPreprovisioningZonesMap[key]
+	if !ok {
+		oldZones = sets.NewString()
+	}
+
+	// compare and store them if there is a change
+	zonesChanged := !oldZones.Equal(newZones)
+	if zonesChanged {
+		if newZones.Len() == 0 {
+			delete(manager.svcPreprovisioningZonesMap, key)
+		} else {
+			manager.svcPreprovisioningZonesMap[key] = newZones
+		}
+	}
+	return zonesChanged
 }
 
 // StopSyncer stops all syncers for the input service.
@@ -310,6 +357,7 @@ func (manager *syncerManager) StopSyncer(namespace, name string) {
 			}
 		}
 		delete(manager.svcPortMap, key)
+		delete(manager.svcPreprovisioningZonesMap, key)
 	}
 }
 
