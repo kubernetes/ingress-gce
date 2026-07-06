@@ -189,12 +189,23 @@ func (m *Manager) removeAddress(name, reason string) error {
 // For example, running the function with argument "2001:db8::ff00:42:8329"
 // returns "2001:db8:0:0:0:ff00:42:8329".
 func DecompressAddr(addr string) string {
+	const hextetsInIPv6 = 8
 	if !strings.Contains(addr, "::") {
 		// no compression
 		return addr
 	}
 	hextets := strings.Split(addr, ":")
-	toAdd := 9 - len(hextets)
+	numOfHextets := len(hextets)
+	if numOfHextets < 3 || numOfHextets > 9 {
+		// Address not in a valid compressed form (shortest: "::" (3), longest: one hextet skipped
+		// at beginning or end (9)), returning without any changes.
+		return addr
+	}
+	// To calculate number of missing hextets, we subtract the number of hextets from number of
+	// hextets in IPv6 (8) + 1, since compressed hextets will be represented by one empty item.
+	// Note that it will be decompressed using strings.Replace, so we don't have to worry about
+	// addresses without compression.
+	toAdd := hextetsInIPv6 + 1 - numOfHextets
 	expanded := strings.Repeat(":0", toAdd) + ":"
 	if strings.HasPrefix(addr, "::") {
 		expanded = "0" + expanded
@@ -334,7 +345,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	}
 
 	if ok := m.IsAddressInForwardingRules(); ok {
-		return m.targetIP, IPAddrManaged, nil
+		return m.targetIP, IPAddrUnmanaged, nil
 	} else {
 		m.frLogger.V(4).Info("IP not found in forwarding rules", "ip", m.targetIP)
 	}

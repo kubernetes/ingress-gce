@@ -339,7 +339,7 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 			address:   "1111:2222:3333:4444:5555::",
 			ipVersion: address.IPv6Version,
 			forwardingRule: &composite.ForwardingRule{
-				IPAddress: "1111:2222:3333:4444:5555:0:0:0", Name: testLBName, ServiceName: testSvcName,
+				IPAddress: "1111:2222:3333:4444:5555:0:0:0/96", Name: testLBName, ServiceName: testSvcName,
 			},
 			wantResult: true,
 		},
