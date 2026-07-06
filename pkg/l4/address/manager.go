@@ -20,11 +20,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
+	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -168,7 +172,6 @@ func (m *Manager) ReleaseAddress() error {
 }
 
 func (m *Manager) removeAddress(name, reason string) error {
-
 	m.frLogger.V(2).Info("Releasing existing address", "name", name, "reason", reason)
 	err := m.svc.DeleteRegionAddress(name, m.region)
 	if err != nil {
@@ -180,6 +183,76 @@ func (m *Manager) removeAddress(name, reason string) error {
 	}
 	m.frLogger.V(4).Info("Successfully released address", "addressName", name)
 	return nil
+}
+
+// DecompressAddr re-adds ommited hextets in IPv6 address.
+// For example, running the function with argument "2001:db8::ff00:42:8329"
+// returns "2001:db8:0:0:0:ff00:42:8329".
+func DecompressAddr(addr string) string {
+	const hextetsInIPv6 = 8
+	if !strings.Contains(addr, "::") {
+		// no compression
+		return addr
+	}
+	hextets := strings.Split(addr, ":")
+	numOfHextets := len(hextets)
+	if numOfHextets < 3 || numOfHextets > 9 {
+		// Address not in a valid compressed form (shortest: "::" (3), longest: one hextet skipped
+		// at beginning or end (9)), returning without any changes.
+		return addr
+	}
+	// To calculate number of missing hextets, we subtract the number of hextets from number of
+	// hextets in IPv6 (8) + 1, since compressed hextets will be represented by one empty item.
+	// Note that it will be decompressed using strings.Replace, so we don't have to worry about
+	// addresses without compression.
+	toAdd := hextetsInIPv6 + 1 - numOfHextets
+	expanded := strings.Repeat(":0", toAdd) + ":"
+	if strings.HasPrefix(addr, "::") {
+		expanded = "0" + expanded
+	}
+	if strings.HasSuffix(addr, "::") {
+		expanded += "0"
+	}
+	return strings.Replace(addr, "::", expanded, 1)
+}
+
+func (m *Manager) IsAddressInForwardingRules() bool {
+	// Check if the address is in forwarding rules. If it is, we don't need to reserve it.
+	if gceCloud, ok := m.svc.(*gce.Cloud); ok {
+		key := meta.RegionalKey(m.name, m.region)
+		fr, err := composite.GetForwardingRule(gceCloud, key, meta.VersionGA, m.frLogger)
+		if err != nil {
+			m.frLogger.V(4).Info("failed to lookup forwarding rules, err: %v", err)
+			return false
+		}
+		// We might need to match de-compressed address with mask.
+		pattern := DecompressAddr(m.targetIP) + "(/\\d+)?"
+		ok, err := regexp.MatchString(pattern, fr.IPAddress)
+		if err != nil {
+			m.frLogger.V(4).Info("failed to regexp match %v in %v", pattern, fr.IPAddress)
+			return false
+		}
+		if !ok {
+			m.frLogger.V(4).Info("forwarding rule IP %q doesn't match requested IP %q", fr.IPAddress, m.targetIP)
+			return false
+		}
+
+		// If the forwarding rule service name matches.
+		var desc utils.L4LBResourceDescription
+		descErr := desc.Unmarshal(fr.Description)
+		if descErr != nil {
+			m.frLogger.V(4).Info(m.targetIP, fmt.Sprintf("failed to unmarshal forwarding rule, err: %v", err))
+			return false
+		}
+		if desc.ServiceName != m.serviceName {
+			m.frLogger.V(4).Info(m.targetIP, fmt.Sprintf("is already in use by forwarding rule %s of service %s", fr.Name, desc.ServiceName))
+			return false
+		}
+		m.frLogger.V(4).Info("Successfully found IP in forwarding rules", "ip", m.targetIP, "forwarding rule", fr.Name)
+		return true
+	}
+	m.frLogger.V(4).Info("failed to convert provider")
+	return false
 }
 
 // ensureAddressReservation reserves ip address and returns address as a string,
@@ -223,6 +296,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	}
 
 	reserveErr := m.svc.ReserveRegionAddress(newAddr, m.region)
+
 	if reserveErr == nil {
 		if newAddr.Address != "" {
 			m.frLogger.V(4).Info("Successfully reserved IP", "ip", newAddr.Address, "addressName", newAddr.Name)
@@ -270,6 +344,12 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", m.name, reserveErr)
 	}
 
+	if ok := m.IsAddressInForwardingRules(); ok {
+		return m.targetIP, IPAddrUnmanaged, nil
+	} else {
+		m.frLogger.V(4).Info("IP not found in forwarding rules", "ip", m.targetIP)
+	}
+
 	// Reserving the address failed due to a conflict or bad request. The address manager just checked that no address
 	// exists with the name, so it may belong to the user.
 	addr, err := m.svc.GetRegionAddressByIP(m.region, m.targetIP)
@@ -295,7 +375,6 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	m.frLogger.V(4).Info("Address was already reserved with name: %q, description: %q", "ip", m.targetIP, "addressName", addr.Name, "addressDescription", addr.Description)
 	m.tryRelease = false
 	return addr.Address, IPAddrUnmanaged, nil
-
 }
 
 func (m *Manager) validateAddress(addr *compute.Address) error {
