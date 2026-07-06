@@ -4915,12 +4915,15 @@ func TestNEGPreprovisioningTransition(t *testing.T) {
 
 	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
 	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	prevEnableNEGPreprovisioning := flags.F.EnableNEGPreprovisioning
 	defer func() {
 		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
 		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+		flags.F.EnableNEGPreprovisioning = prevEnableNEGPreprovisioning
 	}()
 	flags.F.EnableMultiSubnetClusterPhase1 = true
 	flags.F.NodeTopologyCRName = "default"
+	flags.F.EnableNEGPreprovisioning = true
 
 	_, ts, err := newTestTransactionSyncer(fakeCloud, testNegType, "")
 	if err != nil {

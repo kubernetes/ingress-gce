@@ -31,6 +31,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -2379,7 +2380,16 @@ func (m *mockNegSyncer) IsShuttingDown() bool {
 	return false
 }
 
+// TestEnsureSyncersWithPreprovisioningZonesChange covers the following scenarios for EnsureSyncers when pre-provisioning zones change:
+// 1. Call EnsureSyncers with no annotation changes (initial state with empty zones): Expect no Sync() call on mockNegSyncer.
+// 2. Add pre-provisioning zones to the service annotation and call EnsureSyncers: Expect 1 Sync() call on mockNegSyncer because zones changed.
+// 3. Call EnsureSyncers again with no changes: Expect no additional Sync() call (syncCount stays 1).
+// 4. Remove pre-provisioning zones from the service annotation and call EnsureSyncers: Expect 1 Sync() call on mockNegSyncer because zones changed back.
 func TestEnsureSyncersWithPreprovisioningZonesChange(t *testing.T) {
+	oldFlag := flags.F.EnableNEGPreprovisioning
+	flags.F.EnableNEGPreprovisioning = true
+	defer func() { flags.F.EnableNEGPreprovisioning = oldFlag }()
+
 	manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
 	if err != nil {
 		t.Fatalf("failed to create test syncer manager: %v", err)
@@ -2483,5 +2493,126 @@ func TestEnsureSyncersWithPreprovisioningZonesChange(t *testing.T) {
 	}
 	if mSyncer.syncCount != 2 {
 		t.Errorf("Expected 2 sync calls, got %d", mSyncer.syncCount)
+	}
+}
+
+// TestUpdatePreprovisioningZones covers the following scenarios for the updatePreprovisioningZones function:
+// 1. Service does not exist: Verification that no change is detected and the cache remains empty.
+// 2. Service exists but has no NEG annotation: Verification that no change is detected and the cache remains empty.
+// 3. Service exists and has NEG annotation with zones: Verification that a change is detected and the cache is correctly populated.
+// 4. No zone changes: Verification that no change is detected on a second call with the same zones.
+// 5. Zones updated: Verification that a change is detected and the cache is updated with the new zones.
+// 6. Zones removed (empty list): Verification that a change is detected and the service entry is removed from the cache.
+// 7. Zones added again: Verification that a change is detected and the cache is repopulated.
+// 8. Zones attribute removed from NEG annotation: Verification that a change is detected and the service entry is removed from the cache.
+func TestUpdatePreprovisioningZones(t *testing.T) {
+	manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+
+	svcNamespace := "ns1"
+	svcName := "svc1"
+	key := getServiceKey(svcNamespace, svcName)
+
+	// Case 1: Service does not exist
+	// Expect return value false, map remains empty
+	changed := manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("Expected changed to be false when service does not exist")
+	}
+	if _, ok := manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("Expected key %v to not exist in svcPreprovisioningZonesMap", key)
+	}
+
+	// Case 2: Service exists but has no NEG annotation
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: svcNamespace,
+			Name:      svcName,
+		},
+	}
+	testContext.ServiceInformer.GetIndexer().Add(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("Expected changed to be false when service has no NEG annotation")
+	}
+	if _, ok := manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("Expected key %v to not exist in svcPreprovisioningZonesMap", key)
+	}
+
+	// Case 3: Service exists and has NEG annotation with zones
+	svc.Annotations = map[string]string{
+		negannotation.NEGAnnotationKey: "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone1\",\"zone2\"]}",
+	}
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("Expected changed to be true when zones are added")
+	}
+	zones, ok := manager.svcPreprovisioningZonesMap[key]
+	if !ok {
+		t.Fatalf("Expected key %v to exist in svcPreprovisioningZonesMap", key)
+	}
+	expectedZones := sets.NewString("zone1", "zone2")
+	if !zones.Equal(expectedZones) {
+		t.Errorf("Expected zones %v, got %v", expectedZones, zones)
+	}
+
+	// Case 4: Call again with same zones
+	// Expect return value false, map remains unchanged.
+	changed = manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("expected no change")
+	}
+
+	// Case 5: Change zones
+	// Expect return value true, map is updated with the new zones.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone2\",\"zone3\"]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	zones, ok = manager.svcPreprovisioningZonesMap[key]
+	if !ok {
+		t.Fatalf("expected key to exist")
+	}
+	expectedZones = sets.NewString("zone2", "zone3")
+	if !zones.Equal(expectedZones) {
+		t.Errorf("expected zones %v, got %v", expectedZones, zones)
+	}
+
+	// Case 6: Remove zones (empty zones list in annotation)
+	// Expect return value true, key is deleted from map.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	if _, ok = manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("expected key to be deleted")
+	}
+
+	// Case 7: Add zones again to test deletion via missing zones attribute later
+	// Expect return value true.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone1\"]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+
+	// Case 8: Remove zones attribute from NEG annotation
+	// Expect return value true, key is deleted from map.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}}}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	if _, ok = manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("expected key to be deleted")
 	}
 }

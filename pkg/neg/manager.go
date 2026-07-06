@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -188,7 +189,10 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	start := time.Now()
 	key := getServiceKey(namespace, name)
 
-	preprovisioningZonesChanged := manager.updatePreprovisioningZones(key)
+	preprovisioningZonesChanged := false
+	if flags.F.EnableNEGPreprovisioning {
+		preprovisioningZonesChanged = manager.updatePreprovisioningZones(key)
+	}
 
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {

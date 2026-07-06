@@ -533,6 +533,10 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 		return nil, err
 	}
 
+	if !flags.F.EnableNEGPreprovisioning {
+		return zonesPerSubnet, nil
+	}
+
 	// Read pre-provisioning zones from neg annotation of the service
 	service := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics)
 	preprovisioningZones, err := negtypes.GetPreprovisioningZones(service, s.cloud)

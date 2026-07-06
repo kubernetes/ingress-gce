@@ -734,7 +734,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
 		}
 		negUsage.CustomNamedNeg = len(customNames)
-		if len(negAnnotation.Zones) > 0 {
+		if flags.F.EnableNEGPreprovisioning && len(negAnnotation.Zones) > 0 {
 			negUsage.PreprovisionedNeg = len(exposedNegSvcPort)
 		}
 
@@ -909,16 +909,18 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return err
 	}
 
-	// Get preprovisioing zones from neg annotation
-	preprovisioningZones, err := negtypes.GetPreprovisioningZones(service, c.cloud)
-	if err != nil {
-		msg := "Ignore zone pre-provisioning annotation because of incorrect value"
-		c.logger.Error(err, msg)
-		c.recorder.Event(service, apiv1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s: %v", msg, err))
-	}
+	if flags.F.EnableNEGPreprovisioning {
+		// Get preprovisioning zones from neg annotation
+		preprovisioningZones, err := negtypes.GetPreprovisioningZones(service, c.cloud)
+		if err != nil {
+			msg := "Ignore zone pre-provisioning annotation because of incorrect value"
+			c.logger.Error(err, msg)
+			c.recorder.Event(service, apiv1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s: %v", msg, err))
+		}
 
-	// Merge zones with nodes and pre-provisioning zones
-	zones = sets.NewString(zones...).Insert(preprovisioningZones...).List()
+		// Merge zones with nodes and pre-provisioning zones
+		zones = sets.NewString(zones...).Insert(preprovisioningZones...).List()
+	}
 
 	negStatus := negannotation.NewNegStatus(zones, portMap.ToPortNegMap())
 	annotation, err := negStatus.Marshal()
