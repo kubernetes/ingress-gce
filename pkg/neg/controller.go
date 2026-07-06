@@ -734,6 +734,9 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
 		}
 		negUsage.CustomNamedNeg = len(customNames)
+		if len(negAnnotation.Zones) > 0 {
+			negUsage.PreprovisionedNeg = len(exposedNegSvcPort)
+		}
 
 		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer, true, customNames, networkInfo)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %w", exposedNegSvcPort, portInfoMap, err)
