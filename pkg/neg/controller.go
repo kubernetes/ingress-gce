@@ -911,11 +911,11 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 
 	if flags.F.EnableNEGPreprovisioning {
 		// Get preprovisioning zones from neg annotation
-		preprovisioningZones, err := negtypes.GetPreprovisioningZones(service, c.cloud)
-		if err != nil {
-			msg := "Ignore zone pre-provisioning annotation because of incorrect value"
-			c.logger.Error(err, msg)
-			c.recorder.Event(service, apiv1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s: %v", msg, err))
+		preprovisioningZones, preprovErr := negannotation.GetPreprovisioningZones(service, c.cloud)
+		if preprovErr != nil {
+			msg := "Ignore zone pre-provisioning annotation"
+			c.logger.Error(preprovErr, msg, "service", klog.KRef(namespace, name))
+			c.recorder.Event(service, apiv1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s err: %v", msg, preprovErr))
 		}
 
 		// Merge zones with nodes and pre-provisioning zones

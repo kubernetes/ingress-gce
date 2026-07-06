@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // NEGAnnotationKey is the annotation key to enable GCE NEG.
@@ -171,4 +172,73 @@ func (svc *Service) NEGStatus() (*NegStatus, bool, error) {
 	}
 
 	return &res, true, nil
+}
+
+// GetPreprovisioningZonesAnnotation returns the pre-provisioning zones from the Service annotation
+func GetPreprovisioningZonesAnnotation(service *v1.Service) ([]string, error) {
+	if service == nil {
+		return nil, nil
+	}
+	negAnnotation, found, err := FromService(service).NEGAnnotation()
+	if err != nil || !found || negAnnotation == nil {
+		return nil, err
+	}
+	return negAnnotation.Zones, nil
+}
+
+// ResolvePreprovisioningZones validates the raw pre-provisioned zones from the Service annotation
+// against the GCE regional zones. If the wildcard "*" is specified, it returns all GCE zones in the region.
+// If a specific zone list is provided, it verifies that all zones exist in the GCE region.
+// Returns a list of resolved pre-provisioned zones, or an error if any specific zone is invalid.
+func ResolvePreprovisioningZones(preprovisioningZones, regionZones []string) ([]string, error) {
+
+	if len(preprovisioningZones) == 0 {
+		return nil, nil
+	}
+
+	if len(regionZones) == 0 {
+		return nil, fmt.Errorf("unable to verify preprovisioning zones values because list of region zones is empty")
+	}
+
+	regionZonesSet := sets.NewString(regionZones...)
+	isWildcard := false
+	for _, zone := range preprovisioningZones {
+		if zone == "*" {
+			isWildcard = true
+			break
+		}
+	}
+
+	if isWildcard {
+		return regionZones, nil
+	}
+
+	for _, zone := range preprovisioningZones {
+		if len(regionZonesSet) > 0 && !regionZonesSet.Has(zone) {
+			return nil, fmt.Errorf("incorrect value: zone %q is not in the cluster's region zones: %q", zone, regionZones)
+		}
+	}
+
+	return preprovisioningZones, nil
+}
+
+// CloudZoneGetter is an interface for retrieving zones.
+type CloudZoneGetter interface {
+	Zones() ([]string, error)
+}
+
+// GetPreprovisioningZones returns the resolved pre-provisioning zones from the Service annotation.
+func GetPreprovisioningZones(service *v1.Service, zoneGetter CloudZoneGetter) ([]string, error) {
+	preprovisioningZones, err := GetPreprovisioningZonesAnnotation(service)
+	if err != nil || len(preprovisioningZones) == 0 {
+		return preprovisioningZones, err
+	}
+	if zoneGetter == nil {
+		return nil, fmt.Errorf("unable to verify preprovisioning zones values because zone getter is nil")
+	}
+	regionZones, err := zoneGetter.Zones()
+	if err != nil {
+		return nil, err
+	}
+	return ResolvePreprovisioningZones(preprovisioningZones, regionZones)
 }

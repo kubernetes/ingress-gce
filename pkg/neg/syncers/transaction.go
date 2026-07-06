@@ -50,6 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -539,11 +540,11 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 
 	// Read pre-provisioning zones from neg annotation of the service
 	service := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics)
-	preprovisioningZones, err := negtypes.GetPreprovisioningZones(service, s.cloud)
-	if err != nil {
-		errMsg := fmt.Sprintf("Ignore zone pre-provisioning annotation because of incorrect value: %v", err)
-		s.logger.Error(nil, errMsg)
-		s.recordEvent(v1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", errMsg)
+	preprovisioningZones, preprovErr := negannotation.GetPreprovisioningZones(service, s.cloud)
+	if preprovErr != nil {
+		msg := "Ignore zone pre-provisioning annotation"
+		s.logger.Error(preprovErr, msg)
+		s.recordEvent(v1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s err: %v", msg, preprovErr))
 	}
 
 	// Merge workload zones with pre-provisioning zones.

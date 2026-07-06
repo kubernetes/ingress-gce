@@ -127,7 +127,7 @@ func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone stri
 }
 
 // AttachNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error {
+func (a *cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version, logger klog.Logger) error {
 	req := &composite.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
 	start := time.Now()
 	err := composite.AttachNetworkEndpoints(a.c, meta.ZonalKey(name, zone), version, req, logger)
