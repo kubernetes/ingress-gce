@@ -302,7 +302,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -527,7 +527,7 @@ func (s *transactionSyncer) candidateNodeFilter() zonegetter.Filter {
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	// NEGs should be created in zones with candidate nodes only.
-	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
+	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.networkInfo, s.logger)
 	if err != nil {
 		return err
 	}
@@ -913,7 +913,7 @@ func (s *transactionSyncer) isTopologyChange() bool {
 		return false
 	}
 
-	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.logger)
+	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.networkInfo, s.logger)
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)

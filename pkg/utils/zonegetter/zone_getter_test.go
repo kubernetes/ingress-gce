@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -748,7 +749,7 @@ func TestNonGCPZoneGetter(t *testing.T) {
 	}
 
 	// ListZonesPerSubnet
-	retPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, klog.TODO())
+	retPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, network.NetworkInfo{IsDefault: true}, klog.TODO())
 	if err != nil {
 		t.Errorf("expect err = nil for ListZonesPerSubnet, but got %v", err)
 	}
@@ -1671,7 +1672,7 @@ func TestLegacyListZonesPerSubnet(t *testing.T) {
 	PopulateFakeNodeInformer(nodeInformer, true)
 	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
 
-	zonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, klog.TODO())
+	zonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, network.NetworkInfo{IsDefault: true}, klog.TODO())
 	if err != nil {
 		t.Errorf("expect err = nil for ListZonesPerSubnet, but got %v", err)
 	}
@@ -1758,7 +1759,7 @@ func TestListZonesPerSubnet(t *testing.T) {
 		for _, onlyIncludeDefaultSubnetNodes := range []bool{true, false} {
 			t.Run(tc.desc, func(t *testing.T) {
 				zoneGetter.onlyIncludeDefaultSubnetNodes = onlyIncludeDefaultSubnetNodes
-				gotZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(tc.filter, klog.TODO())
+				gotZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(tc.filter, network.NetworkInfo{IsDefault: true}, klog.TODO())
 				if err != nil {
 					t.Errorf("expect err = nil, but got %v", err)
 				}
@@ -1773,5 +1774,36 @@ func TestListZonesPerSubnet(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestListZonesPerSubnetMultinet(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := FakeNodeInformer()
+	PopulateFakeNodeInformer(nodeInformer, true)
+	zoneGetter, err := NewFakeZoneGetter(nodeInformer, FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
+
+	multinetworkInfo := network.NetworkInfo{
+		IsDefault:     false,
+		K8sNetwork:    "secondary-network",
+		NetworkURL:    "https://www.googleapis.com/compute/v1/projects/proj/global/networks/secondary-net",
+		SubnetworkURL: "https://www.googleapis.com/compute/v1/projects/proj/regions/us-central1/subnetworks/custom-multinet-subnet",
+	}
+
+	gotZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(AllNodesFilter, multinetworkInfo, klog.TODO())
+	if err != nil {
+		t.Fatalf("ListZonesPerSubnet() unexpected error: %v", err)
+	}
+
+	wantZonesPerSubnet := shared.ZonesPerSubnetMap{
+		"custom-multinet-subnet": sets.New("zone1", "zone2", "zone3", "zone4", "zone5", "zone6"),
+	}
+
+	if diff := cmp.Diff(wantZonesPerSubnet, gotZonesPerSubnet); diff != "" {
+		t.Errorf("ListZonesPerSubnet() multinet mismatch (-want +got):\n%s", diff)
 	}
 }
