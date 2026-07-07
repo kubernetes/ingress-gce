@@ -63,6 +63,13 @@ func TestListZones(t *testing.T) {
 			filter:    CandidateAndUnreadyNodesFilter,
 			expectLen: 3,
 		},
+		{
+			// CandidateAndDrainingNodesFilter includes unready AND draining nodes,
+			// so zone4 (which has only draining/upgrading nodes) is also included.
+			desc:      "List with CandidateAndDrainingNodesFilter",
+			filter:    CandidateAndDrainingNodesFilter,
+			expectLen: 4,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -756,6 +763,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 		expectAcceptByAll       bool
 		expectAcceptByCandidate bool
 		expectAcceptByUnready   bool
+		expectAcceptByDraining  bool
 		name                    string
 	}{
 		{
@@ -763,6 +771,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       false,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 			name:                    "empty",
 		},
 		{
@@ -785,6 +794,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "ready node",
 		},
 		{
@@ -807,6 +817,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "unready node",
 		},
 		{
@@ -829,6 +840,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "ready status unknown",
 		},
 		{
@@ -853,7 +865,9 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
-			name:                    "ready node, excluded from loadbalancers",
+			// exclude-from-external-load-balancers is unconditional; drain flag does not override it.
+			expectAcceptByDraining: false,
+			name:                   "ready node, excluded from loadbalancers",
 		},
 		{
 			node: apiv1.Node{
@@ -877,7 +891,36 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   false,
-			name:                    "ready node, upgrade/drain in progress",
+			// CandidateAndDrainingNodesFilter does not exclude drain-labeled nodes.
+			expectAcceptByDraining: true,
+			name:                   "ready node, upgrade/drain in progress",
+		},
+		{
+			node: apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Labels: map[string]string{
+						utils.GKECurrentOperationLabel: utils.NodeDrain,
+						utils.LabelNodeSubnet:          defaultTestSubnet,
+					},
+				},
+				Spec: apiv1.NodeSpec{
+					PodCIDR:  "10.100.1.0/24",
+					PodCIDRs: []string{"10.100.1.0/24"},
+				},
+				Status: apiv1.NodeStatus{
+					Conditions: []apiv1.NodeCondition{
+						{Type: apiv1.NodeReady, Status: apiv1.ConditionFalse},
+					},
+				},
+			},
+			expectAcceptByAll:       true,
+			expectAcceptByCandidate: false,
+			// CandidateAndUnreadyNodesFilter includes unready but still excludes drain nodes.
+			expectAcceptByUnready: false,
+			// CandidateAndDrainingNodesFilter includes both unready and drain nodes.
+			expectAcceptByDraining: true,
+			name:                   "unready node, upgrade/drain in progress",
 		},
 		{
 			node: apiv1.Node{
@@ -901,6 +944,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "ready node, non-drain operation",
 		},
 		{
@@ -924,6 +968,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "unschedulable",
 		},
 		{
@@ -953,7 +998,9 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
-			name:                    "ToBeDeletedByClusterAutoscaler-taint",
+			// ToBeDeletedTaint exclusion is unconditional; drain flag does not override it.
+			expectAcceptByDraining: false,
+			name:                   "ToBeDeletedByClusterAutoscaler-taint",
 		},
 		{
 			node: apiv1.Node{
@@ -975,6 +1022,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       false,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 			name:                    "node in non-default subnet",
 		},
 		{
@@ -992,6 +1040,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 			name:                    "node without subnet label",
 		},
 		{
@@ -1011,6 +1060,7 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       false,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 			name:                    "node without PodCIDR",
 		},
 	}
@@ -1028,6 +1078,10 @@ func TestIsNodeSelectedByFilter(t *testing.T) {
 		if acceptByUnready != tc.expectAcceptByUnready {
 			t.Errorf("Test failed for %s & unreadyNodesPredicate, got %v, want %v", tc.name, acceptByUnready, tc.expectAcceptByUnready)
 		}
+		acceptByDraining := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateAndDrainingNodesFilter, klog.TODO())
+		if acceptByDraining != tc.expectAcceptByDraining {
+			t.Errorf("Test failed for %s & drainingNodesPredicate, got %v, want %v", tc.name, acceptByDraining, tc.expectAcceptByDraining)
+		}
 	}
 }
 
@@ -1041,6 +1095,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 		expectAcceptByAll       bool
 		expectAcceptByCandidate bool
 		expectAcceptByUnready   bool
+		expectAcceptByDraining  bool
 	}{
 		{
 			name:                    "empty",
@@ -1048,6 +1103,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 		},
 		{
 			name: "ready node",
@@ -1070,6 +1126,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "unready node",
@@ -1092,6 +1149,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "ready status unknown",
@@ -1114,6 +1172,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "ready node, excluded from loadbalancers",
@@ -1138,6 +1197,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 		},
 		{
 			name: "ready node, upgrade/drain in progress",
@@ -1162,6 +1222,8 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   false,
+			// CandidateAndDrainingNodesFilter does not exclude drain-labeled nodes.
+			expectAcceptByDraining: true,
 		},
 		{
 			name: "ready node, non-drain operation",
@@ -1186,6 +1248,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "unschedulable",
@@ -1209,6 +1272,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "ToBeDeletedByClusterAutoscaler-taint",
@@ -1238,6 +1302,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: false,
 			expectAcceptByUnready:   false,
+			expectAcceptByDraining:  false,
 		},
 		// This case is not possible for legacy networks, but for comprehensive
 		// testing and understanding of the legacy network zone getter this test
@@ -1263,6 +1328,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		{
 			name: "node without subnet label",
@@ -1280,6 +1346,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 		// Pod CIDR is only checked when checking the subnet. For legacy networks no subnet exists, so nodes without PodCIDR are still included.
 		{
@@ -1300,6 +1367,7 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 			expectAcceptByAll:       true,
 			expectAcceptByCandidate: true,
 			expectAcceptByUnready:   true,
+			expectAcceptByDraining:  true,
 		},
 	}
 	for _, tc := range testCases {
@@ -1315,6 +1383,10 @@ func TestLegacyIsNodeSelectedByFilter(t *testing.T) {
 		acceptByUnready := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateAndUnreadyNodesFilter, klog.TODO())
 		if acceptByUnready != tc.expectAcceptByUnready {
 			t.Errorf("Test failed for %s & unreadyNodesPredicate, got %v, want %v", tc.name, acceptByUnready, tc.expectAcceptByUnready)
+		}
+		acceptByDraining := zoneGetter.IsNodeSelectedByFilter(&tc.node, CandidateAndDrainingNodesFilter, klog.TODO())
+		if acceptByDraining != tc.expectAcceptByDraining {
+			t.Errorf("Test failed for %s & drainingNodesPredicate, got %v, want %v", tc.name, acceptByDraining, tc.expectAcceptByDraining)
 		}
 	}
 }

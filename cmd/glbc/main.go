@@ -753,6 +753,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableL4NetLBNEG,
 		flags.F.ReadOnlyMode,
 		flags.F.EnableNEGsForIngress,
+		flags.F.EnableL4NEGLocalIncludeDrainNodes,
 		stopCh,
 		logger,
 		negMetrics,

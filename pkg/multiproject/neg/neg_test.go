@@ -89,11 +89,11 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 		es cache.SharedIndexInformer, sn cache.SharedIndexInformer, netInf cache.SharedIndexInformer, gke cache.SharedIndexInformer, nt cache.SharedIndexInformer,
 		synced func() bool, l4 namer.L4ResourcesNamer, defSP utils.ServicePort, cloud negtypes.NetworkEndpointGroupCloud, zg *zonegetter.ZoneGetter, nm negtypes.NetworkEndpointGroupNamer,
 		resync time.Duration, gc time.Duration, workers int, enableRR bool, runL4 bool, nonGCP bool, dualStack bool, lp labels.PodLabelPropagationConfig,
-		multiNetworking bool, ingressRegional bool, runNetLB bool, readOnly bool, enableNEGsForIngress bool,
+		multiNetworking bool, ingressRegional bool, runNetLB bool, readOnly bool, enableNEGsForIngress bool, includeDrainNodesL4Local bool,
 		stopCh <-chan struct{}, l klog.Logger, negMetrics *metrics.NegMetrics, syncerMetrics *syncMetrics.SyncerMetrics) (*neg.Controller, error) {
 		capturedStopCh = stopCh
 		return neg.NewController(kc, sc, ec, uid, ing, svc, pod, node, es, sn, netInf, gke, nt, synced, l4, defSP, cloud, zg, nm,
-			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, stopCh, l, negMetrics, syncerMetrics)
+			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics)
 	}
 	t.Cleanup(func() { newNEGController = orig })
 

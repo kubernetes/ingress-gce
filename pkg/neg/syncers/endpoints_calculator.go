@@ -42,29 +42,42 @@ import (
 // In a cluster with nodes node1... node 50. If nodes node10 to node 45 run the pods for a given ILB service, all these
 // nodes - node10, node 11 ... node45 will be part of the subset.
 type LocalL4EndpointsCalculator struct {
-	nodeLister      listers.NodeLister
-	zoneGetter      *zonegetter.ZoneGetter
-	subsetSizeLimit int
-	svcId           string
-	logger          klog.Logger
-	networkInfo     *network.NetworkInfo
-	negMetrics      *metrics.NegMetrics
+	nodeLister               listers.NodeLister
+	zoneGetter               *zonegetter.ZoneGetter
+	subsetSizeLimit          int
+	svcId                    string
+	includeDrainNodesL4Local bool
+	logger                   klog.Logger
+	networkInfo              *network.NetworkInfo
+	negMetrics               *metrics.NegMetrics
 }
 
-func NewLocalL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, lbType types.L4LBType, negMetrics *metrics.NegMetrics) *LocalL4EndpointsCalculator {
+// LocalL4EndpointsCalculatorParams contains the parameters for the LocalL4EndpointsCalculator
+type LocalL4EndpointsCalculatorParams struct {
+	NodeLister               listers.NodeLister
+	ZoneGetter               *zonegetter.ZoneGetter
+	SvcId                    string
+	NetworkInfo              *network.NetworkInfo
+	LbType                   types.L4LBType
+	NegMetrics               *metrics.NegMetrics
+	IncludeDrainNodesL4Local bool
+}
+
+func NewLocalL4EndpointsCalculator(params LocalL4EndpointsCalculatorParams, logger klog.Logger) *LocalL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeLocal
-	if lbType == types.L4ExternalLB {
+	if params.LbType == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBLocal
 	}
 
 	return &LocalL4EndpointsCalculator{
-		nodeLister:      nodeLister,
-		zoneGetter:      zoneGetter,
-		subsetSizeLimit: subsetSize,
-		svcId:           svcId,
-		logger:          logger.WithName("LocalL4EndpointsCalculator"),
-		networkInfo:     networkInfo,
-		negMetrics:      negMetrics,
+		nodeLister:               params.NodeLister,
+		zoneGetter:               params.ZoneGetter,
+		subsetSizeLimit:          subsetSize,
+		svcId:                    params.SvcId,
+		includeDrainNodesL4Local: params.IncludeDrainNodesL4Local,
+		logger:                   logger.WithName("LocalL4EndpointsCalculator"),
+		networkInfo:              params.NetworkInfo,
+		negMetrics:               params.NegMetrics,
 	}
 }
 
@@ -83,6 +96,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	nodeFilter := types.NodeFilterForEndpointCalculatorMode(types.L4LocalMode, l.includeDrainNodesL4Local)
 	for _, ed := range eds {
 		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
@@ -104,7 +118,8 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 				l.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
-			if ok := l.zoneGetter.IsNodeSelectedByFilter(node, zonegetter.CandidateAndUnreadyNodesFilter, l.logger); !ok {
+
+			if ok := l.zoneGetter.IsNodeSelectedByFilter(node, nodeFilter, l.logger); !ok {
 				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
@@ -168,19 +183,29 @@ type ClusterL4EndpointsCalculator struct {
 	negMetrics *metrics.NegMetrics
 }
 
-func NewClusterL4EndpointsCalculator(nodeLister listers.NodeLister, zoneGetter *zonegetter.ZoneGetter, svcId string, logger klog.Logger, networkInfo *network.NetworkInfo, l4LBtype types.L4LBType, negMetrics *metrics.NegMetrics) *ClusterL4EndpointsCalculator {
+// ClusterL4EndpointsCalculatorParams contains the parameters for the ClusterL4EndpointsCalculator.
+type ClusterL4EndpointsCalculatorParams struct {
+	NodeLister  listers.NodeLister
+	ZoneGetter  *zonegetter.ZoneGetter
+	SvcId       string
+	NetworkInfo *network.NetworkInfo
+	LbType      types.L4LBType
+	NegMetrics  *metrics.NegMetrics
+}
+
+func NewClusterL4EndpointsCalculator(params ClusterL4EndpointsCalculatorParams, logger klog.Logger) *ClusterL4EndpointsCalculator {
 	subsetSize := maxSubsetSizeDefault
-	if l4LBtype == types.L4ExternalLB {
+	if params.LbType == types.L4ExternalLB {
 		subsetSize = maxSubsetSizeNetLBCluster
 	}
 	return &ClusterL4EndpointsCalculator{
-		zoneGetter:      zoneGetter,
+		zoneGetter:      params.ZoneGetter,
 		subsetSizeLimit: subsetSize,
-		svcId:           svcId,
-		lbType:          l4LBtype,
+		svcId:           params.SvcId,
+		lbType:          params.LbType,
 		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
-		networkInfo:     networkInfo,
-		negMetrics:      negMetrics,
+		networkInfo:     params.NetworkInfo,
+		negMetrics:      params.NegMetrics,
 	}
 }
 
@@ -192,7 +217,7 @@ func (l *ClusterL4EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[types.NEGLocation]types.NetworkEndpointSet) (map[types.NEGLocation]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := l.zoneGetter.ListNodes(zonegetter.CandidateAndUnreadyNodesFilter, l.logger)
+	nodes, _ := l.zoneGetter.ListNodes(types.NodeFilterForEndpointCalculatorMode(types.L4ClusterMode, false), l.logger)
 	zoneNodeMap := make(map[string][]*nodeWithSubnet)
 	zoneSubnetPairs := make(map[string]any)
 	networkInfoSubnetName, err := utils.KeyName(l.networkInfo.SubnetworkURL)

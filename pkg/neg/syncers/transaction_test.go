@@ -2573,7 +2573,7 @@ func TestIsSubnetChange(t *testing.T) {
 			ts.zoneGetter = fakeZoneGetter
 			//Make sure NodeTopologyInformer is considered as synced, otherwise only defaultSubnet is returned
 			zonegetter.SetNodeTopologyHasSynced(ts.zoneGetter, func() bool { return true })
-			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(ts.EpCalculatorMode), klog.TODO())
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(ts.EpCalculatorMode, ts.IncludeDrainNodesL4Local), klog.TODO())
 			if err != nil {
 				t.Errorf("errored when retrieving zones: %s", err)
 			}
@@ -2856,7 +2856,7 @@ func TestIsZoneChange(t *testing.T) {
 				t.Fatalf("failed to initialize transaction syncer: %v", err)
 			}
 			fakeZoneGetter := syncer.zoneGetter
-			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode), klog.TODO())
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(syncer.EpCalculatorMode, syncer.IncludeDrainNodesL4Local), klog.TODO())
 			if err != nil {
 				t.Errorf("errored when retrieving zones: %s", err)
 			}
@@ -3022,7 +3022,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3325,7 +3325,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			tc.modify(s)
 
 			subnetToNegMapping := map[string]string{defaultTestSubnet: tc.negName}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3338,7 +3338,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
 				if err != nil {
 					return false, nil
 				}
@@ -3748,12 +3748,13 @@ func TestSyncL4NEGs(t *testing.T) {
 	testNodeIP5 := "1.2.3.5"
 
 	testCases := []struct {
-		desc                   string
-		existingGCEEndpoints   map[negtypes.NEGLocation][]*composite.NetworkEndpoint
-		endpointSlices         []*discovery.EndpointSlice
-		inProgressTransactions map[negtypes.NetworkEndpoint]transactionEntry
-		expectedEndpoints      map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
-		enableL4DetachCancel   bool
+		desc                     string
+		existingGCEEndpoints     map[negtypes.NEGLocation][]*composite.NetworkEndpoint
+		endpointSlices           []*discovery.EndpointSlice
+		inProgressTransactions   map[negtypes.NetworkEndpoint]transactionEntry
+		expectedEndpoints        map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+		enableL4DetachCancel     bool
+		includeDrainNodesL4Local bool
 	}{
 		{
 			// test if the syncer can attach endpoints to L4 NEG.
@@ -3946,6 +3947,44 @@ func TestSyncL4NEGs(t *testing.T) {
 				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
 			},
 		},
+		{
+			// test if the syncer excludes upgrading nodes when includeDrainNodesL4Local is false.
+			desc: "add endpoints on upgrading node with includeDrainNodesL4Local disabled",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: {},
+			},
+			endpointSlices:           getUpgradingEndpointSlices(testServiceName, testServiceNamespace),
+			includeDrainNodesL4Local: false,
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			// test if the syncer includes upgrading nodes when includeDrainNodesL4Local is true.
+			desc: "add endpoints on upgrading node with includeDrainNodesL4Local enabled",
+			existingGCEEndpoints: map[negtypes.NEGLocation][]*composite.NetworkEndpoint{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: {},
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: {},
+			},
+			endpointSlices:           getUpgradingEndpointSlices(testServiceName, testServiceNamespace),
+			includeDrainNodesL4Local: true,
+			expectedEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: "1.2.3.9", Node: "upgrade-instance1"},
+				),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -3990,6 +4029,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			}
 			testContext := negtypes.NewTestContext()
 			testContext.NodeInformer = nodeInformer
+			testContext.IncludeDrainNodesL4Local = tc.includeDrainNodesL4Local
 			_, s, err := newTestTransactionSyncerWithCustomContext(fakeCloud, negtypes.VmIpEndpointType, false, testContext)
 			if err != nil {
 				t.Fatalf("failed to initialize transaction syncer: %v", err)
@@ -4017,7 +4057,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			// give a little time for the syncer attach/detach goroutines to finish
 			time.Sleep(50 * time.Millisecond)
 
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false, s.NegSyncerKey.IncludeDrainNodesL4Local)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}
@@ -4028,6 +4068,43 @@ func TestSyncL4NEGs(t *testing.T) {
 		})
 	}
 
+}
+
+func getUpgradingEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
+	upgradeInstance1 := "upgrade-instance1"
+	port80 := int32(80)
+	emptyNamedPort := ""
+	protocolTCP := corev1.ProtocolTCP
+	return []*discovery.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-upgrade",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+					discovery.LabelManagedBy:   managedByEPSControllerValue,
+				},
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.9.1"},
+					NodeName:  &upgradeInstance1,
+					TargetRef: &corev1.ObjectReference{
+						Namespace: namespace,
+						Name:      "pod-upgrade-1",
+					},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+	}
 }
 
 func TestReAddDrainingEndpointsThatAreInTargetMap(t *testing.T) {
@@ -4165,6 +4242,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		svcPort.PortTuple.Name = string(negtypes.VmIpEndpointType)
 		mode = negtypes.L4LocalMode
 		svcPort.EpCalculatorMode = mode
+		svcPort.IncludeDrainNodesL4Local = testContext.IncludeDrainNodesL4Local
 	}
 
 	// TODO(freehan): use real readiness reflector
