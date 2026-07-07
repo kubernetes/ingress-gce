@@ -1555,7 +1555,7 @@ func TestIsNodeInDefaultSubnet_forLegacyVPCAllNodesAreAssumedInDefaultSubnet(t *
 	}
 }
 
-func TestListSubnets(t *testing.T) {
+func TestListSubnetsInDefaultNetwork(t *testing.T) {
 	prevTopologyCRName := flags.F.NodeTopologyCRName
 	defer func() {
 		flags.F.NodeTopologyCRName = prevTopologyCRName
@@ -1643,7 +1643,7 @@ func TestListSubnets(t *testing.T) {
 				fakeTopologyInformer.GetIndexer().Add(tc.existingTopologyCR)
 			}
 
-			gotSubnets := zoneGetter.ListSubnets(klog.TODO())
+			gotSubnets := zoneGetter.ListSubnetsInDefaultNetwork(klog.TODO())
 
 			if diff := cmp.Diff(gotSubnets, tc.wantSubnets); diff != "" {
 				t.Errorf("Got mismatch for List Subnets (-got, +want)= %s", diff)
@@ -1652,15 +1652,15 @@ func TestListSubnets(t *testing.T) {
 	}
 }
 
-func TestLegacyListSubnets(t *testing.T) {
+func TestLegacyListSubnetsInDefaultNetwork(t *testing.T) {
 	nodeInformer := FakeNodeInformer()
 	// In production clusters nodes will not be part of different subnets. However to test that Legacy Zone Getter
 	// does not check subnets at all, set true.
 	PopulateFakeNodeInformer(nodeInformer, true)
 	zoneGetter := NewLegacyZoneGetter(nodeInformer, FakeNodeTopologyInformer())
-	subnets := zoneGetter.ListSubnets(klog.TODO())
+	subnets := zoneGetter.ListSubnetsInDefaultNetwork(klog.TODO())
 	if len(subnets) != 0 {
-		t.Errorf("In legacy mode, ListSubnets() returned %d, expected 0 subnets", len(subnets))
+		t.Errorf("In legacy mode, ListSubnetsInDefaultNetwork() returned %d, expected 0 subnets", len(subnets))
 	}
 }
 

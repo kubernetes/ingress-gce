@@ -136,7 +136,7 @@ func (h *SvcNegStatusHandler) ReportStatus(negs []*composite.NetworkEndpointGrou
 
 	svcNeg := origSvcNeg.DeepCopy()
 	if flags.F.EnableMultiSubnetClusterPhase1 {
-		nonActiveNegRefs := h.getNonActiveNegRefs(origSvcNeg.Status.NetworkEndpointGroups, negObjRefs, h.zoneGetter.ListSubnets(h.logger), h.networkInfo.SubnetworkURL)
+		nonActiveNegRefs := h.getNonActiveNegRefs(origSvcNeg.Status.NetworkEndpointGroups, negObjRefs, h.zoneGetter.ListSubnetsInDefaultNetwork(h.logger), h.networkInfo.SubnetworkURL)
 		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
 	}
 	svcNeg.Status.NetworkEndpointGroups = negObjRefs

@@ -241,7 +241,7 @@ func (z *ZoneGetter) ListZonesInDefaultSubnet(filter Filter, logger klog.Logger)
 
 // ListZonesPerSubnet returns a list of zones containing nodes that satisfy the given node filtering mode per subnet.
 func (z *ZoneGetter) ListZonesPerSubnet(filter Filter, logger klog.Logger) (shared.ZonesPerSubnetMap, error) {
-	subnetConfigs := z.ListSubnets(logger)
+	subnetConfigs := z.ListSubnetsInDefaultNetwork(logger)
 	if subnetConfigs == nil {
 		return shared.ZonesPerSubnetMap{}, nil
 	}
@@ -293,13 +293,13 @@ func (z *ZoneGetter) listZones(filter Filter, defaultSubnetOnly bool, logger klo
 	return zones.List(), nil
 }
 
-// ListSubnets returns the lists of subnets in the cluster based on the
+// ListSubnetsInDefaultNetwork returns the lists of subnets in the cluster based on the
 // NodeTopology CR.
-// If the CR does not exist or it is not ready, ListSubnets will return only the
+// If the CR does not exist or it is not ready, ListSubnetsInDefaultNetwork will return only the
 // default subnet.
-func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig {
+func (z *ZoneGetter) ListSubnetsInDefaultNetwork(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	if z.mode == Legacy {
-		logger.V(4).Info("ListSubnets is being called with legacy zone getter. Returning empty list of subnets")
+		logger.V(4).Info("ListSubnetsInDefaultNetwork is being called with legacy zone getter. Returning empty list of subnets")
 		return nil
 	}
 
