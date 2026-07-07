@@ -320,10 +320,129 @@ func TestMergeConditions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got := mergeConditions(tc.existing, tc.newConditions)
+			got := mergeConditions(tc.existing, tc.newConditions, nil)
 			if !conditionsEqual(got, tc.expected) {
 				t.Errorf("mergeConditions() = %v, expected %v", got, tc.expected)
 			}
 		})
+	}
+}
+
+func TestMergeConditions_Remove(t *testing.T) {
+	testCases := []struct {
+		desc               string
+		existing           []metav1.Condition
+		newConditions      []metav1.Condition
+		conditionsToRemove []string
+		expected           []metav1.Condition
+	}{
+		{
+			desc:               "Remove existing condition",
+			existing:           []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+			newConditions:      nil,
+			conditionsToRemove: []string{"Ready"},
+			expected:           nil,
+		},
+		{
+			desc: "Remove one, keep one, add one",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Synced", Status: metav1.ConditionFalse},
+			},
+			newConditions:      []metav1.Condition{{Type: "Programmed", Status: metav1.ConditionTrue}},
+			conditionsToRemove: []string{"Ready"},
+			expected: []metav1.Condition{
+				{Type: "Synced", Status: metav1.ConditionFalse},
+				{Type: "Programmed", Status: metav1.ConditionTrue},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := mergeConditions(tc.existing, tc.newConditions, tc.conditionsToRemove)
+			if !conditionsEqual(got, tc.expected) {
+				t.Errorf("mergeConditions() = %v, expected %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestMergeConditions_PreserveLastTransitionTime(t *testing.T) {
+	t1 := metav1.NewTime(time.Now().Add(-10 * time.Minute))
+	t2 := metav1.NewTime(time.Now())
+
+	testCases := []struct {
+		desc          string
+		existing      []metav1.Condition
+		newConditions []metav1.Condition
+		expected      []metav1.Condition
+	}{
+		{
+			desc: "Preserve transition time when status is same",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t1},
+			},
+			newConditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+			expected: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t1},
+			},
+		},
+		{
+			desc: "Update transition time when status changes",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionFalse, LastTransitionTime: t1},
+			},
+			newConditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+			expected: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := mergeConditions(tc.existing, tc.newConditions, nil)
+			if len(got) != len(tc.expected) {
+				t.Fatalf("Got %d conditions, expected %d", len(got), len(tc.expected))
+			}
+			for i, gotCond := range got {
+				expectedCond := tc.expected[i]
+				if gotCond.Type != expectedCond.Type {
+					t.Errorf("Condition %d type mismatch: got %s, expected %s", i, gotCond.Type, expectedCond.Type)
+				}
+				if gotCond.Status != expectedCond.Status {
+					t.Errorf("Condition %d status mismatch: got %v, expected %v", i, gotCond.Status, expectedCond.Status)
+				}
+				if !gotCond.LastTransitionTime.Equal(&expectedCond.LastTransitionTime) {
+					t.Errorf("Condition %d LastTransitionTime mismatch: got %v, expected %v", i, gotCond.LastTransitionTime, expectedCond.LastTransitionTime)
+				}
+			}
+		})
+	}
+}
+
+func TestMergeConditions_Sorting(t *testing.T) {
+	newConditions := []metav1.Condition{
+		{Type: "C", Status: metav1.ConditionTrue},
+		{Type: "A", Status: metav1.ConditionTrue},
+		{Type: "B", Status: metav1.ConditionTrue},
+	}
+	expectedOrder := []string{"A", "B", "C"}
+
+	got := mergeConditions(nil, newConditions, nil)
+
+	if len(got) != len(expectedOrder) {
+		t.Fatalf("Got %d conditions, expected %d", len(got), len(expectedOrder))
+	}
+
+	for i, cond := range got {
+		if cond.Type != expectedOrder[i] {
+			t.Errorf("At index %d: got Type %q, expected %q", i, cond.Type, expectedOrder[i])
+		}
 	}
 }

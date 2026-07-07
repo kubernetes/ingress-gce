@@ -21,6 +21,8 @@ func IsUserError(err error) bool {
 		l4utils.IsInvalidLoadBalancerSourceRangesAnnotationError(err) ||
 		l4utils.IsUnsupportedNetworkTierError(err) ||
 		l4utils.IsConstraintViolationError(err) ||
+		l4utils.IsUnsupportedLoadBalancingSchemeError(err) ||
+		l4utils.IsUnsupportedProtocolError(err) ||
 		errors.As(err, &firewallErr) ||
 		errors.As(err, &userErr)
 }

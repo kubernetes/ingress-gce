@@ -140,6 +140,10 @@ func (e *UserError) Error() string {
 	return e.err.Error()
 }
 
+func (e *UserError) Unwrap() error {
+	return e.err
+}
+
 func NewUserError(err error) *UserError {
 	return &UserError{err}
 }
@@ -171,4 +175,58 @@ func IsUnsupportedFeatureError(err error, featureName string) bool {
 		return true
 	}
 	return false
+}
+
+// UnsupportedLoadBalancingSchemeError is an error for unsupported load balancing scheme.
+type UnsupportedLoadBalancingSchemeError struct {
+	frName           string
+	scheme           string
+	supportedSchemes []string
+}
+
+func (e *UnsupportedLoadBalancingSchemeError) Error() string {
+	return fmt.Sprintf("forwarding rule %s has unsupported load balancing scheme: %s, supported schemes are: %s",
+		e.frName, e.scheme, strings.Join(e.supportedSchemes, ", "))
+}
+
+// NewUnsupportedLoadBalancingSchemeError creates a new UnsupportedLoadBalancingSchemeError.
+func NewUnsupportedLoadBalancingSchemeError(frName, scheme string, supportedSchemes []string) *UnsupportedLoadBalancingSchemeError {
+	return &UnsupportedLoadBalancingSchemeError{
+		frName:           frName,
+		scheme:           scheme,
+		supportedSchemes: supportedSchemes,
+	}
+}
+
+// UnsupportedProtocolError is an error for unsupported protocol.
+type UnsupportedProtocolError struct {
+	frName             string
+	protocol           string
+	supportedProtocols []string
+}
+
+func (e *UnsupportedProtocolError) Error() string {
+	return fmt.Sprintf("forwarding rule %s has unsupported protocol: %s, supported protocols are: %s",
+		e.frName, e.protocol, strings.Join(e.supportedProtocols, ", "))
+}
+
+// NewUnsupportedProtocolError creates a new UnsupportedProtocolError.
+func NewUnsupportedProtocolError(frName, protocol string, supportedProtocols []string) *UnsupportedProtocolError {
+	return &UnsupportedProtocolError{
+		frName:             frName,
+		protocol:           protocol,
+		supportedProtocols: supportedProtocols,
+	}
+}
+
+// IsUnsupportedLoadBalancingSchemeError checks if wrapped error is an UnsupportedLoadBalancingSchemeError.
+func IsUnsupportedLoadBalancingSchemeError(err error) bool {
+	var unsupportedLBSchemeErr *UnsupportedLoadBalancingSchemeError
+	return errors.As(err, &unsupportedLBSchemeErr)
+}
+
+// IsUnsupportedProtocolError checks if wrapped error is an UnsupportedProtocolError.
+func IsUnsupportedProtocolError(err error) bool {
+	var unsupportedProtocolErr *UnsupportedProtocolError
+	return errors.As(err, &unsupportedProtocolErr)
 }

@@ -393,7 +393,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		syncResult.Error = err
 		return syncResult
 	}
-	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, syncResult.Conditions, svcLogger)
+	err = updateServiceStatus(l4c.ctx, service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
@@ -463,7 +463,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, svcLogger); err != nil {
+	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
