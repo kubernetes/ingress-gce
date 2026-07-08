@@ -68,6 +68,7 @@ type Controller struct {
 	l4Namer         namer.L4ResourcesNamer
 	zoneGetter      *zonegetter.ZoneGetter
 	networkResolver network.Resolver
+	cloud           negtypes.NetworkEndpointGroupCloud
 
 	hasSynced             func() bool
 	ingressLister         cache.Indexer
@@ -285,6 +286,7 @@ func NewController(
 	negController := &Controller{
 		client:                         kubeClient,
 		manager:                        manager,
+		cloud:                          cloud,
 		gcPeriod:                       gcPeriod,
 		recorder:                       recorder,
 		zoneGetter:                     zoneGetter,
@@ -732,6 +734,9 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
 		}
 		negUsage.CustomNamedNeg = len(customNames)
+		if flags.F.EnableNEGPreprovisioning && len(negAnnotation.Zones) > 0 {
+			negUsage.PreprovisionedNeg = len(exposedNegSvcPort)
+		}
 
 		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer, true, customNames, networkInfo)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %w", exposedNegSvcPort, portInfoMap, err)
@@ -872,10 +877,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode(), c.includeDrainNodesL4Local), c.logger)
-	if err != nil {
-		return err
-	}
+
 	obj, exists, err := c.serviceLister.GetByKey(getServiceKey(namespace, name).Key())
 	if err != nil {
 		return err
@@ -899,6 +901,25 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
+	}
+
+	// Get zones with nodes
+	zones, err := c.zoneGetter.ListZones(negtypes.NodeFilterForEndpointCalculatorMode(portMap.EndpointsCalculatorMode(), c.includeDrainNodesL4Local), c.logger)
+	if err != nil {
+		return err
+	}
+
+	if flags.F.EnableNEGPreprovisioning {
+		// Get preprovisioning zones from neg annotation
+		preprovisioningZones, preprovErr := negannotation.GetPreprovisioningZones(service, c.cloud)
+		if preprovErr != nil {
+			msg := "Ignore zone pre-provisioning annotation"
+			c.logger.Error(preprovErr, msg, "service", klog.KRef(namespace, name))
+			c.recorder.Event(service, apiv1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s err: %v", msg, preprovErr))
+		}
+
+		// Merge zones with nodes and pre-provisioning zones
+		zones = sets.NewString(zones...).Insert(preprovisioningZones...).List()
 	}
 
 	negStatus := negannotation.NewNegStatus(zones, portMap.ToPortNegMap())

@@ -49,6 +49,8 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/dualstack"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -524,10 +526,39 @@ func (s *transactionSyncer) candidateNodeFilter() zonegetter.Filter {
 	return negtypes.NodeFilterForEndpointCalculatorMode(s.EpCalculatorMode, s.NegSyncerKey.IncludeDrainNodesL4Local)
 }
 
-// ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
-func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
+// listTargetZonesPerSubnet lists all zones with candidate nodes and merges them with pre-provisioning zones.
+func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap, error) {
 	// NEGs should be created in zones with candidate nodes only.
 	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.networkInfo, s.logger)
+	if err != nil {
+		return nil, err
+	}
+
+	if !flags.F.EnableNEGPreprovisioning {
+		return zonesPerSubnet, nil
+	}
+
+	// Read pre-provisioning zones from neg annotation of the service
+	service := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics)
+	preprovisioningZones, preprovErr := negannotation.GetPreprovisioningZones(service, s.cloud)
+	if preprovErr != nil {
+		msg := "Ignore zone pre-provisioning annotation"
+		s.logger.Error(preprovErr, msg)
+		s.recordEvent(v1.EventTypeWarning, "IgnoreZonePreprovisioningAnnotation", fmt.Sprintf("%s err: %v", msg, preprovErr))
+	}
+
+	// Merge workload zones with pre-provisioning zones.
+	for subnetConfig, zones := range zonesPerSubnet {
+		zonesPerSubnet[subnetConfig] = zones.Insert(preprovisioningZones...)
+	}
+
+	return zonesPerSubnet, nil
+}
+
+// ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
+func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
+
+	zonesPerSubnet, err := s.listTargetZonesPerSubnet()
 	if err != nil {
 		return err
 	}
@@ -913,7 +944,7 @@ func (s *transactionSyncer) isTopologyChange() bool {
 		return false
 	}
 
-	wantSubnetZones, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.networkInfo, s.logger)
+	wantSubnetZones, err := s.listTargetZonesPerSubnet()
 	if err != nil {
 		s.logger.Error(err, "unable to list zones")
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, true)

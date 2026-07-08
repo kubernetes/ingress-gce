@@ -211,3 +211,7 @@ func (f *FakeNetworkEndpointGroupCloud) Region() string {
 func (f *FakeNetworkEndpointGroupCloud) GetNetwork(networkName string) (*compute.Network, error) {
 	return nil, fmt.Errorf("Not Implemented")
 }
+
+func (f *FakeNetworkEndpointGroupCloud) Zones() ([]string, error) {
+	return []string{TestZone1, TestZone2, TestZone3, TestZone4}, nil
+}

@@ -18,7 +18,9 @@ package types
 import (
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/klog/v2"
 
@@ -101,5 +103,55 @@ func validateAggregatedList(t *testing.T, adapter NetworkEndpointGroupCloud, exp
 
 	if !zoneNames.Equal(expectZoneNames) {
 		t.Errorf("Expect zones %v, but got %v", expectZoneNames.List(), zoneNames.List())
+	}
+}
+
+func TestZones(t *testing.T) {
+	t.Parallel()
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+
+	// Populate fake zones in the GCE mock objects list
+	mockGCE.MockZones.Objects[*meta.GlobalKey("zone-a")] = &cloud.MockZonesObj{
+		Obj: &compute.Zone{
+			Name:   "us-central1-a",
+			Region: "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1",
+		},
+	}
+	mockGCE.MockZones.Objects[*meta.GlobalKey("zone-b")] = &cloud.MockZonesObj{
+		Obj: &compute.Zone{
+			Name:   "us-central1-b",
+			Region: "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1",
+		},
+	}
+
+	adapter := NewAdapter(fakeGCE, NewTestContext().NegMetrics).(*cloudProviderAdapter)
+
+	zones1, err := adapter.Zones()
+	if err != nil {
+		t.Fatalf("Got Zones() err: %v, want nil", err)
+	}
+
+	expectedOriginalSet := sets.NewString("us-central1-a", "us-central1-b")
+	actualOriginalSet := sets.NewString(zones1...)
+
+	if !actualOriginalSet.Equal(expectedOriginalSet) {
+		t.Fatalf("Expected original zones list %v, but got %v", expectedOriginalSet.List(), zones1)
+	}
+
+	// Mutate cached values directly to verify that the GCE API is not called again
+	adapter.regionZonesCache = []string{"cached-zone-1", "cached-zone-2"}
+
+	zones2, err := adapter.Zones()
+	if err != nil {
+		t.Fatalf("Got Zones() err: %v, want nil", err)
+	}
+
+	expectedSet := sets.NewString("cached-zone-1", "cached-zone-2")
+	actualSet := sets.NewString(zones2...)
+
+	if !actualSet.Equal(expectedSet) {
+		t.Errorf("Zones did not hit cache, returned %v, wanted %v", zones2, expectedSet.List())
 	}
 }

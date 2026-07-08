@@ -30,6 +30,8 @@ const (
 	vmIpNegLocal   = feature("VmIpNegLocal")
 	vmIpNegCluster = feature("VmIpNegCluster")
 	customNamedNeg = feature("CustomNamedNEG")
+	// preprovisionedNeg feature specifies that NEGs are preprovisioned in specified zones
+	preprovisionedNeg = feature("PreprovisionedNEG")
 	// negInSuccess feature specifies that syncers were created for the Neg
 	negInSuccess = feature("NegInSuccess")
 	// negInError feature specifies that an error occurring in ensuring Neg Syncer

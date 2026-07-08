@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 
@@ -37,6 +39,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -50,6 +53,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/negannotation"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -2337,5 +2341,278 @@ func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
 			t.Errorf("getSyncerKey with includeDrainNodesL4Local=%v: got key.IncludeDrainNodesL4Local=%v",
 				wantDrain, key.IncludeDrainNodesL4Local)
 		}
+	}
+}
+
+type mockNegSyncer struct {
+	syncCount int
+	stopped   bool
+	mu        sync.Mutex
+}
+
+func (m *mockNegSyncer) Start() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopped = false
+	return nil
+}
+
+func (m *mockNegSyncer) Stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopped = true
+}
+
+func (m *mockNegSyncer) Sync() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.syncCount++
+	return true
+}
+
+func (m *mockNegSyncer) IsStopped() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stopped
+}
+
+func (m *mockNegSyncer) IsShuttingDown() bool {
+	return false
+}
+
+// TestEnsureSyncersWithPreprovisioningZonesChange covers the following scenarios for EnsureSyncers when pre-provisioning zones change:
+// 1. Call EnsureSyncers with no annotation changes (initial state with empty zones): Expect no Sync() call on mockNegSyncer.
+// 2. Add pre-provisioning zones to the service annotation and call EnsureSyncers: Expect 1 Sync() call on mockNegSyncer because zones changed.
+// 3. Call EnsureSyncers again with no changes: Expect no additional Sync() call (syncCount stays 1).
+// 4. Remove pre-provisioning zones from the service annotation and call EnsureSyncers: Expect 1 Sync() call on mockNegSyncer because zones changed back.
+func TestEnsureSyncersWithPreprovisioningZonesChange(t *testing.T) {
+	oldFlag := flags.F.EnableNEGPreprovisioning
+	flags.F.EnableNEGPreprovisioning = true
+	defer func() { flags.F.EnableNEGPreprovisioning = oldFlag }()
+
+	manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+
+	svcNamespace := "ns1"
+	svcName := "svc1"
+	key := getServiceKey(svcNamespace, svcName)
+
+	// Create service
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: svcNamespace,
+			Name:      svcName,
+			Annotations: map[string]string{
+				negannotation.NEGAnnotationKey: `{"exposed_ports":{"80":{}}}`,
+			},
+		},
+	}
+	testContext.ServiceInformer.GetIndexer().Add(svc)
+
+	// Setup fake syncer in map
+	portTuple := negtypes.SvcPortTuple{Port: 80, TargetPort: "80"}
+	portInfo := negtypes.PortInfo{PortTuple: portTuple, NegName: "neg1"}
+	portInfoMapKey := negtypes.PortInfoMapKey{ServicePort: 80}
+	syncerKey := manager.getSyncerKey(svcNamespace, svcName, portInfoMapKey, portInfo)
+
+	mSyncer := &mockNegSyncer{}
+	manager.syncerMap[syncerKey] = mSyncer
+
+	// Create NEG CR in client and lister to prevent "already exists" errors during ensureSvcNegCR
+	gvk := schema.GroupVersionKind{Version: "v1", Kind: "Service"}
+	ownerReference := metav1.NewControllerRef(svc, gvk)
+	blockOwnerDeletion := false
+	ownerReference.BlockOwnerDeletion = &blockOwnerDeletion
+	negCR := &negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            portInfo.NegName,
+			Namespace:       svcNamespace,
+			OwnerReferences: []metav1.OwnerReference{*ownerReference},
+			Labels: map[string]string{
+				negtypes.NegCRManagedByKey:   negtypes.NegCRControllerValue,
+				negtypes.NegCRServiceNameKey: svcName,
+				negtypes.NegCRServicePortKey: fmt.Sprint(portInfo.PortTuple.Port),
+			},
+			Finalizers: []string{common.NegFinalizerKey},
+		},
+	}
+	_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcNamespace).Create(context2.Background(), negCR, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create fake NEG CR: %v", err)
+	}
+	manager.svcNegLister.Add(negCR)
+
+	// Initialize manager's svcPortMap and svcPreprovisioningZonesMap to match the initial state
+	portMap := negtypes.PortInfoMap{portInfoMapKey: portInfo}
+	manager.svcPortMap[key] = portMap
+	manager.svcPreprovisioningZonesMap[key] = sets.NewString() // starts with empty pre-provisioning zones
+
+	// 1. Call EnsureSyncers with the same ports, and no annotation change.
+	// Expect no Sync() call on mockNegSyncer.
+	_, _, err = manager.EnsureSyncers(svcNamespace, svcName, portMap)
+	if err != nil {
+		t.Fatalf("EnsureSyncers failed: %v", err)
+	}
+	if mSyncer.syncCount != 0 {
+		t.Errorf("Expected 0 sync calls, got %d", mSyncer.syncCount)
+	}
+
+	// 2. Change the service annotation to add pre-provisioning zones.
+	svc.Annotations[negannotation.NEGAnnotationKey] = `{"exposed_ports":{"80":{}},"zones":["zone1"]}`
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+
+	// Call EnsureSyncers. Expect a Sync() call on mockNegSyncer because zones changed.
+	_, _, err = manager.EnsureSyncers(svcNamespace, svcName, portMap)
+	if err != nil {
+		t.Fatalf("EnsureSyncers failed: %v", err)
+	}
+	if mSyncer.syncCount != 1 {
+		t.Errorf("Expected 1 sync call, got %d", mSyncer.syncCount)
+	}
+
+	// 3. Call EnsureSyncers again with no changes.
+	// Expect no additional Sync() call (syncCount stays 1).
+	_, _, err = manager.EnsureSyncers(svcNamespace, svcName, portMap)
+	if err != nil {
+		t.Fatalf("EnsureSyncers failed: %v", err)
+	}
+	if mSyncer.syncCount != 1 {
+		t.Errorf("Expected sync count to remain 1, got %d", mSyncer.syncCount)
+	}
+
+	// 4. Change annotation to remove pre-provisioning zones.
+	svc.Annotations[negannotation.NEGAnnotationKey] = `{"exposed_ports":{"80":{}}}`
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+
+	// Call EnsureSyncers. Expect a Sync() call on mockNegSyncer because zones changed back.
+	_, _, err = manager.EnsureSyncers(svcNamespace, svcName, portMap)
+	if err != nil {
+		t.Fatalf("EnsureSyncers failed: %v", err)
+	}
+	if mSyncer.syncCount != 2 {
+		t.Errorf("Expected 2 sync calls, got %d", mSyncer.syncCount)
+	}
+}
+
+// TestUpdatePreprovisioningZones covers the following scenarios for the updatePreprovisioningZones function:
+// 1. Service does not exist: Verification that no change is detected and the cache remains empty.
+// 2. Service exists but has no NEG annotation: Verification that no change is detected and the cache remains empty.
+// 3. Service exists and has NEG annotation with zones: Verification that a change is detected and the cache is correctly populated.
+// 4. No zone changes: Verification that no change is detected on a second call with the same zones.
+// 5. Zones updated: Verification that a change is detected and the cache is updated with the new zones.
+// 6. Zones removed (empty list): Verification that a change is detected and the service entry is removed from the cache.
+// 7. Zones added again: Verification that a change is detected and the cache is repopulated.
+// 8. Zones attribute removed from NEG annotation: Verification that a change is detected and the service entry is removed from the cache.
+func TestUpdatePreprovisioningZones(t *testing.T) {
+	manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+
+	svcNamespace := "ns1"
+	svcName := "svc1"
+	key := getServiceKey(svcNamespace, svcName)
+
+	// Case 1: Service does not exist
+	// Expect return value false, map remains empty
+	changed := manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("Expected changed to be false when service does not exist")
+	}
+	if _, ok := manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("Expected key %v to not exist in svcPreprovisioningZonesMap", key)
+	}
+
+	// Case 2: Service exists but has no NEG annotation
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: svcNamespace,
+			Name:      svcName,
+		},
+	}
+	testContext.ServiceInformer.GetIndexer().Add(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("Expected changed to be false when service has no NEG annotation")
+	}
+	if _, ok := manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("Expected key %v to not exist in svcPreprovisioningZonesMap", key)
+	}
+
+	// Case 3: Service exists and has NEG annotation with zones
+	svc.Annotations = map[string]string{
+		negannotation.NEGAnnotationKey: "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone1\",\"zone2\"]}",
+	}
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("Expected changed to be true when zones are added")
+	}
+	zones, ok := manager.svcPreprovisioningZonesMap[key]
+	if !ok {
+		t.Fatalf("Expected key %v to exist in svcPreprovisioningZonesMap", key)
+	}
+	expectedZones := sets.NewString("zone1", "zone2")
+	if !zones.Equal(expectedZones) {
+		t.Errorf("Expected zones %v, got %v", expectedZones, zones)
+	}
+
+	// Case 4: Call again with same zones
+	// Expect return value false, map remains unchanged.
+	changed = manager.updatePreprovisioningZones(key)
+	if changed {
+		t.Errorf("expected no change")
+	}
+
+	// Case 5: Change zones
+	// Expect return value true, map is updated with the new zones.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone2\",\"zone3\"]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	zones, ok = manager.svcPreprovisioningZonesMap[key]
+	if !ok {
+		t.Fatalf("expected key to exist")
+	}
+	expectedZones = sets.NewString("zone2", "zone3")
+	if !zones.Equal(expectedZones) {
+		t.Errorf("expected zones %v, got %v", expectedZones, zones)
+	}
+
+	// Case 6: Remove zones (empty zones list in annotation)
+	// Expect return value true, key is deleted from map.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	if _, ok = manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("expected key to be deleted")
+	}
+
+	// Case 7: Add zones again to test deletion via missing zones attribute later
+	// Expect return value true.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}},\"zones\":[\"zone1\"]}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+
+	// Case 8: Remove zones attribute from NEG annotation
+	// Expect return value true, key is deleted from map.
+	svc.Annotations[negannotation.NEGAnnotationKey] = "{\"exposed_ports\":{\"80\":{}}}"
+	testContext.ServiceInformer.GetIndexer().Update(svc)
+	changed = manager.updatePreprovisioningZones(key)
+	if !changed {
+		t.Errorf("expected change")
+	}
+	if _, ok = manager.svcPreprovisioningZonesMap[key]; ok {
+		t.Errorf("expected key to be deleted")
 	}
 }

@@ -135,6 +135,78 @@ func TestNEGAnnotation(t *testing.T) {
 			ingress:    true,
 			exposed:    true,
 		},
+		{
+			desc: "NEG exposed with pre-provisioned zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a","us-central1-b"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"us-central1-a", "us-central1-b"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with pre-provisioned wildcard zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["*"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"*"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with empty zones list",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":[]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
+		{
+			desc: "NEG exposed with incorrect zone values list",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["incorrect values"]}`,
+					},
+				},
+			},
+			expectFound: true,
+			expectNegAnnotation: &NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{int32(80): {}},
+				Zones:        []string{"incorrect values"},
+			},
+			negEnabled: true,
+			ingress:    false,
+			exposed:    true,
+		},
 	} {
 		negAnnotation, found, err := FromService(tc.svc).NEGAnnotation()
 		if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
@@ -277,6 +349,268 @@ func TestParseNegStatus(t *testing.T) {
 
 			if !reflect.DeepEqual(*tc.expectNegStatus, negStatus) {
 				t.Errorf("Expected NegStatus to be %v, got %v instead", tc.expectNegStatus, negStatus)
+			}
+		})
+	}
+}
+
+func TestGetPreprovisioningZones(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		svc           *v1.Service
+		expectedZones []string
+		expectError   bool
+	}{
+		{
+			desc: "Service is nil",
+			svc:  nil,
+		},
+		{
+			desc: "NEG annotation not found",
+			svc:  &v1.Service{},
+		},
+		{
+			desc: "NEG annotation exists but no zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}}}`,
+					},
+				},
+			},
+		},
+		{
+			desc: "NEG annotation exists with empty zones list",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":[]}`,
+					},
+				},
+			},
+			expectedZones: []string{},
+		},
+		{
+			desc: "NEG annotation exists with zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a","us-central1-b"]}`,
+					},
+				},
+			},
+			expectedZones: []string{"us-central1-a", "us-central1-b"},
+		},
+		{
+			desc: "NEG annotation has wildcard zone",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["*"]}`,
+					},
+				},
+			},
+			expectedZones: []string{"*"},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, err := GetPreprovisioningZonesAnnotation(tc.svc)
+			if (err != nil) != tc.expectError {
+				t.Errorf("GetPreprovisioningZones() error = %v, expectError = %v", err, tc.expectError)
+				return
+			}
+			if !reflect.DeepEqual(zones, tc.expectedZones) {
+				t.Errorf("GetPreprovisioningZones() = %v, expected %v", zones, tc.expectedZones)
+			}
+		})
+	}
+}
+
+func TestResolvePreprovisioningZones(t *testing.T) {
+	for _, tc := range []struct {
+		desc                 string
+		preprovisioningZones []string
+		regionZones          []string
+		expectedZones        []string
+		expectError          bool
+	}{
+		{
+			desc:                 "Empty preprovisioning zones",
+			preprovisioningZones: []string{},
+			regionZones:          []string{"us-central1-a"},
+		},
+		{
+			desc:                 "Empty region zones",
+			preprovisioningZones: []string{"us-central1-a"},
+			regionZones:          []string{},
+			expectError:          true,
+		},
+		{
+			desc:                 "Valid zones",
+			preprovisioningZones: []string{"us-central1-a", "us-central1-b"},
+			regionZones:          []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+			expectedZones:        []string{"us-central1-a", "us-central1-b"},
+		},
+		{
+			desc:                 "Invalid zones",
+			preprovisioningZones: []string{"us-central1-a", "invalid-zone"},
+			regionZones:          []string{"us-central1-a", "us-central1-b"},
+			expectError:          true,
+		},
+		{
+			desc:                 "Wildcard zone",
+			preprovisioningZones: []string{"*"},
+			regionZones:          []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+			expectedZones:        []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+		},
+		{
+			desc:                 "Wildcard and other zone",
+			preprovisioningZones: []string{"us-central1-a", "*"},
+			regionZones:          []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+			expectedZones:        []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, err := ResolvePreprovisioningZones(tc.preprovisioningZones, tc.regionZones)
+			if (err != nil) != tc.expectError {
+				t.Errorf("ResolvePreprovisioningZones() error = %v, expectError = %v", err, tc.expectError)
+				return
+			}
+			if !reflect.DeepEqual(zones, tc.expectedZones) {
+				t.Errorf("ResolvePreprovisioningZones() = %v, expected %v", zones, tc.expectedZones)
+			}
+		})
+	}
+}
+
+type fakeCloudZoneGetter struct {
+	zones []string
+	err   error
+}
+
+func (f *fakeCloudZoneGetter) Zones() ([]string, error) {
+	return f.zones, f.err
+}
+
+func TestGetAndResolvePreprovisioningZones(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		svc           *v1.Service
+		zoneGetter    CloudZoneGetter
+		expectedZones []string
+		expectError   bool
+	}{
+		{
+			desc: "Nil service",
+			svc:  nil,
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a"},
+			},
+			expectedZones: nil,
+		},
+		{
+			desc: "No NEG annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a"},
+			},
+			expectedZones: nil,
+		},
+		{
+			desc: "NEG annotation with empty zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":[]}`,
+					},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a"},
+			},
+			expectedZones: []string{},
+		},
+		{
+			desc: "NEG annotation with valid zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a","us-central1-b"]}`,
+					},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+			},
+			expectedZones: []string{"us-central1-a", "us-central1-b"},
+		},
+		{
+			desc: "NEG annotation with invalid zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["invalid-zone"]}`,
+					},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a", "us-central1-b"},
+			},
+			expectError: true,
+		},
+		{
+			desc: "NEG annotation with wildcard zone",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["*"]}`,
+					},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				zones: []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+			},
+			expectedZones: []string{"us-central1-a", "us-central1-b", "us-central1-c"},
+		},
+		{
+			desc: "ZoneGetter returns error",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			zoneGetter: &fakeCloudZoneGetter{
+				err: fmt.Errorf("cloud error"),
+			},
+			expectError: true,
+		},
+		{
+			desc: "Nil ZoneGetter with non-empty preprovisioning zones",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			zoneGetter:  nil,
+			expectError: true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			zones, err := GetPreprovisioningZones(tc.svc, tc.zoneGetter)
+			if (err != nil) != tc.expectError {
+				t.Errorf("GetAndResolvePreprovisioningZones() error = %v, expectError = %v", err, tc.expectError)
+				return
+			}
+			if !reflect.DeepEqual(zones, tc.expectedZones) {
+				t.Errorf("GetAndResolvePreprovisioningZones() = %v, expected %v", zones, tc.expectedZones)
 			}
 		})
 	}

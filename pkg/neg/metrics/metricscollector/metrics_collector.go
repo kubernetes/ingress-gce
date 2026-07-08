@@ -466,15 +466,16 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", sm.negMap)
 
 	counts := map[feature]int{
-		standaloneNeg:  0,
-		ingressNeg:     0,
-		neg:            0,
-		vmIpNeg:        0,
-		vmIpNegLocal:   0,
-		vmIpNegCluster: 0,
-		customNamedNeg: 0,
-		negInSuccess:   0,
-		negInError:     0,
+		standaloneNeg:     0,
+		ingressNeg:        0,
+		neg:               0,
+		vmIpNeg:           0,
+		vmIpNegLocal:      0,
+		vmIpNegCluster:    0,
+		customNamedNeg:    0,
+		preprovisionedNeg: 0,
+		negInSuccess:      0,
+		negInError:        0,
 	}
 
 	for key, negState := range sm.negMap {
@@ -484,6 +485,7 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 		counts[ingressNeg] += negState.IngressNeg
 		counts[neg] += negState.StandaloneNeg + negState.IngressNeg
 		counts[customNamedNeg] += negState.CustomNamedNeg
+		counts[preprovisionedNeg] += negState.PreprovisionedNeg
 		counts[negInSuccess] += negState.SuccessfulNeg
 		counts[negInError] += negState.ErrorNeg
 		if negState.VmIpNeg != nil {
