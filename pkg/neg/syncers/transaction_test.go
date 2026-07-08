@@ -3177,7 +3177,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 
 	// Check that unknown zone did not cause endpoints to be removed
-	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, s.networkInfo, klog.TODO(), s.negMetrics, false, false)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3480,7 +3480,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			tc.modify(s)
 
 			subnetToNegMapping := map[string]string{defaultTestSubnet: tc.negName}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, s.networkInfo, klog.TODO(), s.negMetrics, false, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3493,7 +3493,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				t.Errorf("syncInternal returned %v, expected %v", err, tc.expectErr)
 			}
 			err = wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, klog.TODO(), s.negMetrics, false, false)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode, false, s.networkInfo, klog.TODO(), s.negMetrics, false, false)
 				if err != nil {
 					return false, nil
 				}
@@ -4209,7 +4209,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			// give a little time for the syncer attach/detach goroutines to finish
 			time.Sleep(50 * time.Millisecond)
 
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, klog.TODO(), s.negMetrics, false, s.NegSyncerKey.IncludeDrainNodesL4Local)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, s.networkInfo, klog.TODO(), s.negMetrics, false, s.NegSyncerKey.IncludeDrainNodesL4Local)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}

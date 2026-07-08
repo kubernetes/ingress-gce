@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -240,19 +241,25 @@ func (z *ZoneGetter) ListZonesInDefaultSubnet(filter Filter, logger klog.Logger)
 }
 
 // ListZonesPerSubnet returns a list of zones containing nodes that satisfy the given node filtering mode per subnet.
-func (z *ZoneGetter) ListZonesPerSubnet(filter Filter, logger klog.Logger) (shared.ZonesPerSubnetMap, error) {
-	subnetConfigs := z.ListSubnets(logger)
-	if subnetConfigs == nil {
-		return shared.ZonesPerSubnetMap{}, nil
-	}
-
+func (z *ZoneGetter) ListZonesPerSubnet(filter Filter, networkInfo network.NetworkInfo, logger klog.Logger) (shared.ZonesPerSubnetMap, error) {
 	zones, err := z.ListZones(filter, logger)
-	if err != nil {
-		return nil, err
+	// Don't return subnets with empty zones set. As ZoneGetter returns all zones per all subnets - don't return any.
+	if err != nil || len(zones) == 0 {
+		return shared.ZonesPerSubnetMap{}, err
 	}
 
-	// Don't return subnets with empty zones set. As ZoneGetter returns all zones per all subnets - don't return any.
-	if len(zones) == 0 {
+	// Multi-Net
+	if !networkInfo.IsDefault {
+		subnetName, err := utils.KeyName(networkInfo.SubnetworkURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse subnet name from SubnetworkURL %q: %w", networkInfo.SubnetworkURL, err)
+		}
+		return shared.ZonesPerSubnetMap{subnetName: sets.New(zones...)}, nil
+	}
+
+	// Multi-Subnet
+	subnetConfigs := z.ListSubnetsInDefaultNetwork(logger)
+	if subnetConfigs == nil {
 		return shared.ZonesPerSubnetMap{}, nil
 	}
 
@@ -293,13 +300,13 @@ func (z *ZoneGetter) listZones(filter Filter, defaultSubnetOnly bool, logger klo
 	return zones.List(), nil
 }
 
-// ListSubnets returns the lists of subnets in the cluster based on the
+// ListSubnetsInDefaultNetwork returns the lists of subnets in the cluster based on the
 // NodeTopology CR.
-// If the CR does not exist or it is not ready, ListSubnets will return only the
+// If the CR does not exist or it is not ready, ListSubnetsInDefaultNetwork will return only the
 // default subnet.
-func (z *ZoneGetter) ListSubnets(logger klog.Logger) []nodetopologyv1.SubnetConfig {
+func (z *ZoneGetter) ListSubnetsInDefaultNetwork(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	if z.mode == Legacy {
-		logger.V(4).Info("ListSubnets is being called with legacy zone getter. Returning empty list of subnets")
+		logger.V(4).Info("ListSubnetsInDefaultNetwork is being called with legacy zone getter. Returning empty list of subnets")
 		return nil
 	}
 
