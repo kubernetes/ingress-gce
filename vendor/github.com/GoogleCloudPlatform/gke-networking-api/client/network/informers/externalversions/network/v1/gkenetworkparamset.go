@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	apisnetworkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	versioned "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	internalinterfaces "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/internalinterfaces"
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // GKENetworkParamSets.
 type GKENetworkParamSetInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.GKENetworkParamSetLister
+	Lister() networkv1.GKENetworkParamSetLister
 }
 
 type gKENetworkParamSetInformer struct {
@@ -56,21 +56,33 @@ func NewGKENetworkParamSetInformer(client versioned.Interface, resyncPeriod time
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredGKENetworkParamSetInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().GKENetworkParamSets().List(context.TODO(), options)
+				return client.NetworkingV1().GKENetworkParamSets().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().GKENetworkParamSets().Watch(context.TODO(), options)
+				return client.NetworkingV1().GKENetworkParamSets().Watch(context.Background(), options)
 			},
-		},
-		&networkv1.GKENetworkParamSet{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().GKENetworkParamSets().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().GKENetworkParamSets().Watch(ctx, options)
+			},
+		}, client),
+		&apisnetworkv1.GKENetworkParamSet{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *gKENetworkParamSetInformer) defaultInformer(client versioned.Interface,
 }
 
 func (f *gKENetworkParamSetInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&networkv1.GKENetworkParamSet{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisnetworkv1.GKENetworkParamSet{}, f.defaultInformer)
 }
 
-func (f *gKENetworkParamSetInformer) Lister() v1.GKENetworkParamSetLister {
-	return v1.NewGKENetworkParamSetLister(f.Informer().GetIndexer())
+func (f *gKENetworkParamSetInformer) Lister() networkv1.GKENetworkParamSetLister {
+	return networkv1.NewGKENetworkParamSetLister(f.Informer().GetIndexer())
 }

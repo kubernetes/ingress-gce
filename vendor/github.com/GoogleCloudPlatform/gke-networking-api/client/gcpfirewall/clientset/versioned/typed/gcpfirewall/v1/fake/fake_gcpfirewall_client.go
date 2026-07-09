@@ -29,7 +29,7 @@ type FakeNetworkingV1 struct {
 }
 
 func (c *FakeNetworkingV1) GCPFirewalls() v1.GCPFirewallInterface {
-	return &FakeGCPFirewalls{c}
+	return newFakeGCPFirewalls(c)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

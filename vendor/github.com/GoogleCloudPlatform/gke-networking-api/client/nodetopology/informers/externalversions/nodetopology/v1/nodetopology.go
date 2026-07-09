@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	apisnodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	versioned "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	internalinterfaces "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/internalinterfaces"
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/listers/nodetopology/v1"
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/listers/nodetopology/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // NodeTopologies.
 type NodeTopologyInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.NodeTopologyLister
+	Lister() nodetopologyv1.NodeTopologyLister
 }
 
 type nodeTopologyInformer struct {
@@ -56,21 +56,33 @@ func NewNodeTopologyInformer(client versioned.Interface, resyncPeriod time.Durat
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredNodeTopologyInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().NodeTopologies().List(context.TODO(), options)
+				return client.NetworkingV1().NodeTopologies().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().NodeTopologies().Watch(context.TODO(), options)
+				return client.NetworkingV1().NodeTopologies().Watch(context.Background(), options)
 			},
-		},
-		&nodetopologyv1.NodeTopology{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().NodeTopologies().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().NodeTopologies().Watch(ctx, options)
+			},
+		}, client),
+		&apisnodetopologyv1.NodeTopology{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *nodeTopologyInformer) defaultInformer(client versioned.Interface, resyn
 }
 
 func (f *nodeTopologyInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&nodetopologyv1.NodeTopology{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisnodetopologyv1.NodeTopology{}, f.defaultInformer)
 }
 
-func (f *nodeTopologyInformer) Lister() v1.NodeTopologyLister {
-	return v1.NewNodeTopologyLister(f.Informer().GetIndexer())
+func (f *nodeTopologyInformer) Lister() nodetopologyv1.NodeTopologyLister {
+	return nodetopologyv1.NewNodeTopologyLister(f.Informer().GetIndexer())
 }

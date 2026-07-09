@@ -19,9 +19,9 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -37,33 +37,34 @@ type NodeTopologiesGetter interface {
 
 // NodeTopologyInterface has methods to work with NodeTopology resources.
 type NodeTopologyInterface interface {
-	Create(ctx context.Context, nodeTopology *v1.NodeTopology, opts metav1.CreateOptions) (*v1.NodeTopology, error)
-	Update(ctx context.Context, nodeTopology *v1.NodeTopology, opts metav1.UpdateOptions) (*v1.NodeTopology, error)
+	Create(ctx context.Context, nodeTopology *nodetopologyv1.NodeTopology, opts metav1.CreateOptions) (*nodetopologyv1.NodeTopology, error)
+	Update(ctx context.Context, nodeTopology *nodetopologyv1.NodeTopology, opts metav1.UpdateOptions) (*nodetopologyv1.NodeTopology, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, nodeTopology *v1.NodeTopology, opts metav1.UpdateOptions) (*v1.NodeTopology, error)
+	UpdateStatus(ctx context.Context, nodeTopology *nodetopologyv1.NodeTopology, opts metav1.UpdateOptions) (*nodetopologyv1.NodeTopology, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.NodeTopology, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.NodeTopologyList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*nodetopologyv1.NodeTopology, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*nodetopologyv1.NodeTopologyList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.NodeTopology, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *nodetopologyv1.NodeTopology, err error)
 	NodeTopologyExpansion
 }
 
 // nodeTopologies implements NodeTopologyInterface
 type nodeTopologies struct {
-	*gentype.ClientWithList[*v1.NodeTopology, *v1.NodeTopologyList]
+	*gentype.ClientWithList[*nodetopologyv1.NodeTopology, *nodetopologyv1.NodeTopologyList]
 }
 
 // newNodeTopologies returns a NodeTopologies
 func newNodeTopologies(c *NetworkingV1Client) *nodeTopologies {
 	return &nodeTopologies{
-		gentype.NewClientWithList[*v1.NodeTopology, *v1.NodeTopologyList](
+		gentype.NewClientWithList[*nodetopologyv1.NodeTopology, *nodetopologyv1.NodeTopologyList](
 			"nodetopologies",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.NodeTopology { return &v1.NodeTopology{} },
-			func() *v1.NodeTopologyList { return &v1.NodeTopologyList{} }),
+			func() *nodetopologyv1.NodeTopology { return &nodetopologyv1.NodeTopology{} },
+			func() *nodetopologyv1.NodeTopologyList { return &nodetopologyv1.NodeTopologyList{} },
+		),
 	}
 }
