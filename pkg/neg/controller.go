@@ -749,7 +749,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB, multinet NetLB and NetLB V3 (variant with NEG default) services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *metricscollector.NegServiceState, networkInfo *network.NetworkInfo) error {
 	wantsILB, _ := l4annotations.WantsL4ILB(service)
-	wantsStandaloneNEGLB := flags.F.RunL4StandaloneNEGLBController && l4annotations.HasLoadBalancerClass(service, l4annotations.StandalonePassthroughNegLoadBalancerClass)
+	wantsStandaloneNEGLB := flags.F.RunL4StandaloneNEGController && l4annotations.HasLoadBalancerClass(service, l4annotations.StandalonePassthroughNegLoadBalancerClass)
 	needsNEGForILB := c.runL4ForILB && wantsILB
 	needsNEGForNetLB := c.netLBServiceNeedsNEG(service, networkInfo)
 	if !needsNEGForILB && !needsNEGForNetLB && !wantsStandaloneNEGLB {

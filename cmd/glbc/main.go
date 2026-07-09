@@ -340,6 +340,7 @@ func main() {
 		MaxIGSize:                            flags.F.MaxIGSize,
 		RunL4ILBController:                   flags.F.RunL4Controller,
 		RunL4NetLBController:                 flags.F.RunL4NetLBController,
+		RunL4StandaloneNEGController:         flags.F.RunL4StandaloneNEGController,
 		EnableL4ILBDualStack:                 flags.F.EnableL4ILBDualStack,
 		EnableL4NetLBDualStack:               flags.F.EnableL4NetLBDualStack,
 		EnableL4StrongSessionAffinity:        flags.F.EnableL4StrongSessionAffinity,
@@ -371,7 +372,7 @@ func main() {
 		id: fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6)),
 	}
 
-	enableL4Controllers := flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC
+	enableL4Controllers := flags.F.RunL4Controller || flags.F.RunL4NetLBController || flags.F.EnableIGController || flags.F.EnablePSC || flags.F.RunL4StandaloneNEGController
 	runNEG := func() {
 		logger := rootLogger.WithName("NEGController")
 		logger.Info("Start running the enabled controllers",
@@ -619,7 +620,7 @@ func runIngressControllers(ctx *ingctx.ControllerContext, systemHealth *systemhe
 }
 
 func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, leOption leaderElectionOption, logger klog.Logger) {
-	if !flags.F.RunL4Controller && !flags.F.EnablePSC && !flags.F.EnableIGController && !flags.F.RunL4NetLBController {
+	if !flags.F.RunL4Controller && !flags.F.EnablePSC && !flags.F.EnableIGController && !flags.F.RunL4NetLBController && !flags.F.RunL4StandaloneNEGController {
 		return
 	}
 
@@ -663,7 +664,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		logger.V(0).Info("L4NetLB controller started")
 	}
 
-	if flags.F.RunL4StandaloneNEGLBController {
+	if flags.F.RunL4StandaloneNEGController {
 		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")

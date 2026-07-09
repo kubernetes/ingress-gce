@@ -1294,11 +1294,11 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 }
 
 func TestMergeVmIpNEGsPortInfo(t *testing.T) {
-	oldRunL4StandaloneNEGLBController := flags.F.RunL4StandaloneNEGLBController
+	oldRunL4StandaloneNEGController := flags.F.RunL4StandaloneNEGController
 
-	flags.F.RunL4StandaloneNEGLBController = true
+	flags.F.RunL4StandaloneNEGController = true
 	defer func() {
-		flags.F.RunL4StandaloneNEGLBController = oldRunL4StandaloneNEGLBController
+		flags.F.RunL4StandaloneNEGController = oldRunL4StandaloneNEGController
 	}()
 
 	controller, err := newTestController(fake.NewSimpleClientset())

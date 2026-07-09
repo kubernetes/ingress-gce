@@ -247,6 +247,8 @@ func init() {
 	prometheus.MustRegister(l4ILBCount)
 	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
 	prometheus.MustRegister(l4NetLBCount)
+	klog.V(3).Infof("Registering L4 Standalone NEG usage metrics %v", l4StandaloneNEGCount)
+	prometheus.MustRegister(l4StandaloneNEGCount)
 }
 
 // PublishILBSyncMetrics exports metrics related to the L4 ILB sync.

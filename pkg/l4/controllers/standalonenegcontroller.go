@@ -25,15 +25,44 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
 	ccontext "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
+	"k8s.io/ingress-gce/pkg/l4/resources"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
+
+var (
+	// supportedLBSchemes is a list of supported LB schemes. Only Forwarding rules
+	// with these schemes can be referenced in a L4 standalone NEG service.
+	supportedLBSchemes = []string{
+		string(cloud.SchemeExternal),
+		"EXTERNAL_PASSTHROUGH",
+	}
+	// supportedFRProtocols is a list of supported protocols. Only Forwarding
+	// rules with these protocols can be referenced in a L4 standalone NEG
+	// service.
+	supportedFRProtocols = []string{
+		"TCP",
+		"UDP",
+		"L3_DEFAULT",
+	}
+)
+
+func isSchemeSupported(lbScheme string) bool {
+	return slices.Contains(supportedLBSchemes, lbScheme)
+}
+
+func isFRProtocolSupported(protocol string) bool {
+	return slices.Contains(supportedFRProtocols, protocol)
+}
 
 type parsedForwardingRule struct {
 	key     *meta.Key
@@ -62,15 +91,40 @@ func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			svc := obj.(*v1.Service)
+			svc, ok := obj.(*v1.Service)
+			if !ok {
+				return
+			}
 			if lc.shouldProcess(svc) {
 				lc.enqueue(svc)
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			curSvc := cur.(*v1.Service)
-			if lc.shouldProcess(curSvc) {
+			curSvc, ok := cur.(*v1.Service)
+			if !ok {
+				return
+			}
+			oldSvc, okOld := old.(*v1.Service)
+			if okOld && lc.shouldProcess(oldSvc) || lc.shouldProcess(curSvc) {
 				lc.enqueue(curSvc)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			svc, ok := obj.(*v1.Service)
+			if !ok {
+				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					logger.Error(nil, "unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
+					return
+				}
+				svc, ok = tombstone.Obj.(*v1.Service)
+				if !ok {
+					logger.Error(nil, "unexpected object type in tombstone in DeleteFunc", "type", fmt.Sprintf("%T", tombstone.Obj))
+					return
+				}
+			}
+			if lc.shouldProcess(svc) {
+				lc.enqueue(svc)
 			}
 		},
 	})
@@ -79,6 +133,9 @@ func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan
 }
 
 func (lc *StandaloneNEGLBController) shouldProcess(svc *v1.Service) bool {
+	if svc == nil {
+		return false
+	}
 	if svc.Spec.Type != v1.ServiceTypeLoadBalancer {
 		return false
 	}
@@ -113,18 +170,27 @@ func (lc *StandaloneNEGLBController) sync(key string) error {
 		return fmt.Errorf("failed to lookup service for key %s: %w", key, err)
 	}
 	if !exists || obj == nil {
+		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		return nil
 	}
 	svc := obj.(*v1.Service)
+	svcLogger := lc.logger.WithValues("service", klog.KObj(svc))
+
 	if svc.DeletionTimestamp != nil {
+		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		return nil
 	}
 	if !lc.shouldProcess(svc) {
+		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
+		if err := lc.clearStatusIngressIP(svc, svcLogger); err != nil {
+			return err
+		}
 		return nil
 	}
-	svcLogger := lc.logger.WithValues("service", klog.KObj(svc))
 
-	return lc.syncStandaloneNEGLB(svc, svcLogger)
+	schemes, err := lc.syncStandaloneNEGLB(svc, svcLogger)
+	lc.publishMetrics(key, schemes, err)
+	return err
 }
 
 func (lc *StandaloneNEGLBController) parseForwardingRuleKeys(frNamesStr string, svcLogger klog.Logger) ([]parsedForwardingRule, []error) {
@@ -158,30 +224,33 @@ func (lc *StandaloneNEGLBController) parseForwardingRuleKeys(frNamesStr string, 
 }
 
 func validateForwardingRule(fr *composite.ForwardingRule, frName string) error {
-	if fr.LoadBalancingScheme != string(cloud.SchemeExternal) {
-		return fmt.Errorf("forwarding rule %s has unsupported load balancing scheme: %s", frName, fr.LoadBalancingScheme)
+	var errs []error
+	if !isSchemeSupported(fr.LoadBalancingScheme) {
+		errs = append(errs, fmt.Errorf("forwarding rule %s has unsupported load balancing scheme: %s, supported schemes are: %s", frName, fr.LoadBalancingScheme, strings.Join(supportedLBSchemes, ", ")))
 	}
-	if fr.IPProtocol != "TCP" && fr.IPProtocol != "UDP" && fr.IPProtocol != "L3_DEFAULT" {
-		return fmt.Errorf("forwarding rule %s has unsupported protocol: %s", frName, fr.IPProtocol)
+	if !isFRProtocolSupported(fr.IPProtocol) {
+		errs = append(errs, fmt.Errorf("forwarding rule %s has unsupported protocol: %s, supported protocols are: %s", frName, fr.IPProtocol, strings.Join(supportedFRProtocols, ", ")))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLogger klog.Logger) error {
+func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLogger klog.Logger) (lbSchemes []string, err error) {
 	frNamesStr, ok := svc.Annotations[annotations.CustomForwardingRuleKey]
 	if !ok || frNamesStr == "" {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		svcLogger.V(4).Info("Service has no forwarding rule reference, skipping")
 		err := lc.clearStatusIngressIP(svc, svcLogger)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return nil
+		return nil, l4utils.NewUserError(fmt.Errorf("service has no forwarding rule reference annotation %s", annotations.CustomForwardingRuleKey))
 	}
 
 	parsedRules, parseErrs := lc.parseForwardingRuleKeys(frNamesStr, svcLogger)
 	var errs []error
-	errs = append(errs, parseErrs...)
+	for _, parseErr := range parseErrs {
+		errs = append(errs, l4utils.NewUserError(parseErr))
+	}
 
 	if len(parsedRules) == 0 {
 		err := lc.clearStatusIngressIP(svc, svcLogger)
@@ -190,31 +259,36 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		}
 		if len(errs) > 0 {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule %s", errors.Join(errs...).Error())
-			return errors.Join(errs...)
+			return nil, errors.Join(errs...)
 		}
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
-		return nil
+		return nil, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation"))
 	}
 
 	var lbIngresses []v1.LoadBalancerIngress
 	vipMode := v1.LoadBalancerIPModeVIP
+	var schemes []string
 
 	for _, parsed := range parsedRules {
 		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionGA, svcLogger)
 		if err != nil {
 			svcLogger.Error(err, "failed to get forwarding rule", "frName", parsed.rawName)
+			if utils.IsNotFoundError(err) {
+				err = l4utils.NewUserError(err)
+			}
 			errs = append(errs, err)
 			continue
 		}
 
+		schemes = append(schemes, fr.LoadBalancingScheme)
+
 		if err := validateForwardingRule(fr, parsed.rawName); err != nil {
 			svcLogger.Error(err, "invalid forwarding rule", "frName", parsed.rawName)
-			errs = append(errs, err)
+			errs = append(errs, l4utils.NewUserError(err))
 			continue
 		}
 
 		lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: fr.IPAddress, IPMode: &vipMode})
-
 	}
 
 	if len(errs) > 0 {
@@ -227,7 +301,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		if err != nil {
 			errs = append(errs, err)
 		}
-		return errors.Join(errs...)
+		return schemes, errors.Join(errs...)
 	}
 
 	newStatus := &v1.LoadBalancerStatus{
@@ -235,13 +309,13 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 
 	if err := updateServiceStatus(lc.ctx, svc, newStatus, nil, svcLogger); err != nil {
-		return err
+		return schemes, err
 	}
 
 	if len(errs) > 0 {
-		return errors.Join(errs...)
+		return schemes, errors.Join(errs...)
 	}
-	return nil
+	return schemes, nil
 }
 
 func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLogger klog.Logger) error {
@@ -256,4 +330,25 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 		return err
 	}
 	return nil
+}
+
+func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string, syncErr error) {
+	state := l4metrics.L4StandaloneNEGServiceState{
+		Status: l4metrics.StatusSuccess,
+	}
+	if syncErr != nil {
+		if resources.IsUserError(syncErr) {
+			state.Status = l4metrics.StatusUserError
+		} else {
+			state.Status = l4metrics.StatusError
+			now := time.Now()
+			state.FirstSyncErrorTime = &now
+		}
+	}
+
+	state.LBSchemeExternal = slices.Contains(schemes, "EXTERNAL")
+	state.LBSchemeExternalPassthrough = slices.Contains(schemes, "EXTERNAL_PASSTHROUGH")
+	state.LBSchemeInternal = slices.Contains(schemes, "INTERNAL")
+
+	lc.ctx.L4Metrics.SetL4StandaloneNEGService(key, state)
 }
