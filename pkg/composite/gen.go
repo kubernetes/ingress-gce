@@ -1800,6 +1800,10 @@ type BackendServiceLogConfig struct {
 	// Denotes whether to enable logging for the load balancer
 	// traffic served by this backend service. The default value is false.
 	Enable bool `json:"enable,omitempty"`
+	// The list of request headers that will be logged to Stackdriver.
+	LoggingHttpRequestHeaders []*BackendServiceLogConfigLoggingHttpHeader `json:"loggingHttpRequestHeaders,omitempty"`
+	// The list of response headers that will be logged to Stackdriver.
+	LoggingHttpResponseHeaders []*BackendServiceLogConfigLoggingHttpHeader `json:"loggingHttpResponseHeaders,omitempty"`
 	// Deprecated in favor of optionalMode.
 	// This field can only be specified if logging is enabled for this
 	// backend
@@ -1837,6 +1841,14 @@ type BackendServiceLogConfig struct {
 	// The
 	// default value is 1.0.
 	SampleRate      float64  `json:"sampleRate,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// BackendServiceLogConfigLoggingHttpHeader is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceLogConfigLoggingHttpHeader struct {
+	// The name of the header to be logged.
+	HeaderName      string   `json:"headerName,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -4244,7 +4256,7 @@ type HttpRouteAction struct {
 	// see Load
 	// balancing: Routing and traffic management features.
 	FaultInjectionPolicy *HttpFaultInjection `json:"faultInjectionPolicy,omitempty"`
-	// Image optimization policy for this URL Map’s route. Available only
+	// Image optimization policy for this URL Map's route. Available only
 	// for
 	// Global EXTERNAL_MANAGED load balancer schemes.
 	// Either Cloud CDN must be enabled on the backend service or backend
@@ -4903,7 +4915,13 @@ type NetworkEndpointGroup struct {
 	Name string `json:"name,omitempty"`
 	// The URL of the network to which all network endpoints in the NEG
 	// belong.
-	// Uses default project network if unspecified.
+	// For networkEndpointType GCE_VM_IP_PORT,GCE_VM_IP_PORTMAP or
+	// NON_GCP_PRIVATE_IP_PORT,
+	// if this field is not specified, a default network will be used.
+	// This field cannot be set for NEGs with networkEndpointType set
+	// toSERVERLESS or PRIVATE_SERVICE_CONNECT and for
+	// global NEGs.
+	// For all other network endpoint types, this field is required.
 	Network string `json:"network,omitempty"`
 	// Type of network endpoints in this network endpoint group. Can be one
 	// ofGCE_VM_IP, GCE_VM_IP_PORT,NON_GCP_PRIVATE_IP_PORT,
@@ -5067,8 +5085,14 @@ type NetworkEndpointGroupLbNetworkEndpointGroup struct {
 	DefaultPort int64 `json:"defaultPort,omitempty"`
 	// The URL of the network to which all network endpoints in the NEG
 	// belong.
-	// Uses default project network if unspecified.
-	// [Deprecated] This field is deprecated.
+	// For networkEndpointType GCE_VM_IP_PORT,GCE_VM_IP_PORTMAP or
+	// NON_GCP_PRIVATE_IP_PORT,
+	// if this field is not specified, a default network will be used.
+	// This field cannot be set for NEGs with networkEndpointType set
+	// toSERVERLESS or PRIVATE_SERVICE_CONNECT and for
+	// global NEGs.
+	// For all other network endpoint types, this field is required.
+	//  [Deprecated] This field is deprecated.
 	Network string `json:"network,omitempty"`
 	// Optional URL of the subnetwork to which all network endpoints in the
 	// NEG
@@ -5696,6 +5720,41 @@ type RbacPolicy struct {
 	Principals      []*Principal `json:"principals,omitempty"`
 	ForceSendFields []string     `json:"-"`
 	NullFields      []string     `json:"-"`
+}
+
+// RegexRewrite is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type RegexRewrite struct {
+	// The regular expression used to match against the URL path.
+	// It uses RE2 syntax with the following constraints:
+	//
+	//
+	//      - Any single character operators
+	//      - Groups are allowed to have only submatch operator inside
+	//      - Groups are allowed only without any char repetition, e.g.
+	//      .*
+	//      - Any char repetition, e.g. .*, is
+	//      only allowed to be used in a single regex together with:
+	//
+	//
+	//             - Empty string operators
+	//             - Other repetitions
+	//             - Ranges
+	//             - Repetitions of ranges
+	//
+	//
+	//      - Ranges are only allowed to have:
+	//
+	//
+	//             - Character range
+	//             - Digits range
+	//             - Symbols listed in characters allowed for ranges
+	PathPattern string `json:"pathPattern,omitempty"`
+	// Required when path pattern is specified. Used to rewrite matching
+	// parts of
+	// the path.
+	PathSubstitution string   `json:"pathSubstitution,omitempty"`
+	ForceSendFields  []string `json:"-"`
+	NullFields       []string `json:"-"`
 }
 
 // RequestMirrorPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -6886,9 +6945,13 @@ type UrlRewrite struct {
 	//
 	// Only one of path_prefix_rewrite orpath_template_rewrite may be
 	// specified.
-	PathTemplateRewrite string   `json:"pathTemplateRewrite,omitempty"`
-	ForceSendFields     []string `json:"-"`
-	NullFields          []string `json:"-"`
+	PathTemplateRewrite string `json:"pathTemplateRewrite,omitempty"`
+	// The regex rewrite to be applied to the URL. Only one
+	// ofpathPrefixRewrite, pathTemplateRewrite, orregexRewrite may be
+	// specified.
+	RegexRewrite    *RegexRewrite `json:"regexRewrite,omitempty"`
+	ForceSendFields []string      `json:"-"`
+	NullFields      []string      `json:"-"`
 }
 
 // WeightedBackendService is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent

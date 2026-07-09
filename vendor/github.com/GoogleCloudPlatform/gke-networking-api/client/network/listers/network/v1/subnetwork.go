@@ -19,10 +19,10 @@ limitations under the License.
 package v1
 
 import (
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // SubnetworkLister helps list Subnetworks.
@@ -30,19 +30,19 @@ import (
 type SubnetworkLister interface {
 	// List lists all Subnetworks in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.Subnetwork, err error)
+	List(selector labels.Selector) (ret []*networkv1.Subnetwork, err error)
 	// Get retrieves the Subnetwork from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.Subnetwork, error)
+	Get(name string) (*networkv1.Subnetwork, error)
 	SubnetworkListerExpansion
 }
 
 // subnetworkLister implements the SubnetworkLister interface.
 type subnetworkLister struct {
-	listers.ResourceIndexer[*v1.Subnetwork]
+	listers.ResourceIndexer[*networkv1.Subnetwork]
 }
 
 // NewSubnetworkLister returns a new SubnetworkLister.
 func NewSubnetworkLister(indexer cache.Indexer) SubnetworkLister {
-	return &subnetworkLister{listers.New[*v1.Subnetwork](indexer, v1.Resource("subnetwork"))}
+	return &subnetworkLister{listers.New[*networkv1.Subnetwork](indexer, networkv1.Resource("subnetwork"))}
 }

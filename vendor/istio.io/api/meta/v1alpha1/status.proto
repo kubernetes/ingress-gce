@@ -26,7 +26,6 @@ option go_package = "istio.io/api/meta/v1alpha1";
 
 message IstioStatus {
   // Current service state of the resource.
-  // More info: https://istio.io/docs/reference/config/config-status/
   // +optional
   // +patchMergeKey=type
   // +patchStrategy=merge
@@ -42,7 +41,7 @@ message IstioStatus {
   // Deprecated. IstioCondition observed_generation will show the resource generation for which the condition was generated.
   // Resource Generation to which the Reconciled Condition refers.
   // When this value is not equal to the object's metadata generation, reconciled condition  calculation for the current
-  // generation is still in progress.  See https://istio.io/latest/docs/reference/config/config-status/ for more info.
+  // generation is still in progress.
   // +optional
   // +protoc-gen-crd:validation:XIntOrString
   int64 observed_generation = 3;

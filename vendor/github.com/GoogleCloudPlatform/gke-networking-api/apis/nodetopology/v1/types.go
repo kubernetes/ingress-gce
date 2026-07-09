@@ -32,6 +32,7 @@ import (
 // NodeTopology describes the VPC network configuration for the cluster.
 //
 // This resource is a singleton.
+// +k8s:openapi-gen=true
 type NodeTopology struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -41,6 +42,7 @@ type NodeTopology struct {
 }
 
 // NodeTopologySpec is the spec for a NodeTopology resource
+// +k8s:openapi-gen=true
 type NodeTopologySpec struct{}
 
 // NodeTopologyStatus is the status for a NodeTopology resource
@@ -49,11 +51,13 @@ type NodeTopologyStatus struct {
 	// Zones specifies the current node zones of the GKE cluster that corresponds
 	// to this NodeTopology Resource.
 	// +required
+	// +listType=atomic
 	Zones []string `json:"zones"`
 
 	// Subnets contains the list of subnets used by the GKE cluster that
 	// corresponds to this Node Topology Resource.
 	// +required
+	// +listType=atomic
 	Subnets []SubnetConfig `json:"subnets"`
 
 	// Conditions contains the latest conditions observed of this Node Tolology
@@ -65,6 +69,7 @@ type NodeTopologyStatus struct {
 }
 
 // SubnetConfig describes the configuration of a GKE subnetwork.
+// +k8s:openapi-gen=true
 type SubnetConfig struct {
 	// Name is the short name of the subnetwork.
 	// More info: https://cloud.google.com/vpc/docs/subnets
@@ -79,6 +84,7 @@ type SubnetConfig struct {
 
 // PodCondition contains details for the current condition of this Node
 // Topology resource.
+// +k8s:openapi-gen=true
 type Condition struct {
 	// Type is the type of the condition.
 	// +required
@@ -106,6 +112,7 @@ const (
 )
 
 // ConditionType is a valid value for Condition.Type
+// +k8s:openapi-gen=true
 type ConditionType string
 
 // +kubebuilder:object:root=true

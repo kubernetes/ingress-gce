@@ -439,7 +439,7 @@ type AgentGateway struct {
 	Name string `json:"name,omitempty"`
 	// NetworkConfig: Optional. Network configuration for the AgentGateway.
 	NetworkConfig *AgentGatewayNetworkConfig `json:"networkConfig,omitempty"`
-	// Protocols: Required. List of protocols supported by an Agent Gateway
+	// Protocols: Optional. Deprecated.
 	//
 	// Possible values:
 	//   "PROTOCOL_UNSPECIFIED" - Unspecified protocol.
@@ -597,6 +597,9 @@ func (s AgentGatewayNetworkConfigDnsPeeringConfig) MarshalJSON() ([]byte, error)
 type AgentGatewayNetworkConfigEgress struct {
 	// NetworkAttachment: Optional. The URI of the Network Attachment resource.
 	NetworkAttachment string `json:"networkAttachment,omitempty"`
+	// TrustConfig: Optional. TrustConfig defines the trust configuration for
+	// egress.
+	TrustConfig *AgentGatewayNetworkConfigEgressTrustConfig `json:"trustConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "NetworkAttachment") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -612,6 +615,30 @@ type AgentGatewayNetworkConfigEgress struct {
 
 func (s AgentGatewayNetworkConfigEgress) MarshalJSON() ([]byte, error) {
 	type NoMethod AgentGatewayNetworkConfigEgress
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// AgentGatewayNetworkConfigEgressTrustConfig: TrustConfig defines the trust
+// configuration for egress.
+type AgentGatewayNetworkConfigEgressTrustConfig struct {
+	// PemCertificates: Required. PEM encoded root certificates used to validate
+	// the identity of the upstream servers/destinations during egress connections.
+	PemCertificates []string `json:"pemCertificates,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "PemCertificates") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PemCertificates") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AgentGatewayNetworkConfigEgressTrustConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AgentGatewayNetworkConfigEgressTrustConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -4433,22 +4460,25 @@ type WasmPlugin struct {
 	CreateTime string `json:"createTime,omitempty"`
 	// Description: Optional. A human-readable description of the resource.
 	Description string `json:"description,omitempty"`
-	// KmsKeyName: Optional. The name of the customer managed Cloud KMS key to be
-	// used to encrypt the `WasmPlugin` image (provided by image_uri) and
+	// KmsKeyName: Optional. The name of the customer-managed CryptoKey
+	// (https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys)
+	// to be used to encrypt the `WasmPlugin` image (provided by image_uri) and
 	// configuration (provided by plugin_config_data or plugin_config_uri) that are
 	// stored by the `Service Extensions` product at rest. Format:
-	// "projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{key}"
+	// `projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{key}`
 	//  By default, Google Cloud automatically encrypts all data at rest using
 	// Google-owned and Google-managed encryption keys. If you need ownership and
 	// control of the keys that protect your data at rest, you can specify a
 	// customer-managed encryption key (CMEK) to encrypt your `WasmPlugin` data.
 	// For more information, see Using customer-managed encryption keys
-	// (https://cloud.google.com/kms/docs/cmek).
+	// (https://cloud.google.com/service-extensions/docs/cmek).
 	KmsKeyName string `json:"kmsKeyName,omitempty"`
-	// KmsKeyVersion: Output only. The name of the specific CryptoKeyVersion used
-	// to encrypt the `WasmPlugin` data, if the kms_key_name field is set. Format:
-	// "projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{key}/
-	// cryptoKeyVersions/{version}" This is a read-only field. `WasmPlugin` data is
+	// KmsKeyVersion: Output only. The name of the specific CryptoKeyVersion
+	// (https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys.cryptoKeyVersions)
+	// used to encrypt the `WasmPlugin` data, if the kms_key_name field is set.
+	// Format:
+	// `projects/{project}/locations/{location}/keyRings/{keyring}/cryptoKeys/{key}/
+	// cryptoKeyVersions/{version}` This is a read-only field. `WasmPlugin` data is
 	// automatically encrypted using the most recent `CryptoKeyVersion` of the
 	// `CryptoKey` provided in the `kms_key_name` field. See Cloud KMS resources
 	// (https://cloud.google.com/kms/docs/resource-hierarchy) for more information.
@@ -4874,8 +4904,8 @@ type ProjectsLocationsListCall struct {
 
 // List: Lists information about the supported locations for this service. This
 // method lists locations based on the resource scope provided in the
-// [ListLocationsRequest.name] field: * **Global locations**: If `name` is
-// empty, the method lists the public locations available to all projects. *
+// ListLocationsRequest.name field: * **Global locations**: If `name` is empty,
+// the method lists the public locations available to all projects. *
 // **Project-specific locations**: If `name` follows the format
 // `projects/{project}`, the method lists locations visible to that specific
 // project. This includes public, private, or other project-specific locations
@@ -4892,8 +4922,8 @@ func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall 
 }
 
 // ExtraLocationTypes sets the optional parameter "extraLocationTypes": Do not
-// use this field. It is unsupported and is ignored unless explicitly
-// documented otherwise. This is primarily for internal usage.
+// use this field unless explicitly documented otherwise. This is primarily for
+// internal usage.
 func (c *ProjectsLocationsListCall) ExtraLocationTypes(extraLocationTypes ...string) *ProjectsLocationsListCall {
 	c.urlParams_.SetMulti("extraLocationTypes", append([]string{}, extraLocationTypes...))
 	return c
@@ -8330,6 +8360,12 @@ func (c *ProjectsLocationsHttpRoutesCreateCall) HttpRouteId(httpRouteId string) 
 	return c
 }
 
+// RequestId sets the optional parameter "requestId": Idempotent request UUID.
+func (c *ProjectsLocationsHttpRoutesCreateCall) RequestId(requestId string) *ProjectsLocationsHttpRoutesCreateCall {
+	c.urlParams_.Set("requestId", requestId)
+	return c
+}
+
 // Fields allows partial responses to be retrieved. See
 // https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
 // details.
@@ -8638,6 +8674,13 @@ type ProjectsLocationsHttpRoutesListCall struct {
 func (r *ProjectsLocationsHttpRoutesService) List(parent string) *ProjectsLocationsHttpRoutesListCall {
 	c := &ProjectsLocationsHttpRoutesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
+	return c
+}
+
+// Filter sets the optional parameter "filter": Filter expression to restrict
+// the list.
+func (c *ProjectsLocationsHttpRoutesListCall) Filter(filter string) *ProjectsLocationsHttpRoutesListCall {
+	c.urlParams_.Set("filter", filter)
 	return c
 }
 
