@@ -36,8 +36,8 @@ type L4StandaloneNEGServiceState struct {
 var (
 	l4StandaloneNEGCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "l4_standalone_neg_lbs_count",
-			Help: "Metric containing the number of L4 Standalone NEG LBs that can be filtered by scheme labels and status",
+			Name: "l4_standalone_neg_services_count",
+			Help: "Metric containing the number of L4 Standalone NEG Services that can be filtered by scheme labels and status",
 		},
 		[]string{"status", "lb_scheme_external", "lb_scheme_external_passthrough", "lb_scheme_internal"},
 	)
