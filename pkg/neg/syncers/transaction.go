@@ -97,6 +97,8 @@ type transactionSyncer struct {
 
 	// customName indicates whether the NEG name is a generated one or custom one
 	customName bool
+	// manageLifecycle indicates whether the syncer manages creation of NEGs.
+	manageLifecycle bool
 
 	logger klog.Logger
 
@@ -153,6 +155,7 @@ func NewTransactionSyncer(
 	kubeSystemUID string,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	customName bool,
+	manageLifecycle bool,
 	log klog.Logger,
 	lpConfig labels.PodLabelPropagationConfig,
 	enableDualStackNEG bool,
@@ -181,6 +184,7 @@ func NewTransactionSyncer(
 		statusHandler:             statusHandler,
 		syncMetricsCollector:      syncerMetrics,
 		customName:                customName,
+		manageLifecycle:           manageLifecycle,
 		errorState:                false,
 		logger:                    logger,
 		enableDegradedMode:        flags.F.EnableDegradedMode,
@@ -670,6 +674,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 				s.recorder,
 				s.NegSyncerKey.GetAPIVersion(),
 				s.customName,
+				s.manageLifecycle,
 				networkInfo,
 				s.logger,
 				s.negMetrics,

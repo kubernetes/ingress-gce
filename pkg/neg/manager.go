@@ -285,6 +285,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				string(manager.kubeSystemUID),
 				manager.syncerMetrics,
 				syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
+				true,
 				manager.logger,
 				manager.lpConfig,
 				manager.enableDualStackNEG,

@@ -124,11 +124,11 @@ func getService(serviceLister cache.Indexer, namespace, name string, logger klog
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (*composite.NetworkEndpointGroup, error) {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName, manageLifecycle bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (*composite.NetworkEndpointGroup, error) {
 	negLogger := logger.WithValues("negName", negName, "zone", zone)
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 	if err != nil {
-		if !utils.IsNotFoundError(err) {
+		if !manageLifecycle || !utils.IsNotFoundError(err) {
 			negLogger.Error(err, "Failed to get Neg")
 			return nil, err
 		}
@@ -161,6 +161,18 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			// Non-GCP NEGs do not have associated network and subnetwork.
 			(!utils.EqualResourceIDs(neg.Network, networkInfo.NetworkURL) ||
 				!utils.EqualResourceIDs(neg.Subnetwork, networkInfo.SubnetworkURL)) {
+
+			if !manageLifecycle {
+				negLogger.Error(
+					nil,
+					"Found NEG whose network and/or subnetwork mismatches cluster's, lifecycle unmanaged - can't recreate, treating as missing",
+					"currentNetwork", neg.Network,
+					"expectedNetwork", networkInfo.NetworkURL,
+					"currentSubnetwork", neg.Subnetwork,
+					"expectedSubnetwork", networkInfo.SubnetworkURL,
+				)
+				return nil, fmt.Errorf("NEG %s in zone %s does not match network and subnetwork of the cluster", negName, zone)
+			}
 
 			needToCreate = true
 			negLogger.Info("NEG does not match network and subnetwork of the cluster. Deleting NEG")
