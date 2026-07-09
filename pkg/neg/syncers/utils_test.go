@@ -861,6 +861,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		expect              map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
 		expectAnnotationMap labels.EndpointPodLabelMap
 		expectErr           bool
+		ensuredSubnetZones  map[string]sets.Set[string]
 	}{
 		{
 			desc:               "neg does not exist",
@@ -1391,15 +1392,65 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, meta.VersionGA, klog.TODO())
 			},
 			subnetToNegMapping: mappingWithDefaultSubnetOnly,
-			expectErr:          true,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3, negtypes.TestZone4),
+			},
+			expectErr: true,
+		},
+		{
+			desc: "limit locations to zone1 only, ignore missing NEG in zone2",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, meta.VersionGA, klog.TODO())
+				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, meta.VersionGA, klog.TODO())
+			},
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(
+					endpoint1,
+					endpoint2,
+				),
+			},
+			expectAnnotationMap: labels.EndpointPodLabelMap{
+				endpoint1: labels.PodLabelMap{
+					"foo": "bar",
+				},
+				endpoint2: labels.PodLabelMap{
+					"foo": "bar",
+				},
+			},
+			expectErr: false,
+		},
+		{
+			desc: "empty non-nil locations returns empty map",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, meta.VersionGA, klog.TODO())
+			},
+			subnetToNegMapping:  mappingWithDefaultSubnetOnly,
+			ensuredSubnetZones:  map[string]sets.Set[string]{},
+			expect:              map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+			expectAnnotationMap: labels.EndpointPodLabelMap{},
+			expectErr:           false,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
+
 		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
 		defaultNetInfo := network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
-		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, negCloud, meta.VersionGA, tc.mode, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false, false)
+
+		ensuredSubnetZones := tc.ensuredSubnetZones
+		if ensuredSubnetZones == nil {
+			var err error
+			ensuredSubnetZones, err = zoneGetter.ListZonesPerSubnet(negtypes.NodeFilterForEndpointCalculatorMode(tc.mode, false), defaultNetInfo, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to list zones for test case %q: %v", tc.desc, err)
+			}
+		}
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, ensuredSubnetZones, negCloud, meta.VersionGA, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1573,7 +1624,11 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 			subnetToNegMapping := map[string]string{defaultTestSubnet: negName}
 			defaultNetInfo := network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
 
-			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus, false)
+			ensuredZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode, false), defaultNetInfo, klog.TODO())
+			if err != nil {
+				t.Fatalf("failed to list zones: %v", err)
+			}
+			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZonesPerSubnet, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus)
 			if err != nil {
 				t.Fatalf("retrieveExistingZoneNetworkEndpointMap: %v", err)
 			}
@@ -1649,10 +1704,14 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone, klog.TODO())
 	}
 
+	defaultNetInfo := network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
 	// With includeDrainNodesL4Local=false: zone4 has no NEG but is not a
 	// candidate zone, so the NotFound is suppressed and no error is returned.
-	defaultNetInfo := network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false, false)
+	ensuredZonesNoDrain, err := zoneGetter.ListZonesPerSubnet(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode, false), defaultNetInfo, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to list zones: %v", err)
+	}
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZonesNoDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
 	if err != nil {
 		t.Errorf("expected no error with includeDrainNodesL4Local=false and missing zone4 NEG, got: %v", err)
 	}
@@ -1661,7 +1720,11 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	// NEG yet. The NotFound is not suppressed, so an error is returned.
 	// This is the plausible race documented in the review: if ensureNetworkEndpointGroups
 	// silently failed for zone4, the subsequent retrieve would fail here.
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false, true)
+	ensuredZonesWithDrain, err := zoneGetter.ListZonesPerSubnet(negtypes.NodeFilterForEndpointCalculatorMode(negtypes.L4LocalMode, true), defaultNetInfo, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to list zones: %v", err)
+	}
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
 	if err == nil {
 		t.Errorf("expected error with includeDrainNodesL4Local=true and missing zone4 NEG, got nil")
 	}
@@ -1671,7 +1734,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	drainEndpoint := &composite.NetworkEndpoint{IpAddress: "10.0.4.1", Instance: "upgrade-instance1"}
 	fakeCloud.AttachNetworkEndpoints(negName, negtypes.TestZone4, []*composite.NetworkEndpoint{drainEndpoint}, meta.VersionGA, klog.TODO())
 
-	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L4LocalMode, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false, true)
+	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
 	if err != nil {
 		t.Fatalf("retrieveExistingZoneNetworkEndpointMap(drain=true, NEG exists): %v", err)
 	}

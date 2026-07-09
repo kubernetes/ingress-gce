@@ -687,39 +687,37 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, zoneGetter negtypes.TopologyProvider, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool, includeDrainNodesL4Local bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
 
 	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
 	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
-	allZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(zonegetter.AllNodesFilter, networkInfo, logger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	candidateZonesPerSubnet, err := zoneGetter.ListZonesPerSubnet(negtypes.NodeFilterForEndpointCalculatorMode(mode, includeDrainNodesL4Local), networkInfo, logger)
+	allZonesPerSubnet, err := topologyProvider.ListZonesPerSubnet(zonegetter.AllNodesFilter, networkInfo, logger)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	for subnet, negName := range subnetToNegMapping {
-		zones := allZonesPerSubnet[subnet]
-		candidateZonesMap := candidateZonesPerSubnet[subnet]
+		allZones := allZonesPerSubnet[subnet]
+		ensuredZones := ensuredZonesPerSubnet[subnet]
 
-		for zone := range zones {
+		for zone := range allZones {
+			loc := negtypes.NEGLocation{Subnet: subnet, Zone: zone}
 			networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, retrieveDrainStatus, version, logger)
 			if err != nil {
 				// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
-				// NEG not found in a candidate zone is an error.
-				if utils.IsNotFoundError(err) && !candidateZonesMap.Has(zone) {
+				// NEG not found in a candidate zone is an error. ensuredZones in fact contains only candidate zones,
+				// but only successfully ensured ones.
+				if utils.IsNotFoundError(err) && !ensuredZones.Has(zone) {
 					logger.Info("Ignoring NotFound error for NEG", "negName", negName, "zone", zone, "subnet", subnet)
 					negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 					continue
 				}
-				return nil, nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, candidate zones %v, err - %w", zone, candidateZonesMap, err)
+				return nil, nil, nil, fmt.Errorf("failed to lookup NEG in zone %q, ensured zones %v, err - %w", zone, ensuredZones.UnsortedList(), err)
 			}
-			zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}] = negtypes.NewNetworkEndpointSet()
+			zoneNetworkEndpointMap[loc] = negtypes.NewNetworkEndpointSet()
 			for _, ne := range networkEndpointsWithHealthStatus {
 
 				newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
@@ -729,7 +727,7 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 				if enableDualStackNEG {
 					newNE.IPv6 = parseIPAddress(ne.NetworkEndpoint.Ipv6Address)
 				}
-				zoneNetworkEndpointMap[negtypes.NEGLocation{Zone: zone, Subnet: subnet}].Insert(newNE)
+				zoneNetworkEndpointMap[loc].Insert(newNE)
 				endpointPodLabelMap[newNE] = ne.NetworkEndpoint.Annotations
 				if retrieveDrainStatus && healthStatusIndicatesDraining(ne) {
 					drainingEndpoints[newNE] = ne.Healths[0].HealthState

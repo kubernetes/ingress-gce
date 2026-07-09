@@ -38,6 +38,7 @@ import (
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -288,12 +289,31 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// Only matters for L4 Local mode.
 	needInitDrainStatus := s.needInit && s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode
 
+	var ensureErr error
+	var ensuredSubnetZones map[string]sets.Set[string]
 	if s.needInit || topologyChange {
 		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "topologyChange", topologyChange)
-		if err := s.ensureNetworkEndpointGroups(); err != nil {
-			return fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, err)
+
+		// Passing ensured NEGs forward from ensureNetworkEndpointGroups() if called during this sync as reading from statusHandler in the same sync might result in reading stale data.
+		ensuredSubnetZones, ensureErr = s.ensureNetworkEndpointGroups()
+		if ensureErr == nil {
+			s.needInit = false
+		} else {
+			// Resync will be triggered only after this iteration will complete syncing ensured NEGs.
+			ensureErr = fmt.Errorf("%w: %v", negtypes.ErrNegNotFound, ensureErr)
+			s.needInit = true
+
+			// if not a single NEG ensured - no need to continue resync
+			if len(ensuredSubnetZones) == 0 {
+				return ensureErr
+			}
 		}
-		s.needInit = false
+	} else {
+		var err error
+		ensuredSubnetZones, err = s.statusHandler.SubnetToZonesMap()
+		if err != nil {
+			return fmt.Errorf("failed to get subnet to zones map from status handler: %w", err)
+		}
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
@@ -304,7 +324,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, s.NegSyncerKey.IncludeDrainNodesL4Local)
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, ensuredSubnetZones, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus)
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -366,6 +386,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			s.logger.Info("Using normal mode endpoint calculation")
 		}
 	}
+
+	// Filter out locations without NEGs to prevent attaching endpoints in locations where is no NEG
+	targetMap = s.dropLocationsWithoutNEGs(targetMap, currentMap)
+
 	// When the flags are not enabled, error state should be reset when no
 	// error occurs in the sync.
 	// notInDegraded and onlyInDegraded are not populated when the flags are
@@ -419,13 +443,16 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
-		s.logger.V(3).Info("No endpoint change. Skip syncing NEG. ", s.Namespace, s.Name)
-		return nil
+		s.logger.V(3).Info("No endpoint change. Skip syncing NEG.", s.Namespace, s.Name)
+		return ensureErr
 	}
+
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
-
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone)
+	if syncErr := s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone); syncErr != nil {
+		return utilerrors.NewAggregate([]error{ensureErr, syncErr})
+	}
+	return ensureErr
 }
 
 // reAddDrainingEndpointsThatAreInTargetMap will make sure that endpoints that are draining
@@ -556,23 +583,24 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
-func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
+func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnetMap, error) {
 
 	zonesPerSubnet, err := s.listTargetZonesPerSubnet()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var errList []error
 	var negObjs []*composite.NetworkEndpointGroup
 	updateNEGStatus := true
 	negsByLocation := make(map[string]int)
+	ensuredSubnetZones := make(shared.ZonesPerSubnetMap)
 
 	// Get default subnet from syncer's networkInfo.
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
 	if err != nil {
 		s.logger.Error(err, "Errored getting default subnet from NetworkInfo when ensuring NEGs")
-		return err
+		return nil, err
 	}
 
 	var subnetConfigs []nodetopologyv1.SubnetConfig
@@ -591,7 +619,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 		subnetConfig, err := nodetopology.SubnetConfigFromSubnetURL(s.networkInfo.SubnetworkURL)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		subnetConfigs = []nodetopologyv1.SubnetConfig{subnetConfig}
 	}
@@ -599,7 +627,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	for _, subnetConfig := range subnetConfigs {
 		zones, ok := zonesPerSubnet[subnetConfig.Name]
 		if !ok {
-			// s.topologyProvider.ListSubnetsInDefaultNetwork and s.topologyProvider.ListZonesPerSubnet should return same set of subnets.
+			// s.topologyProvider.ListSubnetsInDefaultNetwork and s.topologyProvider.ListZonesPerSubnet should return same set of subnets for Multi-Subnet.
 			// Therefore this condition should be true only for multi-networking where we don't want NEGs in default subnet
 			continue
 		}
@@ -659,6 +687,10 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			if err == nil {
 				negObjs = append(negObjs, negObj)
 				negsByLocation[zone]++
+				if _, ok := ensuredSubnetZones[subnetConfig.Name]; !ok {
+					ensuredSubnetZones[subnetConfig.Name] = sets.New[string]()
+				}
+				ensuredSubnetZones[subnetConfig.Name].Insert(zone)
 			}
 		}
 	}
@@ -670,7 +702,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
-	return utilerrors.NewAggregate(errList)
+	return ensuredSubnetZones, utilerrors.NewAggregate(errList)
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -952,6 +984,19 @@ func (s *transactionSyncer) isTopologyChange() bool {
 	}
 
 	return !wantSubnetZones.Equal(existingSubnetZones)
+}
+
+// dropLocationsWithoutNEGs excludes locations from targetMap that do not exist in currentMap.
+func (s *transactionSyncer) dropLocationsWithoutNEGs(targetMap, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet) map[negtypes.NEGLocation]negtypes.NetworkEndpointSet {
+	filteredMap := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, len(targetMap))
+	for loc, endpoints := range targetMap {
+		if _, ok := currentMap[loc]; ok {
+			filteredMap[loc] = endpoints
+		} else {
+			s.logger.Info("Excluding target endpoints for location as there is no NEG", "location", loc)
+		}
+	}
+	return filteredMap
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
