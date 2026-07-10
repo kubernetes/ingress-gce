@@ -19,10 +19,10 @@ limitations under the License.
 package v1
 
 import (
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // GCPFirewallLister helps list GCPFirewalls.
@@ -30,19 +30,19 @@ import (
 type GCPFirewallLister interface {
 	// List lists all GCPFirewalls in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.GCPFirewall, err error)
+	List(selector labels.Selector) (ret []*gcpfirewallv1.GCPFirewall, err error)
 	// Get retrieves the GCPFirewall from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.GCPFirewall, error)
+	Get(name string) (*gcpfirewallv1.GCPFirewall, error)
 	GCPFirewallListerExpansion
 }
 
 // gCPFirewallLister implements the GCPFirewallLister interface.
 type gCPFirewallLister struct {
-	listers.ResourceIndexer[*v1.GCPFirewall]
+	listers.ResourceIndexer[*gcpfirewallv1.GCPFirewall]
 }
 
 // NewGCPFirewallLister returns a new GCPFirewallLister.
 func NewGCPFirewallLister(indexer cache.Indexer) GCPFirewallLister {
-	return &gCPFirewallLister{listers.New[*v1.GCPFirewall](indexer, v1.Resource("gcpfirewall"))}
+	return &gCPFirewallLister{listers.New[*gcpfirewallv1.GCPFirewall](indexer, gcpfirewallv1.Resource("gcpfirewall"))}
 }

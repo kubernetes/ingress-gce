@@ -381,6 +381,14 @@ func TestBackendServiceLogConfig(t *testing.T) {
 	}
 }
 
+func TestBackendServiceLogConfigLoggingHttpHeader(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLogConfigLoggingHttpHeader{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLogConfigLoggingHttpHeader{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceNetworkPassThroughLbTrafficPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceNetworkPassThroughLbTrafficPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceNetworkPassThroughLbTrafficPolicy{})
@@ -1644,6 +1652,14 @@ func TestPrincipal(t *testing.T) {
 func TestRbacPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(RbacPolicy{})
 	alphaType := reflect.TypeOf(computealpha.RbacPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegexRewrite(t *testing.T) {
+	compositeType := reflect.TypeOf(RegexRewrite{})
+	alphaType := reflect.TypeOf(computealpha.RegexRewrite{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}

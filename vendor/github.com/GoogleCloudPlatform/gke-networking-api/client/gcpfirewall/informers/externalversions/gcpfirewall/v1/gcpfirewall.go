@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
+	apisgcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
 	versioned "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	internalinterfaces "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/informers/externalversions/internalinterfaces"
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/listers/gcpfirewall/v1"
+	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/listers/gcpfirewall/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // GCPFirewalls.
 type GCPFirewallInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.GCPFirewallLister
+	Lister() gcpfirewallv1.GCPFirewallLister
 }
 
 type gCPFirewallInformer struct {
@@ -56,21 +56,33 @@ func NewGCPFirewallInformer(client versioned.Interface, resyncPeriod time.Durati
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredGCPFirewallInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().GCPFirewalls().List(context.TODO(), options)
+				return client.NetworkingV1().GCPFirewalls().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().GCPFirewalls().Watch(context.TODO(), options)
+				return client.NetworkingV1().GCPFirewalls().Watch(context.Background(), options)
 			},
-		},
-		&gcpfirewallv1.GCPFirewall{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().GCPFirewalls().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().GCPFirewalls().Watch(ctx, options)
+			},
+		}, client),
+		&apisgcpfirewallv1.GCPFirewall{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *gCPFirewallInformer) defaultInformer(client versioned.Interface, resync
 }
 
 func (f *gCPFirewallInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&gcpfirewallv1.GCPFirewall{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisgcpfirewallv1.GCPFirewall{}, f.defaultInformer)
 }
 
-func (f *gCPFirewallInformer) Lister() v1.GCPFirewallLister {
-	return v1.NewGCPFirewallLister(f.Informer().GetIndexer())
+func (f *gCPFirewallInformer) Lister() gcpfirewallv1.GCPFirewallLister {
+	return gcpfirewallv1.NewGCPFirewallLister(f.Informer().GetIndexer())
 }

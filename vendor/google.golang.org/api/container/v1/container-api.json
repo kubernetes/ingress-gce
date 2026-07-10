@@ -4,6 +4,12 @@
       "scopes": {
         "https://www.googleapis.com/auth/cloud-platform": {
           "description": "See, edit, configure, and delete your Google Cloud data and see the email address for your Google Account."
+        },
+        "https://www.googleapis.com/auth/container": {
+          "description": "See, edit, configure, and delete your Google Kubernetes Engine data and see the email address for your Google Account"
+        },
+        "https://www.googleapis.com/auth/container.read-only": {
+          "description": "See your Google Kubernetes Engine data and the email address of your Google Account"
         }
       }
     }
@@ -149,7 +155,9 @@
                     "$ref": "ListUsableSubnetworksResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 }
               }
@@ -192,7 +200,9 @@
                 "$ref": "ServerConfig"
               },
               "scopes": [
-                "https://www.googleapis.com/auth/cloud-platform"
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/container",
+                "https://www.googleapis.com/auth/container.read-only"
               ]
             }
           },
@@ -221,7 +231,9 @@
                     "$ref": "CheckAutopilotCompatibilityResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "completeIpRotation": {
@@ -249,7 +261,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "create": {
@@ -277,7 +290,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "delete": {
@@ -320,7 +334,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "fetchClusterUpgradeInfo": {
@@ -350,7 +365,9 @@
                     "$ref": "ClusterUpgradeInfo"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "get": {
@@ -393,7 +410,9 @@
                     "$ref": "Cluster"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "getJwks": {
@@ -452,7 +471,9 @@
                     "$ref": "ListClustersResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "setAddons": {
@@ -480,7 +501,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setLegacyAbac": {
@@ -508,7 +530,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setLocations": {
@@ -537,7 +560,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setLogging": {
@@ -565,7 +589,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setMaintenancePolicy": {
@@ -593,7 +618,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setMasterAuth": {
@@ -621,7 +647,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setMonitoring": {
@@ -649,7 +676,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setNetworkPolicy": {
@@ -677,7 +705,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setResourceLabels": {
@@ -705,7 +734,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "startIpRotation": {
@@ -733,7 +763,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "update": {
@@ -761,7 +792,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "updateMaster": {
@@ -789,7 +821,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 }
               },
@@ -821,7 +854,8 @@
                         "$ref": "Empty"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "create": {
@@ -849,7 +883,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "delete": {
@@ -898,7 +933,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "fetchNodePoolUpgradeInfo": {
@@ -928,7 +964,9 @@
                         "$ref": "NodePoolUpgradeInfo"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "get": {
@@ -977,7 +1015,9 @@
                         "$ref": "NodePool"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "list": {
@@ -1020,7 +1060,9 @@
                         "$ref": "ListNodePoolsResponse"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "rollback": {
@@ -1048,7 +1090,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "setAutoscaling": {
@@ -1076,7 +1119,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "setManagement": {
@@ -1104,7 +1148,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "setSize": {
@@ -1132,7 +1177,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "update": {
@@ -1160,7 +1206,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     }
                   }
@@ -1220,7 +1267,8 @@
                     "$ref": "Empty"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "get": {
@@ -1263,7 +1311,9 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "list": {
@@ -1300,7 +1350,9 @@
                     "$ref": "ListOperationsResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 }
               }
@@ -1342,7 +1394,9 @@
                 "$ref": "ServerConfig"
               },
               "scopes": [
-                "https://www.googleapis.com/auth/cloud-platform"
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/container",
+                "https://www.googleapis.com/auth/container.read-only"
               ]
             }
           },
@@ -1387,7 +1441,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "completeIpRotation": {
@@ -1428,7 +1483,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "create": {
@@ -1462,7 +1518,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "delete": {
@@ -1505,7 +1562,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "fetchClusterUpgradeInfo": {
@@ -1535,7 +1593,9 @@
                     "$ref": "ClusterUpgradeInfo"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "get": {
@@ -1578,7 +1638,9 @@
                     "$ref": "Cluster"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "legacyAbac": {
@@ -1619,7 +1681,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "list": {
@@ -1655,7 +1718,9 @@
                     "$ref": "ListClustersResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "locations": {
@@ -1697,7 +1762,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "logging": {
@@ -1738,7 +1804,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "master": {
@@ -1779,7 +1846,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "monitoring": {
@@ -1820,7 +1888,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "resourceLabels": {
@@ -1861,7 +1930,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setMaintenancePolicy": {
@@ -1902,7 +1972,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setMasterAuth": {
@@ -1943,7 +2014,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "setNetworkPolicy": {
@@ -1984,7 +2056,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "startIpRotation": {
@@ -2025,7 +2098,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "update": {
@@ -2066,7 +2140,8 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 }
               },
@@ -2118,7 +2193,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "create": {
@@ -2159,7 +2235,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "delete": {
@@ -2209,7 +2286,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "fetchNodePoolUpgradeInfo": {
@@ -2239,7 +2317,9 @@
                         "$ref": "NodePoolUpgradeInfo"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "get": {
@@ -2289,7 +2369,9 @@
                         "$ref": "NodePool"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "list": {
@@ -2332,7 +2414,9 @@
                         "$ref": "ListNodePoolsResponse"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container",
+                        "https://www.googleapis.com/auth/container.read-only"
                       ]
                     },
                     "rollback": {
@@ -2380,7 +2464,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "setManagement": {
@@ -2428,7 +2513,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "setSize": {
@@ -2476,7 +2562,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     },
                     "update": {
@@ -2524,7 +2611,8 @@
                         "$ref": "Operation"
                       },
                       "scopes": [
-                        "https://www.googleapis.com/auth/cloud-platform"
+                        "https://www.googleapis.com/auth/cloud-platform",
+                        "https://www.googleapis.com/auth/container"
                       ]
                     }
                   }
@@ -2571,7 +2659,8 @@
                     "$ref": "Empty"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container"
                   ]
                 },
                 "get": {
@@ -2614,7 +2703,9 @@
                     "$ref": "Operation"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 },
                 "list": {
@@ -2650,7 +2741,9 @@
                     "$ref": "ListOperationsResponse"
                   },
                   "scopes": [
-                    "https://www.googleapis.com/auth/cloud-platform"
+                    "https://www.googleapis.com/auth/cloud-platform",
+                    "https://www.googleapis.com/auth/container",
+                    "https://www.googleapis.com/auth/container.read-only"
                   ]
                 }
               }
@@ -2660,7 +2753,7 @@
       }
     }
   },
-  "revision": "20260331",
+  "revision": "20260616",
   "rootUrl": "https://container.googleapis.com/",
   "schemas": {
     "AcceleratorConfig": {
@@ -2798,6 +2891,10 @@
       "description": "Configuration for the addons that can be automatically spun up in the cluster, enabling additional functionality.",
       "id": "AddonsConfig",
       "properties": {
+        "agentSandboxConfig": {
+          "$ref": "AgentSandboxConfig",
+          "description": "Optional. Configuration for the AgentSandbox addon."
+        },
         "cloudRunConfig": {
           "$ref": "CloudRunConfig",
           "description": "Configuration for the Cloud Run addon, which allows the user to use a managed Knative service."
@@ -2851,6 +2948,10 @@
           "$ref": "NetworkPolicyConfig",
           "description": "Configuration for NetworkPolicy. This only tracks whether the addon is enabled or not on the Master, it does not track whether network policy is enabled for the nodes."
         },
+        "nodeReadinessConfig": {
+          "$ref": "NodeReadinessConfig",
+          "description": "Optional. Configuration for NodeReadinessController add-on."
+        },
         "parallelstoreCsiDriverConfig": {
           "$ref": "ParallelstoreCsiDriverConfig",
           "description": "Configuration for the Cloud Storage Parallelstore CSI driver."
@@ -2866,6 +2967,10 @@
         "sliceControllerConfig": {
           "$ref": "SliceControllerConfig",
           "description": "Optional. Configuration for the slice controller add-on."
+        },
+        "slurmOperatorConfig": {
+          "$ref": "SlurmOperatorConfig",
+          "description": "Configuration for the Slurm Operator."
         },
         "statefulHaConfig": {
           "$ref": "StatefulHAConfig",
@@ -2933,6 +3038,17 @@
           "description": "The number of threads per physical core. To disable simultaneous multithreading (SMT) set this to 1. If unset, the maximum number of threads supported per core by the underlying processor is assumed.",
           "format": "int64",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentSandboxConfig": {
+      "description": "Configuration for the AgentSandbox addon.",
+      "id": "AgentSandboxConfig",
+      "properties": {
+        "enabled": {
+          "description": "Optional. Whether AgentSandbox is enabled for this cluster.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -3735,6 +3851,10 @@
           "deprecated": true,
           "description": "Parameters used in creating the cluster's nodes. For requests, this field should only be used in lieu of a \"node_pool\" object, since this configuration (along with the \"initial_node_count\") will be used to create a \"NodePool\" object with an auto-generated name. Do not use this and a node_pool at the same time. For responses, this field will be populated with the node configuration of the first node pool. (For configuration of each node pool, see `node_pool.config`) If unspecified, the defaults are used. This field is deprecated, use node_pool.config instead."
         },
+        "nodeCreationConfig": {
+          "$ref": "NodeCreationConfig",
+          "description": "Optional. Configuration for Node Creation Mode."
+        },
         "nodeIpv4CidrSize": {
           "description": "Output only. The size of the address space on each node for hosting containers. This is provisioned from within the `container_ipv4_cidr` range. This field will only be set when cluster is in route-based network mode.",
           "format": "int32",
@@ -4131,6 +4251,14 @@
           "$ref": "IdentityServiceConfig",
           "description": "The desired Identity Service component configuration."
         },
+        "desiredImage": {
+          "description": "The desired name of the image to use for this node. This is used to create clusters using a custom image. NOTE: Set the \"desired_node_pool\" field as well.",
+          "type": "string"
+        },
+        "desiredImageProject": {
+          "description": "The project containing the desired image to use for this node. This is used to create clusters using a custom image. NOTE: Set the \"desired_node_pool\" field as well.",
+          "type": "string"
+        },
         "desiredImageType": {
           "description": "The desired image type for the node pool. NOTE: Set the \"desired_node_pool\" field as well.",
           "type": "string"
@@ -4212,6 +4340,10 @@
         "desiredNetworkTierConfig": {
           "$ref": "NetworkTierConfig",
           "description": "The desired network tier configuration for the cluster."
+        },
+        "desiredNodeCreationConfig": {
+          "$ref": "NodeCreationConfig",
+          "description": "Optional. The desired NodeCreationConfig for the cluster."
         },
         "desiredNodeKubeletConfig": {
           "$ref": "NodeKubeletConfig",
@@ -4698,6 +4830,44 @@
       },
       "type": "object"
     },
+    "CustomImageConfig": {
+      "description": "CustomImageConfig contains the information r",
+      "id": "CustomImageConfig",
+      "properties": {
+        "image": {
+          "description": "The name of the image to use for this node.",
+          "type": "string"
+        },
+        "imageProject": {
+          "description": "The project containing the image to use for this node.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CustomImageInfo": {
+      "description": "Contains the custom image info for a node pool.",
+      "id": "CustomImageInfo",
+      "properties": {
+        "upgradeMessage": {
+          "description": "Output only. The human-readable upgrade message for the custom image.",
+          "readOnly": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CustomNodeInit": {
+      "description": "Support for running custom init code while bootstrapping nodes.",
+      "id": "CustomNodeInit",
+      "properties": {
+        "initScript": {
+          "$ref": "InitScript",
+          "description": "Optional. The init script to be executed on the node."
+        }
+      },
+      "type": "object"
+    },
     "DNSConfig": {
       "description": "DNSConfig contains the desired set of options for configuring clusterDNS.",
       "id": "DNSConfig",
@@ -4851,6 +5021,49 @@
             "Encryption of all objects in the storage is enabled. There is no guarantee that all objects in the storage are encrypted, but eventually they will be."
           ],
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DataplaneV2Config": {
+      "description": "DataplaneV2Config is the configuration for DPv2.",
+      "id": "DataplaneV2Config",
+      "properties": {
+        "scalabilityMode": {
+          "description": "Optional. Scalability mode for the cluster.",
+          "enum": [
+            "SCALABILITY_MODE_UNSPECIFIED",
+            "DISABLED",
+            "SCALE_OPTIMIZED"
+          ],
+          "enumDescriptions": [
+            "Default value.",
+            "Disables the scale optimized mode for DPv2.",
+            "Enables the scale optimized mode for DPv2."
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Date": {
+      "description": "Represents a whole or partial calendar date, such as a birthday. The time of day and time zone are either specified elsewhere or are insignificant. The date is relative to the Gregorian Calendar. This can represent one of the following: * A full date, with non-zero year, month, and day values. * A month and day, with a zero year (for example, an anniversary). * A year on its own, with a zero month and a zero day. * A year and month, with a zero day (for example, a credit card expiration date). Related types: * google.type.TimeOfDay * google.type.DateTime * google.protobuf.Timestamp",
+      "id": "Date",
+      "properties": {
+        "day": {
+          "description": "Day of a month. Must be from 1 to 31 and valid for the year and month, or 0 to specify a year by itself or a year and month where the day isn't significant.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "month": {
+          "description": "Month of a year. Must be from 1 to 12, or 0 to specify a year without a month and day.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "year": {
+          "description": "Year of the date. Must be from 1 to 9999, or 0 to specify a date without a year.",
+          "format": "int32",
+          "type": "integer"
         }
       },
       "type": "object"
@@ -5178,6 +5391,29 @@
         },
         "pidAvailable": {
           "description": "Optional. Amount of PID available for pod allocation. Defines the amount of \"pid.available\" signal in kubelet. Default is unset, if not specified in the kubelet config. It takses percentage value for now. Sample format: \"30%\". Must be \u003e= 10% and \u003c= 50%. See https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ExclusionUntilEndOfSupport": {
+      "description": "Defines the maintenance exclusion for the node pool.",
+      "id": "ExclusionUntilEndOfSupport",
+      "properties": {
+        "enabled": {
+          "description": "Optional. Indicates whether the exclusion is enabled.",
+          "type": "boolean"
+        },
+        "endTime": {
+          "description": "Output only. The end time of the maintenance exclusion. It is output only. It is the cluster control plane version's end of support time, or end of extended support time when the cluster is on extended support channel.",
+          "format": "google-datetime",
+          "readOnly": true,
+          "type": "string"
+        },
+        "startTime": {
+          "description": "Output only. The start time of the maintenance exclusion. It is output only. It is the exclusion creation time.",
+          "format": "google-datetime",
+          "readOnly": true,
           "type": "string"
         }
       },
@@ -5830,6 +6066,33 @@
       },
       "type": "object"
     },
+    "InitScript": {
+      "description": "InitScript provide a simply bash script to be executed on the node.",
+      "id": "InitScript",
+      "properties": {
+        "args": {
+          "description": "Optional. The optional arguments line to be passed to the init script.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gcpSecretManagerSecretUri": {
+          "description": "The resource name of the secret manager secret hosting the init script. Both global and regional secrets are supported with format below: Global secret: projects/{project}/secrets/{secret}/versions/{version} Regional secret: projects/{project}/locations/{location}/secrets/{secret}/versions/{version} Example: projects/1234567890/secrets/script_1/versions/1. Accept version number only, not support version alias. User can't configure both gcp_secret_manager_secret_uri and gcs_uri.",
+          "type": "string"
+        },
+        "gcsGeneration": {
+          "description": "The generation of the init script stored in Gloud Storage. This is the required field to identify the version of the init script. User can get the genetaion from `gcloud storage objects describe gs://BUCKET_NAME/OBJECT_NAME --format=\"value(generation)\"` or from the \"Version history\" tab of the object in the Cloud Console UI.",
+          "format": "int64",
+          "type": "string"
+        },
+        "gcsUri": {
+          "description": "The Cloud Storage URI for storing the init script. Format: gs://BUCKET_NAME/OBJECT_NAME The service account on the node pool must have read access to the object. User can't configure both gcs_uri and gcp_secret_manager_secret_uri.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "IntraNodeVisibilityConfig": {
       "description": "IntraNodeVisibilityConfig contains the desired config of the intra-node visibility on this cluster.",
       "id": "IntraNodeVisibilityConfig",
@@ -5942,6 +6205,10 @@
           ],
           "type": "string"
         },
+        "customNodeInit": {
+          "$ref": "CustomNodeInit",
+          "description": "Optional. Allow users to run arbitrary bash script or container on the node."
+        },
         "hugepages": {
           "$ref": "HugepagesConfig",
           "description": "Optional. Amounts for 2M and 1G hugepages"
@@ -5958,7 +6225,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "The Linux kernel parameters to be applied to the nodes and all pods running on the nodes. The following parameters are supported. net.core.busy_poll net.core.busy_read net.core.netdev_max_backlog net.core.rmem_max net.core.rmem_default net.core.wmem_default net.core.wmem_max net.core.optmem_max net.core.somaxconn net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.ipv4.tcp_tw_reuse net.ipv4.tcp_mtu_probing net.ipv4.tcp_max_orphans net.ipv4.tcp_max_tw_buckets net.ipv4.tcp_syn_retries net.ipv4.tcp_ecn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets net.netfilter.nf_conntrack_tcp_timeout_close_wait net.netfilter.nf_conntrack_tcp_timeout_time_wait net.netfilter.nf_conntrack_tcp_timeout_established net.netfilter.nf_conntrack_acct kernel.shmmni kernel.shmmax kernel.shmall kernel.perf_event_paranoid kernel.sched_rt_runtime_us kernel.softlockup_panic kernel.yama.ptrace_scope kernel.kptr_restrict kernel.dmesg_restrict kernel.sysrq fs.aio-max-nr fs.file-max fs.inotify.max_user_instances fs.inotify.max_user_watches fs.nr_open vm.dirty_background_ratio vm.dirty_background_bytes vm.dirty_expire_centisecs vm.dirty_ratio vm.dirty_bytes vm.dirty_writeback_centisecs vm.max_map_count vm.overcommit_memory vm.overcommit_ratio vm.vfs_cache_pressure vm.swappiness vm.watermark_scale_factor vm.min_free_kbytes",
+          "description": "The Linux kernel parameters to be applied to the nodes and all pods running on the nodes. The following parameters are supported. net.core.busy_poll net.core.busy_read net.core.netdev_max_backlog net.core.rmem_max net.core.rmem_default net.core.wmem_default net.core.wmem_max net.core.optmem_max net.core.somaxconn net.ipv4.neigh.default.gc_thresh1 net.ipv4.neigh.default.gc_thresh2 net.ipv4.neigh.default.gc_thresh3 net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.ipv4.tcp_tw_reuse net.ipv4.tcp_mtu_probing net.ipv4.tcp_max_orphans net.ipv4.tcp_max_tw_buckets net.ipv4.tcp_syn_retries net.ipv4.tcp_ecn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets net.netfilter.nf_conntrack_tcp_timeout_close_wait net.netfilter.nf_conntrack_tcp_timeout_time_wait net.netfilter.nf_conntrack_tcp_timeout_established net.netfilter.nf_conntrack_acct kernel.keys.maxkeys kernel.keys.maxbytes kernel.shmmni kernel.shmmax kernel.shmall kernel.perf_event_paranoid kernel.sched_rt_runtime_us kernel.softlockup_panic kernel.yama.ptrace_scope kernel.kptr_restrict kernel.dmesg_restrict kernel.sysrq fs.aio-max-nr fs.file-max fs.inotify.max_user_instances fs.inotify.max_user_watches fs.nr_open vm.dirty_background_ratio vm.dirty_background_bytes vm.dirty_expire_centisecs vm.dirty_ratio vm.dirty_bytes vm.dirty_writeback_centisecs vm.max_map_count vm.overcommit_memory vm.overcommit_ratio vm.vfs_cache_pressure vm.swappiness vm.watermark_scale_factor vm.min_free_kbytes",
           "type": "object"
         },
         "transparentHugepageDefrag": {
@@ -6102,7 +6369,8 @@
               "CONTROLLER_MANAGER",
               "KCP_SSHD",
               "KCP_CONNECTION",
-              "KCP_HPA"
+              "KCP_HPA",
+              "KCP_VPA"
             ],
             "enumDescriptions": [
               "Default value. This shouldn't be used.",
@@ -6113,7 +6381,8 @@
               "kube-controller-manager",
               "kcp-sshd",
               "kcp connection logs",
-              "horizontal pod autoscaler decision logs"
+              "horizontal pod autoscaler decision logs",
+              "vertical pod autoscaler decision logs"
             ],
             "type": "string"
           },
@@ -6240,6 +6509,10 @@
           },
           "description": "Exceptions to maintenance window. Non-emergency maintenance should not occur in these windows.",
           "type": "object"
+        },
+        "recurringMaintenanceWindow": {
+          "$ref": "RecurringMaintenanceWindow",
+          "description": "RecurringMaintenanceWindow specifies some number of recurring time periods for maintenance to occur. The time windows may be overlapping. If no maintenance windows are set, maintenance can occur at any time. Alternative to RecurringWindow, with renamed fields."
         },
         "recurringWindow": {
           "$ref": "RecurringTimeWindow",
@@ -6500,6 +6773,10 @@
             "Use the eBPF based GKE Dataplane V2 with additional features. See the [GKE Dataplane V2 documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/dataplane-v2) for more."
           ],
           "type": "string"
+        },
+        "dataplaneV2Config": {
+          "$ref": "DataplaneV2Config",
+          "description": "Optional. DataplaneV2Config specifies the DPv2 configuration."
         },
         "defaultEnablePrivateNodes": {
           "description": "Controls whether by default nodes have private IP addresses only. It is invalid to specify both PrivateClusterConfig.enablePrivateNodes and this field at the same time. To update the default setting, use ClusterUpdate.desired_default_enable_private_nodes",
@@ -6872,6 +7149,10 @@
           "description": "Setting this field will assign instances of this pool to run on the specified node group. This is useful for running workloads on [sole tenant nodes](https://cloud.google.com/compute/docs/nodes/sole-tenant-nodes).",
           "type": "string"
         },
+        "nodeImageConfig": {
+          "$ref": "CustomImageConfig",
+          "description": "The node image configuration to use for this node pool. Note that this is only applicable for node pools using image_type=CUSTOM."
+        },
         "oauthScopes": {
           "description": "The set of Google API scopes to be made available on all of the node VMs under the \"default\" service account. The following scopes are recommended, but not required, and by default are not included: * `https://www.googleapis.com/auth/compute` is required for mounting persistent storage on your nodes. * `https://www.googleapis.com/auth/devstorage.read_only` is required for communicating with **gcr.io** (the [Artifact Registry](https://cloud.google.com/artifact-registry/)). If unspecified, no scopes are added, unless Cloud Logging or Cloud Monitoring are enabled, in which case their required scopes will be added.",
           "items": {
@@ -6988,10 +7269,41 @@
       },
       "type": "object"
     },
+    "NodeCreationConfig": {
+      "description": "NodeCreationConfig defines the settings of node creation mode.",
+      "id": "NodeCreationConfig",
+      "properties": {
+        "nodeCreationMode": {
+          "description": "The mode of node creation.",
+          "enum": [
+            "MODE_UNSPECIFIED",
+            "VIA_KUBELET",
+            "VIA_CONTROL_PLANE"
+          ],
+          "enumDescriptions": [
+            "When no user input is provided.",
+            "Kubelet registers itself.",
+            "gcp-controller-manager automatically creates the node object after CSR approval."
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "NodeDrainConfig": {
       "description": "NodeDrainConfig contains the node drain related configurations for this node pool.",
       "id": "NodeDrainConfig",
       "properties": {
+        "graceTerminationDuration": {
+          "description": "The duration of the grace termination period for node drain.",
+          "format": "google-duration",
+          "type": "string"
+        },
+        "pdbTimeoutDuration": {
+          "description": "The duration of the PDB timeout period for node drain.",
+          "format": "google-duration",
+          "type": "string"
+        },
         "respectPdbDuringNodePoolDeletion": {
           "description": "Whether to respect PDB during node pool deletion.",
           "type": "boolean"
@@ -7193,6 +7505,10 @@
           "description": "Whether nodes have internal IP addresses only. If enable_private_nodes is not specified, then the value is derived from Cluster.NetworkConfig.default_enable_private_nodes",
           "type": "boolean"
         },
+        "network": {
+          "description": "Optional. Immutable. The VPC network for the node pool.",
+          "type": "string"
+        },
         "networkPerformanceConfig": {
           "$ref": "NetworkPerformanceConfig",
           "description": "Network bandwidth tier configuration."
@@ -7244,10 +7560,11 @@
           "description": "Enable best effort provisioning for nodes"
         },
         "conditions": {
-          "description": "Which conditions caused the current node pool state.",
+          "description": "Output only. Which conditions caused the current node pool state.",
           "items": {
             "$ref": "StatusCondition"
           },
+          "readOnly": true,
           "type": "array"
         },
         "config": {
@@ -7255,7 +7572,8 @@
           "description": "The node configuration of the pool."
         },
         "etag": {
-          "description": "This checksum is computed by the server based on the value of node pool fields, and may be sent on update requests to ensure the client has an up-to-date value before proceeding.",
+          "description": "Output only. This checksum is computed by the server based on the value of node pool fields, and may be sent on update requests to ensure the client has an up-to-date value before proceeding.",
+          "readOnly": true,
           "type": "string"
         },
         "initialNodeCount": {
@@ -7277,6 +7595,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "maintenancePolicy": {
+          "$ref": "NodePoolMaintenancePolicy",
+          "description": "Optional. Specifies the maintenance policy for the node pool."
         },
         "management": {
           "$ref": "NodeManagement",
@@ -7457,6 +7779,17 @@
       },
       "type": "object"
     },
+    "NodePoolMaintenancePolicy": {
+      "description": "Defines the maintenance policy for the node pool.",
+      "id": "NodePoolMaintenancePolicy",
+      "properties": {
+        "exclusionUntilEndOfSupport": {
+          "$ref": "ExclusionUntilEndOfSupport",
+          "description": "Optional. The exclusion until end of support for the node pool."
+        }
+      },
+      "type": "object"
+    },
     "NodePoolUpgradeInfo": {
       "description": "NodePoolUpgradeInfo contains the upgrade information of a node pool.",
       "id": "NodePoolUpgradeInfo",
@@ -7479,6 +7812,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "customImageInfo": {
+          "$ref": "CustomImageInfo",
+          "description": "Output only. Upgrade info for the node pool specific to the usage of custom images.",
+          "readOnly": true
         },
         "endOfExtendedSupportTimestamp": {
           "description": "The node pool's current minor version's end of extended support timestamp.",
@@ -7523,6 +7861,17 @@
             "$ref": "UpgradeDetails"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "NodeReadinessConfig": {
+      "description": "Configuration for the GKE Node Readiness Controller.",
+      "id": "NodeReadinessConfig",
+      "properties": {
+        "enabled": {
+          "description": "Optional. Whether the GKE Node Readiness Controller is enabled for this cluster.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -8121,6 +8470,30 @@
       },
       "type": "object"
     },
+    "RecurringMaintenanceWindow": {
+      "description": "Represents an arbitrary window of time that recurs. Will replace RecurringTimeWindow.",
+      "id": "RecurringMaintenanceWindow",
+      "properties": {
+        "delayUntil": {
+          "$ref": "Date",
+          "description": "Optional. Specifies the date before which will not be scheduled. Depending on the recurrence, this may be the date the first window appears. Days are measured in the UTC timezone. This setting must be used when INTERVAL\u003e1 or FREQ=WEEKLY/MONTHLY and no BYDAY specified."
+        },
+        "recurrence": {
+          "description": "Required. An RRULE (https://tools.ietf.org/html/rfc5545#section-3.8.5.3) for how this window recurs. For example, to have something repeat every weekday, you'd use: `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` To repeat some window daily (equivalent to the DailyMaintenanceWindow): `FREQ=DAILY` For the first weekend of every month: `FREQ=MONTHLY;BYSETPOS=1;BYDAY=SA,SU` The FREQ values of HOURLY, MINUTELY, and SECONDLY are not supported.",
+          "type": "string"
+        },
+        "windowDuration": {
+          "description": "Required. Duration of the window.",
+          "format": "google-duration",
+          "type": "string"
+        },
+        "windowStartTime": {
+          "$ref": "TimeOfDay",
+          "description": "Required. Start time of the window on days that it is scheduled, assuming UTC timezone."
+        }
+      },
+      "type": "object"
+    },
     "RecurringTimeWindow": {
       "description": "Represents an arbitrary window of time that recurs.",
       "id": "RecurringTimeWindow",
@@ -8185,8 +8558,15 @@
             "STABLE",
             "EXTENDED"
           ],
+          "enumDeprecated": [
+            true,
+            false,
+            false,
+            false,
+            false
+          ],
           "enumDescriptions": [
-            "No channel specified.",
+            "Deprecated: No channel specified. it will be removed in the future, use RAPID, REGULAR, STABLE or EXTENDED instead.",
             "RAPID channel is offered on an early access basis for customers who want to test new releases. WARNING: Versions available in the RAPID Channel may be subject to unresolved issues with no known workaround and are not subject to any SLAs.",
             "Clusters subscribed to REGULAR receive versions that are considered GA quality. REGULAR is intended for production users who want to take advantage of new features.",
             "Clusters subscribed to STABLE receive versions that are known to be stable and reliable in production.",
@@ -8210,8 +8590,15 @@
             "STABLE",
             "EXTENDED"
           ],
+          "enumDeprecated": [
+            true,
+            false,
+            false,
+            false,
+            false
+          ],
           "enumDescriptions": [
-            "No channel specified.",
+            "Deprecated: No channel specified. it will be removed in the future, use RAPID, REGULAR, STABLE or EXTENDED instead.",
             "RAPID channel is offered on an early access basis for customers who want to test new releases. WARNING: Versions available in the RAPID Channel may be subject to unresolved issues with no known workaround and are not subject to any SLAs.",
             "Clusters subscribed to REGULAR receive versions that are considered GA quality. REGULAR is intended for production users who want to take advantage of new features.",
             "Clusters subscribed to STABLE receive versions that are known to be stable and reliable in production.",
@@ -8247,13 +8634,15 @@
             "UNSPECIFIED",
             "NO_RESERVATION",
             "ANY_RESERVATION",
-            "SPECIFIC_RESERVATION"
+            "SPECIFIC_RESERVATION",
+            "ANY_RESERVATION_THEN_FAIL"
           ],
           "enumDescriptions": [
             "Default value. This should not be used.",
             "Do not consume from any reserved capacity.",
             "Consume any reservation available.",
-            "Must consume from a specific reservation. Must specify key value fields for specifying the reservations."
+            "Must consume from a specific reservation. Must specify key value fields for specifying the reservations.",
+            "Consume any reservation available. If no reservation is available, fail the node creation."
           ],
           "type": "string"
         },
@@ -9083,6 +9472,17 @@
       },
       "type": "object"
     },
+    "SlurmOperatorConfig": {
+      "description": "Configuration for the Slurm Operator.",
+      "id": "SlurmOperatorConfig",
+      "properties": {
+        "enabled": {
+          "description": "When enabled, it runs a Slurm Operator that manages the set of compute pods for Slurm Cluster.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "SoleTenantConfig": {
       "description": "SoleTenantConfig contains the NodeAffinities to specify what shared sole tenant node groups should back the node pool.",
       "id": "SoleTenantConfig",
@@ -9336,6 +9736,33 @@
       },
       "type": "object"
     },
+    "TimeOfDay": {
+      "description": "Represents a time of day. The date and time zone are either not significant or are specified elsewhere. An API may choose to allow leap seconds. Related types are google.type.Date and `google.protobuf.Timestamp`.",
+      "id": "TimeOfDay",
+      "properties": {
+        "hours": {
+          "description": "Hours of a day in 24 hour format. Must be greater than or equal to 0 and typically must be less than or equal to 23. An API may choose to allow the value \"24:00:00\" for scenarios like business closing time.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "minutes": {
+          "description": "Minutes of an hour. Must be greater than or equal to 0 and less than or equal to 59.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "nanos": {
+          "description": "Fractions of seconds, in nanoseconds. Must be greater than or equal to 0 and less than or equal to 999,999,999.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "seconds": {
+          "description": "Seconds of a minute. Must be greater than or equal to 0 and typically must be less than or equal to 59. An API may allow the value 60 if it allows leap-seconds.",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "TimeWindow": {
       "description": "Represents an arbitrary window of time.",
       "id": "TimeWindow",
@@ -9505,6 +9932,14 @@
           "$ref": "VirtualNIC",
           "description": "Enable or disable gvnic on the node pool."
         },
+        "image": {
+          "description": "The desired name of the image name to use for this node. This is used to create clusters using a custom image.",
+          "type": "string"
+        },
+        "imageProject": {
+          "description": "The project containing the desired image to use for this node pool. This is used to create clusters using a custom image.",
+          "type": "string"
+        },
         "imageType": {
           "description": "Required. The desired image type for the node pool. Please see https://cloud.google.com/kubernetes-engine/docs/concepts/node-images for available image types.",
           "type": "string"
@@ -9535,6 +9970,10 @@
         "machineType": {
           "description": "Optional. The desired [Google Compute Engine machine type](https://cloud.google.com/compute/docs/machine-types) for nodes in the node pool. Initiates an upgrade operation that migrates the nodes in the node pool to the specified machine type.",
           "type": "string"
+        },
+        "maintenancePolicy": {
+          "$ref": "NodePoolMaintenancePolicy",
+          "description": "Optional. Specifies the maintenance policy for the node pool, including maintenance exclusion options."
         },
         "maxRunDuration": {
           "description": "The maximum duration for the nodes to exist. If unspecified, the nodes can exist indefinitely.",
@@ -9589,6 +10028,10 @@
         "tags": {
           "$ref": "NetworkTags",
           "description": "The desired network tags to be applied to all nodes in the node pool. If this field is not present, the tags will not be changed. Otherwise, the existing network tags will be *replaced* with the provided tags."
+        },
+        "taintConfig": {
+          "$ref": "TaintConfig",
+          "description": "The taint configuration for the node pool."
         },
         "taints": {
           "$ref": "NodeTaints",

@@ -19,10 +19,10 @@ limitations under the License.
 package v1
 
 import (
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // NodeTopologyLister helps list NodeTopologies.
@@ -30,19 +30,19 @@ import (
 type NodeTopologyLister interface {
 	// List lists all NodeTopologies in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.NodeTopology, err error)
+	List(selector labels.Selector) (ret []*nodetopologyv1.NodeTopology, err error)
 	// Get retrieves the NodeTopology from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.NodeTopology, error)
+	Get(name string) (*nodetopologyv1.NodeTopology, error)
 	NodeTopologyListerExpansion
 }
 
 // nodeTopologyLister implements the NodeTopologyLister interface.
 type nodeTopologyLister struct {
-	listers.ResourceIndexer[*v1.NodeTopology]
+	listers.ResourceIndexer[*nodetopologyv1.NodeTopology]
 }
 
 // NewNodeTopologyLister returns a new NodeTopologyLister.
 func NewNodeTopologyLister(indexer cache.Indexer) NodeTopologyLister {
-	return &nodeTopologyLister{listers.New[*v1.NodeTopology](indexer, v1.Resource("nodetopology"))}
+	return &nodeTopologyLister{listers.New[*nodetopologyv1.NodeTopology](indexer, nodetopologyv1.Resource("nodetopology"))}
 }

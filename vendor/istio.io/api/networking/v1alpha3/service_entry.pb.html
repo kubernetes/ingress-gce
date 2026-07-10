@@ -627,8 +627,9 @@ will then be resolved so that traffic can be routed to the intended
 IP address. This method of handling wildcard traffic is not
 compatible with raw TCP traffic where the original host cannot
 be recovered. <code>DYNAMIC_DNS</code> is only supported for wildcard hosts,
-<code>MESH_EXTERNAL</code> location and in ambient mode. The ServiceEntry must
-be bound to a waypoint. Specified endpoints will be ignored.</p>
+both <code>MESH_INTERNAL</code> and <code>MESH_EXTERNAL</code> locations in sidecar mode
+and only <code>MESH_EXTERNAL</code> in ambient mode (bound to a waypoint).
+Specified endpoints will be ignored.</p>
 
 </td>
 </tr>
@@ -707,8 +708,7 @@ received. If unset, default to <code>number</code>.</p>
 <div class="type"><a href="https://istio.io/docs/reference/config/meta/v1beta1/istio-status.html#IstioCondition">IstioCondition[]</a></div>
 </div></td>
 <td>
-<p>Current service state of ServiceEntry.
-More info: <a href="https://istio.io/docs/reference/config/config-status/">https://istio.io/docs/reference/config/config-status/</a></p>
+<p>Current service state of ServiceEntry.</p>
 
 </td>
 </tr>
@@ -728,7 +728,7 @@ More info: <a href="https://istio.io/docs/reference/config/config-status/">https
 <td>
 <p>Resource Generation to which the Reconciled Condition refers.
 When this value is not equal to the object&rsquo;s metadata generation, reconciled condition  calculation for the current
-generation is still in progress.  See <a href="https://istio.io/latest/docs/reference/config/config-status/">https://istio.io/latest/docs/reference/config/config-status/</a> for more info.</p>
+generation is still in progress.</p>
 
 </td>
 </tr>

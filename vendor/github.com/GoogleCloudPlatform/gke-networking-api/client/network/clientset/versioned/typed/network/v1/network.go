@@ -19,9 +19,9 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -37,33 +37,34 @@ type NetworksGetter interface {
 
 // NetworkInterface has methods to work with Network resources.
 type NetworkInterface interface {
-	Create(ctx context.Context, network *v1.Network, opts metav1.CreateOptions) (*v1.Network, error)
-	Update(ctx context.Context, network *v1.Network, opts metav1.UpdateOptions) (*v1.Network, error)
+	Create(ctx context.Context, network *networkv1.Network, opts metav1.CreateOptions) (*networkv1.Network, error)
+	Update(ctx context.Context, network *networkv1.Network, opts metav1.UpdateOptions) (*networkv1.Network, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, network *v1.Network, opts metav1.UpdateOptions) (*v1.Network, error)
+	UpdateStatus(ctx context.Context, network *networkv1.Network, opts metav1.UpdateOptions) (*networkv1.Network, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.Network, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.NetworkList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*networkv1.Network, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*networkv1.NetworkList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.Network, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *networkv1.Network, err error)
 	NetworkExpansion
 }
 
 // networks implements NetworkInterface
 type networks struct {
-	*gentype.ClientWithList[*v1.Network, *v1.NetworkList]
+	*gentype.ClientWithList[*networkv1.Network, *networkv1.NetworkList]
 }
 
 // newNetworks returns a Networks
 func newNetworks(c *NetworkingV1Client) *networks {
 	return &networks{
-		gentype.NewClientWithList[*v1.Network, *v1.NetworkList](
+		gentype.NewClientWithList[*networkv1.Network, *networkv1.NetworkList](
 			"networks",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.Network { return &v1.Network{} },
-			func() *v1.NetworkList { return &v1.NetworkList{} }),
+			func() *networkv1.Network { return &networkv1.Network{} },
+			func() *networkv1.NetworkList { return &networkv1.NetworkList{} },
+		),
 	}
 }
