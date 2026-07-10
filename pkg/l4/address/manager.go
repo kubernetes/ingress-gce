@@ -47,8 +47,9 @@ const (
 type IPVersion = string
 
 const (
-	IPv4Version IPVersion = "IPV4"
-	IPv6Version IPVersion = "IPV6"
+	UnknownVersion IPVersion = "UNKNOWN"
+	IPv4Version    IPVersion = "IPV4"
+	IPv6Version    IPVersion = "IPV6"
 	// IPv6LBAddressPrefixLength used for reserving IPv6 addresses.
 	// Google Cloud reserves not a single IPv6 address, but a /96 range.
 	// At the moment, no other ranges are supported

@@ -47,6 +47,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 	region := "us-central1"
 
 	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+	globalBsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/backendServices/bs1", project)
 
 	testCases := []struct {
 		desc               string
@@ -141,6 +142,73 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				},
 			},
 			expectIPs:   []string{frIP, "10.0.0.101"},
+			expectError: false,
+		},
+		{
+			desc: "Single forwarding rule with multiple IPs, success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-multi-ip",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "global/forwardingRules/" + frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                "global/forwardingRules/" + frName,
+					IPAddresses:         []string{"10.0.0.100", "10.0.0.101"},
+					BackendService:      globalBsURL,
+					LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+					IPProtocol:          "TCP",
+					Scope:               meta.Global,
+					Version:             meta.VersionAlpha,
+				},
+			},
+			expectIPs:   []string{"10.0.0.100", "10.0.0.101"},
+			expectError: false,
+		},
+		{
+			desc: "Multiple forwarding rules with multiple IPs aggregated, success",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-multi-fr-multi-ip",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "global/forwardingRules/" + frName + ",global/forwardingRules/fr2",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                "global/forwardingRules/" + frName,
+					IPAddresses:         []string{"10.0.0.100", "10.0.0.101"},
+					BackendService:      globalBsURL,
+					LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+					IPProtocol:          "TCP",
+					Scope:               meta.Global,
+					Version:             meta.VersionAlpha,
+				},
+				"fr2": {
+					Name:                "global/forwardingRules/fr2",
+					IPAddresses:         []string{"10.0.0.102", "10.0.0.103"},
+					BackendService:      globalBsURL,
+					LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+					IPProtocol:          "TCP",
+					Scope:               meta.Global,
+					Version:             meta.VersionAlpha,
+				},
+			},
+			expectIPs:   []string{"10.0.0.100", "10.0.0.101", "10.0.0.102", "10.0.0.103"},
 			expectError: false,
 		},
 		{
@@ -619,6 +687,39 @@ func TestValidateForwardingRule(t *testing.T) {
 			expectError: false,
 		},
 		{
+			desc: "Valid two IPv4 addresses",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+				IPAddresses:         []string{"10.0.0.100", "10.0.1.101"},
+			},
+			frName:         "valid-two-ipv4",
+			expectError:    false,
+			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+		},
+		{
+			desc: "Valid two IPv6 addresses",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+				IPAddresses:         []string{"2600:1234::1234/96", "2600:1235::123/96"},
+			},
+			frName:         "valid-two-ipv6",
+			expectError:    false,
+			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+		},
+		{
+			desc: "Mixed IP versions in IPAddresses array",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+				IPAddresses:         []string{"10.0.0.100", "2600:1234::/96"},
+			},
+			frName:         "mixed-ips",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+		},
+		{
 			desc: "Valid L3_DEFAULT rule",
 			fr: &composite.ForwardingRule{
 				LoadBalancingScheme: "EXTERNAL",
@@ -665,6 +766,28 @@ func TestValidateForwardingRule(t *testing.T) {
 			frName:         "invalid-protocol",
 			expectError:    true,
 			expectErrorMsg: "forwarding rule invalid-protocol has unsupported protocol: ESP, supported protocols are: TCP, UDP, L3_DEFAULT",
+		},
+		{
+			desc: "Mixed IP versions in IPAddresses array",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+				IPAddresses:         []string{"10.0.0.100", "2600:1234::/96"},
+			},
+			frName:         "mixed-ips",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+		},
+		{
+			desc: "More than two IP addresses in IPAddresses array",
+			fr: &composite.ForwardingRule{
+				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+				IPProtocol:          "TCP",
+				IPAddresses:         []string{"10.0.0.100", "10.0.0.101", "10.0.0.102"},
+			},
+			frName:         "too-many-ips",
+			expectError:    true,
+			expectErrorMsg: "forwarding rule too-many-ips has more than 2 IP addresses",
 		},
 	}
 
