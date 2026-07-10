@@ -198,11 +198,11 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 	return composite.CreateKey(l4netlb.cloud, name, l4netlb.scope)
 }
 
-// isSessionAffinityConfigEmpty checks if Session Affinity Config doesn't have:
+// isSessionAffinityConfigEmpty checks if Session Affinity Config is nil or doesn't have:
 //   - ClientIP or
 //   - ClientIP.TimeoutSeconds specified
 func isSessionAffinityConfigEmpty(sessionAffinityConfig *corev1.SessionAffinityConfig) bool {
-	return sessionAffinityConfig.ClientIP == nil || sessionAffinityConfig.ClientIP.TimeoutSeconds == nil
+	return sessionAffinityConfig == nil || sessionAffinityConfig.ClientIP == nil || sessionAffinityConfig.ClientIP.TimeoutSeconds == nil
 }
 
 // checkStrongSessionAffinityRequirements returns an error if Strong Session Affinity (SSA) was enabled:
