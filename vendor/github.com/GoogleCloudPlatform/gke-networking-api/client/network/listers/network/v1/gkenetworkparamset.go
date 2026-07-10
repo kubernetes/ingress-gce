@@ -19,10 +19,10 @@ limitations under the License.
 package v1
 
 import (
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/listers"
-	"k8s.io/client-go/tools/cache"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // GKENetworkParamSetLister helps list GKENetworkParamSets.
@@ -30,19 +30,19 @@ import (
 type GKENetworkParamSetLister interface {
 	// List lists all GKENetworkParamSets in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.GKENetworkParamSet, err error)
+	List(selector labels.Selector) (ret []*networkv1.GKENetworkParamSet, err error)
 	// Get retrieves the GKENetworkParamSet from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.GKENetworkParamSet, error)
+	Get(name string) (*networkv1.GKENetworkParamSet, error)
 	GKENetworkParamSetListerExpansion
 }
 
 // gKENetworkParamSetLister implements the GKENetworkParamSetLister interface.
 type gKENetworkParamSetLister struct {
-	listers.ResourceIndexer[*v1.GKENetworkParamSet]
+	listers.ResourceIndexer[*networkv1.GKENetworkParamSet]
 }
 
 // NewGKENetworkParamSetLister returns a new GKENetworkParamSetLister.
 func NewGKENetworkParamSetLister(indexer cache.Indexer) GKENetworkParamSetLister {
-	return &gKENetworkParamSetLister{listers.New[*v1.GKENetworkParamSet](indexer, v1.Resource("gkenetworkparamset"))}
+	return &gKENetworkParamSetLister{listers.New[*networkv1.GKENetworkParamSet](indexer, networkv1.Resource("gkenetworkparamset"))}
 }

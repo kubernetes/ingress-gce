@@ -19,9 +19,9 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -37,33 +37,34 @@ type GKENetworkParamSetsGetter interface {
 
 // GKENetworkParamSetInterface has methods to work with GKENetworkParamSet resources.
 type GKENetworkParamSetInterface interface {
-	Create(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.CreateOptions) (*v1.GKENetworkParamSet, error)
-	Update(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.UpdateOptions) (*v1.GKENetworkParamSet, error)
+	Create(ctx context.Context, gKENetworkParamSet *networkv1.GKENetworkParamSet, opts metav1.CreateOptions) (*networkv1.GKENetworkParamSet, error)
+	Update(ctx context.Context, gKENetworkParamSet *networkv1.GKENetworkParamSet, opts metav1.UpdateOptions) (*networkv1.GKENetworkParamSet, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, gKENetworkParamSet *v1.GKENetworkParamSet, opts metav1.UpdateOptions) (*v1.GKENetworkParamSet, error)
+	UpdateStatus(ctx context.Context, gKENetworkParamSet *networkv1.GKENetworkParamSet, opts metav1.UpdateOptions) (*networkv1.GKENetworkParamSet, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.GKENetworkParamSet, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.GKENetworkParamSetList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*networkv1.GKENetworkParamSet, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*networkv1.GKENetworkParamSetList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.GKENetworkParamSet, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *networkv1.GKENetworkParamSet, err error)
 	GKENetworkParamSetExpansion
 }
 
 // gKENetworkParamSets implements GKENetworkParamSetInterface
 type gKENetworkParamSets struct {
-	*gentype.ClientWithList[*v1.GKENetworkParamSet, *v1.GKENetworkParamSetList]
+	*gentype.ClientWithList[*networkv1.GKENetworkParamSet, *networkv1.GKENetworkParamSetList]
 }
 
 // newGKENetworkParamSets returns a GKENetworkParamSets
 func newGKENetworkParamSets(c *NetworkingV1Client) *gKENetworkParamSets {
 	return &gKENetworkParamSets{
-		gentype.NewClientWithList[*v1.GKENetworkParamSet, *v1.GKENetworkParamSetList](
+		gentype.NewClientWithList[*networkv1.GKENetworkParamSet, *networkv1.GKENetworkParamSetList](
 			"gkenetworkparamsets",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.GKENetworkParamSet { return &v1.GKENetworkParamSet{} },
-			func() *v1.GKENetworkParamSetList { return &v1.GKENetworkParamSetList{} }),
+			func() *networkv1.GKENetworkParamSet { return &networkv1.GKENetworkParamSet{} },
+			func() *networkv1.GKENetworkParamSetList { return &networkv1.GKENetworkParamSetList{} },
+		),
 	}
 }

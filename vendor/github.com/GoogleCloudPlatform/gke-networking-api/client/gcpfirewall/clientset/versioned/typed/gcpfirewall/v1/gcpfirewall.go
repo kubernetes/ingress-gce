@@ -19,9 +19,9 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
+	gcpfirewallv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -37,33 +37,34 @@ type GCPFirewallsGetter interface {
 
 // GCPFirewallInterface has methods to work with GCPFirewall resources.
 type GCPFirewallInterface interface {
-	Create(ctx context.Context, gCPFirewall *v1.GCPFirewall, opts metav1.CreateOptions) (*v1.GCPFirewall, error)
-	Update(ctx context.Context, gCPFirewall *v1.GCPFirewall, opts metav1.UpdateOptions) (*v1.GCPFirewall, error)
+	Create(ctx context.Context, gCPFirewall *gcpfirewallv1.GCPFirewall, opts metav1.CreateOptions) (*gcpfirewallv1.GCPFirewall, error)
+	Update(ctx context.Context, gCPFirewall *gcpfirewallv1.GCPFirewall, opts metav1.UpdateOptions) (*gcpfirewallv1.GCPFirewall, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, gCPFirewall *v1.GCPFirewall, opts metav1.UpdateOptions) (*v1.GCPFirewall, error)
+	UpdateStatus(ctx context.Context, gCPFirewall *gcpfirewallv1.GCPFirewall, opts metav1.UpdateOptions) (*gcpfirewallv1.GCPFirewall, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.GCPFirewall, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.GCPFirewallList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*gcpfirewallv1.GCPFirewall, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*gcpfirewallv1.GCPFirewallList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.GCPFirewall, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *gcpfirewallv1.GCPFirewall, err error)
 	GCPFirewallExpansion
 }
 
 // gCPFirewalls implements GCPFirewallInterface
 type gCPFirewalls struct {
-	*gentype.ClientWithList[*v1.GCPFirewall, *v1.GCPFirewallList]
+	*gentype.ClientWithList[*gcpfirewallv1.GCPFirewall, *gcpfirewallv1.GCPFirewallList]
 }
 
 // newGCPFirewalls returns a GCPFirewalls
 func newGCPFirewalls(c *NetworkingV1Client) *gCPFirewalls {
 	return &gCPFirewalls{
-		gentype.NewClientWithList[*v1.GCPFirewall, *v1.GCPFirewallList](
+		gentype.NewClientWithList[*gcpfirewallv1.GCPFirewall, *gcpfirewallv1.GCPFirewallList](
 			"gcpfirewalls",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.GCPFirewall { return &v1.GCPFirewall{} },
-			func() *v1.GCPFirewallList { return &v1.GCPFirewallList{} }),
+			func() *gcpfirewallv1.GCPFirewall { return &gcpfirewallv1.GCPFirewall{} },
+			func() *gcpfirewallv1.GCPFirewallList { return &gcpfirewallv1.GCPFirewallList{} },
+		),
 	}
 }

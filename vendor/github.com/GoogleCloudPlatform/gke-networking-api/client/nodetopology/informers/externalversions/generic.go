@@ -19,7 +19,7 @@ limitations under the License.
 package externalversions
 
 import (
-	"fmt"
+	fmt "fmt"
 
 	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

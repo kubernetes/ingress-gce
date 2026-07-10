@@ -19,13 +19,13 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	apisnetworkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	versioned "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	internalinterfaces "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/internalinterfaces"
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/client/network/listers/network/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // NetworkInterfaces.
 type NetworkInterfaceInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.NetworkInterfaceLister
+	Lister() networkv1.NetworkInterfaceLister
 }
 
 type networkInterfaceInformer struct {
@@ -57,21 +57,33 @@ func NewNetworkInterfaceInformer(client versioned.Interface, namespace string, r
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredNetworkInterfaceInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().NetworkInterfaces(namespace).List(context.TODO(), options)
+				return client.NetworkingV1().NetworkInterfaces(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1().NetworkInterfaces(namespace).Watch(context.TODO(), options)
+				return client.NetworkingV1().NetworkInterfaces(namespace).Watch(context.Background(), options)
 			},
-		},
-		&networkv1.NetworkInterface{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().NetworkInterfaces(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.NetworkingV1().NetworkInterfaces(namespace).Watch(ctx, options)
+			},
+		}, client),
+		&apisnetworkv1.NetworkInterface{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +94,9 @@ func (f *networkInterfaceInformer) defaultInformer(client versioned.Interface, r
 }
 
 func (f *networkInterfaceInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&networkv1.NetworkInterface{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisnetworkv1.NetworkInterface{}, f.defaultInformer)
 }
 
-func (f *networkInterfaceInformer) Lister() v1.NetworkInterfaceLister {
-	return v1.NewNetworkInterfaceLister(f.Informer().GetIndexer())
+func (f *networkInterfaceInformer) Lister() networkv1.NetworkInterfaceLister {
+	return networkv1.NewNetworkInterfaceLister(f.Informer().GetIndexer())
 }
