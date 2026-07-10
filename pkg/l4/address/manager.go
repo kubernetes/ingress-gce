@@ -425,7 +425,7 @@ func (m *Manager) TearDownAddressIPIfNetworkTierMismatch() error {
 			return l4utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", m.name), string(m.networkTier), addr.NetworkTier)
 		}
 		m.frLogger.V(3).Info("Deleting IP address because it has a wrong network tier", "ip", m.targetIP)
-		if err := m.svc.DeleteRegionAddress(addr.Name, m.targetIP); err != nil {
+		if err := m.svc.DeleteRegionAddress(addr.Name, m.region); err != nil {
 			m.frLogger.Error(err, "Unable to delete region address on target ip", "addressName", addr.Name, "ip", m.targetIP)
 		}
 	}
