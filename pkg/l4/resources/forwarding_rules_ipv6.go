@@ -201,6 +201,10 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	}
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
+	if ipv6AddressName != "" {
+		subnetworkURL = ""
+	}
+
 	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
 	frLogger.V(2).Info("network tier for service", "networkTier", netTier, "isFromAnnotation", isFromAnnotation)
 
