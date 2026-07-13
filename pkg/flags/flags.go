@@ -86,6 +86,7 @@ var F = struct {
 	RunL4Controller              bool
 	RunL4NetLBController         bool
 	RunL4StandaloneNEGController bool
+	EnableL4StandaloneNEGs       bool
 	EnableIGController           bool
 	Version                      bool
 	WatchNamespace               string
@@ -311,6 +312,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
 	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, if enabled then the L4NetLbController will be run.`)
 	flag.BoolVar(&F.RunL4StandaloneNEGController, "run-l4-standalone-neg-controller", false, `Optional, if enabled then the Standalone NEG L4 LB controller will be run.`)
+	flag.BoolVar(&F.EnableL4StandaloneNEGs, "enable-l4-standalone-negs", false, `Optional, if enabled the NEG controller will process standalone NEGs for services using the StandalonePassthroughNegLoadBalancerClass.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
 	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
