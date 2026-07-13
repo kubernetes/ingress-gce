@@ -368,7 +368,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
 				Reason:  "NoForwardingRuleRef",
-				Message: "Service is missing the custom forwarding rule reference annotation",
+				Message: "Service is missing the custom forwarding rule reference",
 			},
 		},
 		{
@@ -392,7 +392,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
 				Reason:  "NoForwardingRuleRef",
-				Message: "Service is missing the custom forwarding rule reference annotation",
+				Message: "Service is missing the custom forwarding rule reference",
 			},
 		},
 		{
@@ -416,7 +416,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
 				Reason:  "NoForwardingRuleRef",
-				Message: "Service is missing the custom forwarding rule reference annotation",
+				Message: "Service is missing the custom forwarding rule reference",
 			},
 		},
 		{
@@ -519,7 +519,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
 				Reason:  "NoForwardingRuleRef",
-				Message: "Service is missing the custom forwarding rule reference annotation",
+				Message: "Service is missing the custom forwarding rule reference",
 			},
 		},
 		{
@@ -608,7 +608,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
 				Reason:  "NoForwardingRuleRef",
-				Message: "Service is missing the custom forwarding rule reference annotation",
+				Message: "Service is missing the custom forwarding rule reference",
 			},
 		},
 		{
