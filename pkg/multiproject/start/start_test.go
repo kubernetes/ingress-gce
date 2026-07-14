@@ -429,10 +429,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 		gceCreator, rootNamer, globalStop, syncMetrics.FakeSyncerMetrics(),
 	)
 
-	// Without the time.Sleep: the main test goroutine would create resources
-	// before the background goroutine had actually started and registered
-	// event handlers, causing the test to fail to register some event handlers.
-	time.Sleep(2 * time.Second)
+	waitForControllerReady(ctx, t, pcClient)
 
 	// --- pc-1: create and validate baseline service ---
 	pc1 := createPC(ctx, t, pcClient, "pc-1", "owner-1", "proj-1", 1111, "net-1", "subnet-1")
@@ -680,7 +677,7 @@ func checkSvcNEG(
 ) error {
 	t.Helper()
 
-	return wait.PollImmediate(time.Second, defaultTimeout*3, func() (bool, error) {
+	return wait.PollImmediate(time.Second, defaultTimeout, func() (bool, error) {
 		negCheck, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).Get(ctx, negName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -728,11 +725,17 @@ func verifyCloudNEG(
 	t.Helper()
 
 	const defaultRegion = "us-central1"
-	neg, err := gceCloud.GetNetworkEndpointGroup(negName, defaultRegion)
-	if err != nil {
-		return fmt.Errorf("failed to get NEG %q from cloud in region %s: %v", negName, defaultRegion, err)
+	var lastErr error
+	if err := wait.PollImmediate(time.Second, defaultTimeout, func() (bool, error) {
+		_, lastErr = gceCloud.GetNetworkEndpointGroup(negName, defaultRegion)
+		return lastErr == nil, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("timed out waiting for NEG %q in cloud in region %s: last error: %v", negName, defaultRegion, lastErr)
+		}
+		return err
 	}
-	t.Logf("Verified cloud NEG: %s in region %s", neg.Name, defaultRegion)
+	t.Logf("Verified cloud NEG: %s in region %s", negName, defaultRegion)
 	return nil
 }
 
@@ -1163,5 +1166,61 @@ func TestProviderConfigErrorCases(t *testing.T) {
 				time.Sleep(2 * time.Second)
 			}
 		})
+	}
+}
+
+// waitForControllerReady ensures that the background ProviderConfig controller is active
+// and ready to process events before the test proceeds. It avoids hardcoded sleeps
+// by creating a dummy resource and waiting for the controller to add a finalizer to it.
+func waitForControllerReady(ctx context.Context, t *testing.T, pcClient *pcclientfake.Clientset) {
+	t.Helper()
+
+	dummyPC := &providerconfigv1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "dummy-pc",
+		},
+		Spec: providerconfigv1.ProviderConfigSpec{
+			ProjectID: "dummy-project",
+		},
+	}
+
+	// Create a dummy ProviderConfig to trigger reconciliation.
+	_, err := pcClient.CloudV1().ProviderConfigs().Create(ctx, dummyPC, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create dummy ProviderConfig: %v", err)
+	}
+
+	// Poll until the controller processes the resource and adds a finalizer.
+	err = wait.PollImmediate(time.Second, defaultTimeout, func() (bool, error) {
+		pcCheck, err := pcClient.CloudV1().ProviderConfigs().Get(ctx, dummyPC.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		// Update annotation to trigger an event in the fake client just in case
+		// the reconciler missed the initial Add event while starting up.
+		pcCheck.Annotations = map[string]string{"dummy-poll": time.Now().String()}
+		_, updateErr := pcClient.CloudV1().ProviderConfigs().Update(ctx, pcCheck, metav1.UpdateOptions{})
+		if updateErr != nil {
+			return false, updateErr
+		}
+
+		pcCheck, err = pcClient.CloudV1().ProviderConfigs().Get(ctx, dummyPC.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		// Presence of finalizer indicates the controller has processed the resource.
+		return len(pcCheck.Finalizers) > 0, nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed waiting for dummy ProviderConfig finalizer: %v", err)
+	}
+
+	// Clean up the dummy resource.
+	err = pcClient.CloudV1().ProviderConfigs().Delete(ctx, dummyPC.Name, metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("Failed to clean up dummy ProviderConfig: %v", err)
 	}
 }
