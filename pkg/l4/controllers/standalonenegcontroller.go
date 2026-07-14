@@ -347,7 +347,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	var schemes []string
 
 	for _, parsed := range parsedRules {
-		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionAlpha, svcLogger)
+		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionBeta, svcLogger)
 		if err != nil {
 			svcLogger.Error(err, "failed to get forwarding rule", "frName", parsed.rawName)
 			if utils.IsNotFoundError(err) {
