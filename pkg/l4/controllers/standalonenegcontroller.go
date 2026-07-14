@@ -28,6 +28,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -39,6 +40,22 @@ import (
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+)
+
+const (
+	// ExternalIPProgrammed Condition Type
+	ExternalIPProgrammed = "ExternalIPProgrammed"
+
+	// IPProgrammed Reason
+	IPProgrammed = lbConditionReason("IPProgrammed")
+	// NoForwardingRuleRef Reason
+	NoForwardingRuleRef = lbConditionReason("NoForwardingRuleRef")
+	// UnsupportedLBType Reason
+	UnsupportedLBType = lbConditionReason("UnsupportedLBType")
+	// InvalidForwardingRule Reason
+	InvalidForwardingRule = lbConditionReason("InvalidForwardingRule")
+	// ProviderError Reason
+	ProviderError = lbConditionReason("ProviderError")
 )
 
 var (
@@ -57,6 +74,9 @@ var (
 		"L3_DEFAULT",
 	}
 )
+
+// lbConditionReason represents the reason for conditions created by the Standalone NEG Controller.
+type lbConditionReason string
 
 func isSchemeSupported(lbScheme string) bool {
 	return slices.Contains(supportedLBSchemes, lbScheme)
@@ -256,10 +276,10 @@ func validateIPVersions(fr *composite.ForwardingRule, frName string) error {
 func validateForwardingRule(fr *composite.ForwardingRule, frName string) error {
 	var errs []error
 	if !isSchemeSupported(fr.LoadBalancingScheme) {
-		errs = append(errs, fmt.Errorf("forwarding rule %s has unsupported load balancing scheme: %s, supported schemes are: %s", frName, fr.LoadBalancingScheme, strings.Join(supportedLBSchemes, ", ")))
+		errs = append(errs, l4utils.NewUnsupportedLoadBalancingSchemeError(frName, fr.LoadBalancingScheme, supportedLBSchemes))
 	}
 	if !isFRProtocolSupported(fr.IPProtocol) {
-		errs = append(errs, fmt.Errorf("forwarding rule %s has unsupported protocol: %s, supported protocols are: %s", frName, fr.IPProtocol, strings.Join(supportedFRProtocols, ", ")))
+		errs = append(errs, l4utils.NewUnsupportedProtocolError(frName, fr.IPProtocol, supportedFRProtocols))
 	}
 	if len(fr.IPAddresses) > 2 {
 		errs = append(errs, fmt.Errorf("forwarding rule %s has more than 2 IP addresses", frName))
@@ -287,7 +307,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	if !ok || frNamesStr == "" {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		svcLogger.V(4).Info("Service has no forwarding rule reference, skipping")
-		err := lc.clearStatusIngressIP(svc, svcLogger)
+		cond := NewConditionExternalIPProgrammedFalse(NoForwardingRuleRef)
+		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -301,7 +322,15 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 
 	if len(parsedRules) == 0 {
-		err := lc.clearStatusIngressIP(svc, svcLogger)
+		var reason lbConditionReason
+		var err error
+		if len(parseErrs) > 0 {
+			reason = InvalidForwardingRule
+		} else {
+			reason = NoForwardingRuleRef
+		}
+		cond := NewConditionExternalIPProgrammedFalse(reason)
+		err = updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -348,7 +377,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	// if at least one FR was ok then we use it
 	if len(lbIngresses) == 0 {
 		// if none of the FRs is usable remove any that is possibly there
-		err := lc.clearStatusIngressIP(svc, svcLogger)
+		cond := NewConditionExternalIPProgrammedFalse(classifyError(errs[0]))
+		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -359,7 +389,17 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		Ingress: lbIngresses,
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, nil, svcLogger); err != nil {
+	var ips []string
+	for _, ing := range lbIngresses {
+		if ing.IP != "" {
+			ips = append(ips, ing.IP)
+		} else if ing.Hostname != "" {
+			ips = append(ips, ing.Hostname)
+		}
+	}
+	cond := NewConditionExternalIPProgrammedTrue(ips)
+
+	if err := updateServiceStatus(lc.ctx, svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
 		return schemes, err
 	}
 
@@ -370,14 +410,12 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 }
 
 func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLogger klog.Logger) error {
-	if len(svc.Status.LoadBalancer.Ingress) == 0 {
-		return nil
-	}
 	newStatus := &v1.LoadBalancerStatus{
 		Ingress: nil,
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, nil, svcLogger); err != nil {
+	conditionsToRemove := []string{ExternalIPProgrammed}
+	if err := updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger); err != nil {
 		return err
 	}
 	return nil
@@ -402,4 +440,58 @@ func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string
 	state.LBSchemeInternal = slices.Contains(schemes, "INTERNAL")
 
 	lc.ctx.L4Metrics.SetL4StandaloneNEGService(key, state)
+}
+
+func classifyError(err error) lbConditionReason {
+	if err == nil {
+		return ProviderError
+	}
+	if utils.IsNotFoundError(err) {
+		return InvalidForwardingRule
+	}
+	if l4utils.IsUnsupportedLoadBalancingSchemeError(err) {
+		return UnsupportedLBType
+	}
+	if l4utils.IsUnsupportedProtocolError(err) {
+		return InvalidForwardingRule
+	}
+	if resources.IsUserError(err) {
+		return InvalidForwardingRule
+	}
+	return ProviderError
+}
+
+func NewConditionExternalIPProgrammedTrue(ips []string) metav1.Condition {
+	return metav1.Condition{
+		Type:               ExternalIPProgrammed,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             string(IPProgrammed),
+		Message:            fmt.Sprintf("IPs programmed: %s", strings.Join(ips, ", ")),
+	}
+}
+
+func NewConditionExternalIPProgrammedFalse(reason lbConditionReason) metav1.Condition {
+	return metav1.Condition{
+		Type:               ExternalIPProgrammed,
+		Status:             metav1.ConditionFalse,
+		LastTransitionTime: metav1.Now(),
+		Reason:             string(reason),
+		Message:            messageForReason(reason),
+	}
+}
+
+func messageForReason(reason lbConditionReason) string {
+	switch reason {
+	case NoForwardingRuleRef:
+		return "Service is missing the custom forwarding rule reference"
+	case UnsupportedLBType:
+		return "The referenced forwarding rule has an unsupported load balancing scheme"
+	case InvalidForwardingRule:
+		return "The custom forwarding rule reference is invalid"
+	case ProviderError:
+		return "GCE provider error encountered while retrieving forwarding rules"
+	default:
+		return "An unexpected error occurred while programming external IPs"
+	}
 }

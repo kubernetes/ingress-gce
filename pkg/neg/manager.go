@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
@@ -207,11 +208,11 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Hence, Existing NEG syncer for the service port will always work
 	manager.removeCommonPorts(adds, removes)
 	manager.svcPortMap[key] = newPorts
-	manager.logger.V(3).Info("EnsureSyncer is syncing ports", "service", klog.KRef(namespace, name), "ports", fmt.Sprintf("%v", newPorts), "portsToRemove", fmt.Sprintf("%v", removes), "portsToAdd", fmt.Sprintf("%v", adds))
+	manager.logger.V(3).Info("EnsureSyncer is syncing ports", "service", klog.KRef(namespace, name), "ports", fmt.Sprintf("%+v", newPorts), "portsToRemove", fmt.Sprintf("%+v", removes), "portsToAdd", fmt.Sprintf("%+v", adds))
 
 	errList := []error{}
-	successfulSyncers := 0
-	errorSyncers := 0
+
+	// Stop syncers for ports that are removed
 	for svcPort, portInfo := range removes {
 		syncer, ok := manager.syncerMap[manager.getSyncerKey(namespace, name, svcPort, portInfo)]
 		if ok {
@@ -224,89 +225,108 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		}
 	}
 
-	// Ensure a syncer is running for each port in newPorts.
+	// Start/ensure a syncer is running for each port in newPorts.
+	var wg sync.WaitGroup
+	var stateMu sync.Mutex
+	errListSyncerStart := []error{}
 	for svcPort, portInfo := range newPorts {
-		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
-		syncer, ok := manager.syncerMap[syncerKey]
-		// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
-		// syncer for the NEG until the NEG CR is successfully created. This will reduce the
-		// possibility of invalid states and reduces complexity of garbage collection
-		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
-		// desired port.
-		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
-			errorSyncers += 1
-			continue
-		}
-		if !ok {
-			// determine the implementation that calculates NEG endpoints on each sync.
-			epc := negsyncer.GetEndpointsCalculator(
-				manager.podLister,
-				manager.nodeLister,
-				manager.serviceLister,
-				manager.zoneGetter,
-				syncerKey,
-				portInfo.EpCalculatorMode,
-				manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
-				manager.enableDualStackNEG,
-				manager.syncerMetrics,
-				&portInfo.NetworkInfo,
-				portInfo.L4LBType,
-				manager.negMetrics,
-			)
-			nonDefaultSubnetNEGNamer := manager.namer
-			if syncerKey.NegType == negtypes.VmIpEndpointType {
-				nonDefaultSubnetNEGNamer = manager.l4Namer
+
+		// Start each syncer in parallel to avoid waiting for blocking ensureSvcNegCR()
+		wg.Go(func() {
+
+			// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
+			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
+			// possibility of invalid states and reduces complexity of garbage collection
+			// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
+			// desired port.
+			err := manager.ensureSvcNegCR(key, portInfo)
+
+			// acquire lock to update syncerMap and the error list
+			stateMu.Lock()
+			defer stateMu.Unlock()
+
+			if err != nil {
+				errListSyncerStart = append(errListSyncerStart, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
+				return
 			}
 
-			statusHandler := negstatushandler.NewSvcNegStatusHandler(
-				manager.svcNegClient,
-				manager.svcNegLister,
-				syncerKey.Namespace,
-				syncerKey.NegName,
-				portInfo.NetworkInfo,
-				manager.zoneGetter,
-				manager.negMetrics,
-				manager.logger,
-			)
+			syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
+			syncer, ok := manager.syncerMap[syncerKey]
+			if !ok {
+				// determine the implementation that calculates NEG endpoints on each sync.
+				epc := negsyncer.GetEndpointsCalculator(
+					manager.podLister,
+					manager.nodeLister,
+					manager.serviceLister,
+					manager.zoneGetter,
+					syncerKey,
+					portInfo.EpCalculatorMode,
+					manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
+					manager.enableDualStackNEG,
+					manager.syncerMetrics,
+					&portInfo.NetworkInfo,
+					portInfo.L4LBType,
+					manager.negMetrics,
+				)
+				nonDefaultSubnetNEGNamer := manager.namer
+				if syncerKey.NegType == negtypes.VmIpEndpointType {
+					nonDefaultSubnetNEGNamer = manager.l4Namer
+				}
 
-			syncer = negsyncer.NewTransactionSyncer(
-				syncerKey,
-				manager.recorder,
-				manager.cloud,
-				manager.zoneGetter,
-				manager.podLister,
-				manager.serviceLister,
-				manager.endpointSliceLister,
-				manager.nodeLister,
-				statusHandler,
-				manager.reflector,
-				epc,
-				string(manager.kubeSystemUID),
-				manager.syncerMetrics,
-				syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
-				manager.logger,
-				manager.lpConfig,
-				manager.enableDualStackNEG,
-				portInfo.NetworkInfo,
-				nonDefaultSubnetNEGNamer,
-				manager.negMetrics,
-			)
-			manager.syncerMap[syncerKey] = syncer
-		}
+				statusHandler := negstatushandler.NewSvcNegStatusHandler(
+					manager.svcNegClient,
+					manager.svcNegLister,
+					syncerKey.Namespace,
+					syncerKey.NegName,
+					portInfo.NetworkInfo,
+					manager.zoneGetter,
+					manager.negMetrics,
+					manager.logger,
+				)
 
-		if syncer.IsStopped() {
-			if err := syncer.Start(); err != nil {
-				errList = append(errList, err)
-				errorSyncers += 1
-				continue
+				syncer = negsyncer.NewTransactionSyncer(
+					syncerKey,
+					manager.recorder,
+					manager.cloud,
+					manager.zoneGetter,
+					manager.podLister,
+					manager.serviceLister,
+					manager.endpointSliceLister,
+					manager.nodeLister,
+					statusHandler,
+					manager.reflector,
+					epc,
+					string(manager.kubeSystemUID),
+					manager.syncerMetrics,
+					syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
+					true,
+					manager.logger,
+					manager.lpConfig,
+					manager.enableDualStackNEG,
+					portInfo.NetworkInfo,
+					nonDefaultSubnetNEGNamer,
+					manager.negMetrics,
+				)
+				manager.syncerMap[syncerKey] = syncer
 			}
-		} else if preprovisioningZonesChanged {
-			// directly run the sync if user changed 'zones' in neg annotation
-			syncer.Sync()
-		}
-		successfulSyncers += 1
+
+			if syncer.IsStopped() {
+				if err := syncer.Start(); err != nil {
+					errListSyncerStart = append(errListSyncerStart, err)
+					return
+				}
+			} else if preprovisioningZonesChanged {
+				// directly run the sync if user changed 'zones' in neg annotation
+				syncer.Sync()
+			}
+		})
 	}
+	wg.Wait()
+
+	errorSyncers := len(errListSyncerStart)
+	successfulSyncers := len(newPorts) - errorSyncers
+
+	errList = append(errList, errListSyncerStart...)
 	err := utilerrors.NewAggregate(errList)
 	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
 
@@ -865,7 +885,8 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		},
 	}
 
-	obj, exists, err = manager.svcNegLister.GetByKey(fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName))
+	svcnegKey := fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName)
+	obj, exists, err = manager.svcNegLister.GetByKey(svcnegKey)
 	if err != nil {
 		return fmt.Errorf("Error retrieving existing negs: %s", err)
 	}
@@ -874,14 +895,31 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		start := time.Now()
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
 		manager.negMetrics.PublishK8sRequestCountMetrics(start, metrics.CreateRequest, err)
-		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
-		return err
+		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName), "service", svcKey.Key())
+		if err != nil {
+			return err
+		}
+
+		// Try to wait until svneg becomes available in the local svcNegLister
+		waitTime := 5 * time.Second
+		pollErr := wait.PollUntilContextTimeout(context.Background(), 200*time.Millisecond, waitTime, true, func(ctx context.Context) (bool, error) {
+			_, newObjExists, getErr := manager.svcNegLister.GetByKey(svcnegKey)
+			if newObjExists {
+				return true, nil
+			}
+			return false, getErr
+		})
+		if pollErr != nil {
+			// not a flow blocking error, still can proceed with the reconciliation loop
+			manager.logger.Error(pollErr, fmt.Sprintf("Timed out (%s) waiting for svcneg to be available in the local store", waitTime), "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName), "service", svcKey.Key())
+		}
+		return nil
 	}
 	negCR := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	needUpdate, err := ensureNegCRLabels(negCR, labels, manager.logger)
 	if err != nil {
-		manager.logger.Error(err, "failed to ensure labels for neg", "svcneg", klog.KRef(negCR.Namespace, negCR.Name), "service", service.Name)
+		manager.logger.Error(err, "failed to ensure labels for neg", "svcneg", klog.KRef(negCR.Namespace, negCR.Name), "service", svcKey.Key())
 		return err
 	}
 	needUpdate = ensureNegCROwnerRef(negCR, newCR.OwnerReferences) || needUpdate

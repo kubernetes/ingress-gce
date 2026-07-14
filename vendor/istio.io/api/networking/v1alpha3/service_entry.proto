@@ -577,8 +577,9 @@ message ServiceEntry {
     // IP address. This method of handling wildcard traffic is not
     // compatible with raw TCP traffic where the original host cannot
     // be recovered. `DYNAMIC_DNS` is only supported for wildcard hosts,
-    // `MESH_EXTERNAL` location and in ambient mode. The ServiceEntry must
-    // be bound to a waypoint. Specified endpoints will be ignored.
+    // both `MESH_INTERNAL` and `MESH_EXTERNAL` locations in sidecar mode
+    // and only `MESH_EXTERNAL` in ambient mode (bound to a waypoint).
+    // Specified endpoints will be ignored.
     DYNAMIC_DNS = 4;
   }
 
@@ -656,7 +657,6 @@ message ServicePort {
 
 message ServiceEntryStatus {
   // Current service state of ServiceEntry.
-  // More info: https://istio.io/docs/reference/config/config-status/
   // +optional
   // +patchMergeKey=type
   // +patchStrategy=merge
@@ -670,7 +670,7 @@ message ServiceEntryStatus {
 
   // Resource Generation to which the Reconciled Condition refers.
   // When this value is not equal to the object's metadata generation, reconciled condition  calculation for the current
-  // generation is still in progress.  See https://istio.io/latest/docs/reference/config/config-status/ for more info.
+  // generation is still in progress.
   // +optional
   int64 observed_generation = 3;
 

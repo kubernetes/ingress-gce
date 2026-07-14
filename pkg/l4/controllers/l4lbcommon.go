@@ -19,6 +19,7 @@ package controllers
 import (
 	"fmt"
 	"reflect"
+	"sort"
 
 	"k8s.io/ingress-gce/pkg/l4/resources"
 
@@ -106,24 +107,39 @@ func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotatio
 
 // mergeConditions merges the new set of l4lb resource conditions with the preexisting service conditions.
 // Existing L4 resource condition values will be replaced with the values in the new map.
-func mergeConditions(existing, newConditions []metav1.Condition) []metav1.Condition {
-	if existing == nil {
-		return newConditions
-	}
-
+// Conditions listed in conditionsToRemove will be deleted.
+// Listing a condition both in newConditions and conditionsToRemove will remove
+// the condition first and then add a new one. In particular, if a condition of
+// this type existed it LastTransitionTime will be replaced.
+func mergeConditions(existing, newConditions []metav1.Condition, conditionsToRemove []string) []metav1.Condition {
 	existingMap := make(map[string]metav1.Condition)
 	for _, cond := range existing {
 		existingMap[cond.Type] = cond
 	}
 
+	for _, condType := range conditionsToRemove {
+		delete(existingMap, condType)
+	}
+
 	for _, newCond := range newConditions {
+		oldCond, exists := existingMap[newCond.Type]
+		if exists && oldCond.Status == newCond.Status {
+			newCond.LastTransitionTime = oldCond.LastTransitionTime
+		}
 		existingMap[newCond.Type] = newCond
+	}
+
+	if len(existingMap) == 0 {
+		return nil
 	}
 
 	mergedConditions := make([]metav1.Condition, 0, len(existingMap))
 	for _, cond := range existingMap {
 		mergedConditions = append(mergedConditions, cond)
 	}
+	sort.Slice(mergedConditions, func(i, j int) bool {
+		return mergedConditions[i].Type < mergedConditions[j].Type
+	})
 	return mergedConditions
 }
 
@@ -149,10 +165,10 @@ func conditionsEqual(l, r []metav1.Condition) bool {
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, svcLogger klog.Logger) error {
-	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
+	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions), "conditionsToRemove", conditionsToRemove)
 
-	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions)
+	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, conditionsToRemove)
 	svcLogger.V(2).Info("Merged conditions", "mergedConditions", fmt.Sprintf("%+v", mergedConditions))
 
 	lbStatusEqual := helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus)

@@ -19,9 +19,9 @@ limitations under the License.
 package v1
 
 import (
-	"context"
+	context "context"
 
-	v1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	scheme "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
@@ -37,33 +37,34 @@ type SubnetworksGetter interface {
 
 // SubnetworkInterface has methods to work with Subnetwork resources.
 type SubnetworkInterface interface {
-	Create(ctx context.Context, subnetwork *v1.Subnetwork, opts metav1.CreateOptions) (*v1.Subnetwork, error)
-	Update(ctx context.Context, subnetwork *v1.Subnetwork, opts metav1.UpdateOptions) (*v1.Subnetwork, error)
+	Create(ctx context.Context, subnetwork *networkv1.Subnetwork, opts metav1.CreateOptions) (*networkv1.Subnetwork, error)
+	Update(ctx context.Context, subnetwork *networkv1.Subnetwork, opts metav1.UpdateOptions) (*networkv1.Subnetwork, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, subnetwork *v1.Subnetwork, opts metav1.UpdateOptions) (*v1.Subnetwork, error)
+	UpdateStatus(ctx context.Context, subnetwork *networkv1.Subnetwork, opts metav1.UpdateOptions) (*networkv1.Subnetwork, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.Subnetwork, error)
-	List(ctx context.Context, opts metav1.ListOptions) (*v1.SubnetworkList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*networkv1.Subnetwork, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*networkv1.SubnetworkList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.Subnetwork, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *networkv1.Subnetwork, err error)
 	SubnetworkExpansion
 }
 
 // subnetworks implements SubnetworkInterface
 type subnetworks struct {
-	*gentype.ClientWithList[*v1.Subnetwork, *v1.SubnetworkList]
+	*gentype.ClientWithList[*networkv1.Subnetwork, *networkv1.SubnetworkList]
 }
 
 // newSubnetworks returns a Subnetworks
 func newSubnetworks(c *NetworkingV1Client) *subnetworks {
 	return &subnetworks{
-		gentype.NewClientWithList[*v1.Subnetwork, *v1.SubnetworkList](
+		gentype.NewClientWithList[*networkv1.Subnetwork, *networkv1.SubnetworkList](
 			"subnetworks",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			"",
-			func() *v1.Subnetwork { return &v1.Subnetwork{} },
-			func() *v1.SubnetworkList { return &v1.SubnetworkList{} }),
+			func() *networkv1.Subnetwork { return &networkv1.Subnetwork{} },
+			func() *networkv1.SubnetworkList { return &networkv1.SubnetworkList{} },
+		),
 	}
 }

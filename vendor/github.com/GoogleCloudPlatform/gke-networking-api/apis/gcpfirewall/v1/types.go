@@ -21,11 +21,13 @@ import (
 )
 
 // Protocol defines network protocols supported for GCP firewall.
+// +k8s:openapi-gen=true
 type Protocol string
 
 // CIDR defines a IP block.
 // +kubebuilder:validation:XValidation:message="Please provide valid IPv4 or IPv6 CIDR value",rule="isIP(self) || isCIDR(self)"
 // +kubebuilder:validation:MaxLength=64
+// +k8s:openapi-gen=true
 type CIDR string
 
 // +genclient
@@ -37,6 +39,7 @@ type CIDR string
 
 // GCPFirewall describes a GCP firewall spec that can be used to configure GCE
 // firewalls. A GCPFirewallSpec will correspond 1:1 with a GCE firewall rule.
+// +k8s:openapi-gen=true
 type GCPFirewall struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -57,6 +60,7 @@ type GCPFirewall struct {
 }
 
 // Action defines the rule action of the firewall rule.
+// +k8s:openapi-gen=true
 type Action string
 
 const (
@@ -76,6 +80,7 @@ const (
 // The firewall rule apply to the cluster associated targets (network tags or
 // secure tags) which are deduced by the controller. As a result, the specified
 // rule applies to ALL nodes and pods in the cluster.
+// +k8s:openapi-gen=true
 type GCPFirewallSpec struct {
 	// Rule action of the firewall rule. Only allow action is supported. If not
 	// specified, defaults to ALLOW.
@@ -92,6 +97,7 @@ type GCPFirewallSpec struct {
 	// If this field is present and contains at least one item, then this rule
 	// allows traffic only if the traffic matches at least one port in the list.
 	// +optional
+	// +listType=atomic
 	Ports []ProtocolPort `json:"ports,omitempty"`
 
 	// A collection of sources and destinations to determine which ingress traffic is allowed.
@@ -104,6 +110,7 @@ type GCPFirewallSpec struct {
 }
 
 // GCPFirewallIngress describes a source and a destination for the ingress firewall rule.
+// +k8s:openapi-gen=true
 type GCPFirewallIngress struct {
 	// Source describes a peer to allow traffic from.
 	// +optional
@@ -115,6 +122,7 @@ type GCPFirewallIngress struct {
 }
 
 // IngressSource specifies the source of the firewall rules.
+// +k8s:openapi-gen=true
 type IngressSource struct {
 	// IPBlocks specify the set of source CIDR ranges that the rule applies to. If this field
 	// is present and contains at least one item, this rule allows traffic only if
@@ -124,12 +132,14 @@ type IngressSource struct {
 	// +optional
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=256
+	// +listType=atomic
 	IPBlocks []CIDR `json:"ipBlocks,omitempty"`
 }
 
 // IngressDestination specifies the target of the firewall rules. The destination entities specified
 // are ANDed with GCE node network tags of the kubernetes cluster. In other words, the traffic
 // is allowed to a destination IP address only if it belongs to one of the cluster nodes.
+// +k8s:openapi-gen=true
 type IngressDestination struct {
 	// IPBlocks specify the set of destination CIDRs that the rule applies to. If this field
 	// is present and contains at least one item, this rule allows traffic only if
@@ -139,10 +149,12 @@ type IngressDestination struct {
 	// +optional
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=256
+	// +listType=atomic
 	IPBlocks []CIDR `json:"ipBlocks,omitempty"`
 }
 
 // ProtocolPort describes the protocol and ports to allow traffic on.
+// +k8s:openapi-gen=true
 type ProtocolPort struct {
 	// The protocol which the traffic must match.
 	// +kubebuilder:validation:Enum=TCP;UDP;ICMP;SCTP;AH;ESP
@@ -167,6 +179,7 @@ type ProtocolPort struct {
 }
 
 // GCPFirewallStatus is the runtime status of a GCP firewall
+// +k8s:openapi-gen=true
 type GCPFirewallStatus struct {
 	// Type specifies the underlying GCE firewall implementation type.
 	// Takes one of the values from [VPC, REGIONAL, GLOBAL]
@@ -193,10 +206,12 @@ type GCPFirewallStatus struct {
 }
 
 // FirewallRuleConditionType describes a state of a GCE firewall rule.
+// +k8s:openapi-gen=true
 type FirewallRuleConditionType string
 
 // FirewallRuleConditionReason specifies the reason for the GCE firewall rule
 // to be in the specified state.
+// +k8s:openapi-gen=true
 type FirewallRuleConditionReason string
 
 const (
