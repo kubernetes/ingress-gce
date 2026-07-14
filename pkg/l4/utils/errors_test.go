@@ -182,3 +182,121 @@ func TestGetErrorType(t *testing.T) {
 		})
 	}
 }
+
+func TestUnsupportedLoadBalancingSchemeError(t *testing.T) {
+	customErr := NewUnsupportedLoadBalancingSchemeError("fr-name", "EXTERNAL", []string{"INTERNAL", "INTERNAL_MANAGED"})
+
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "direct custom error",
+			err:  customErr,
+			want: true,
+		},
+		{
+			desc: "wrapped custom error",
+			err:  fmt.Errorf("wrapped: %w", customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError",
+			err:  NewUserError(customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError and then fmt.Errorf",
+			err:  fmt.Errorf("wrapped: %w", NewUserError(customErr)),
+			want: true,
+		},
+		{
+			desc: "joined with other errors",
+			err:  errors.Join(errors.New("generic error"), customErr),
+			want: true,
+		},
+		{
+			desc: "joined and wrapped in UserError",
+			err:  NewUserError(errors.Join(errors.New("generic error"), customErr)),
+			want: true,
+		},
+		{
+			desc: "other error",
+			err:  errors.New("other error"),
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsUnsupportedLoadBalancingSchemeError(tc.err); got != tc.want {
+				t.Errorf("IsUnsupportedLoadBalancingSchemeError() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUnsupportedProtocolError(t *testing.T) {
+	customErr := NewUnsupportedProtocolError("fr-name", "UAUDP", []string{"TCP", "UDP"})
+
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "direct custom error",
+			err:  customErr,
+			want: true,
+		},
+		{
+			desc: "wrapped custom error",
+			err:  fmt.Errorf("wrapped: %w", customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError",
+			err:  NewUserError(customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError and then fmt.Errorf",
+			err:  fmt.Errorf("wrapped: %w", NewUserError(customErr)),
+			want: true,
+		},
+		{
+			desc: "joined with other errors",
+			err:  errors.Join(errors.New("generic error"), customErr),
+			want: true,
+		},
+		{
+			desc: "joined and wrapped in UserError",
+			err:  NewUserError(errors.Join(errors.New("generic error"), customErr)),
+			want: true,
+		},
+		{
+			desc: "other error",
+			err:  errors.New("other error"),
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsUnsupportedProtocolError(tc.err); got != tc.want {
+				t.Errorf("IsUnsupportedProtocolError() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
