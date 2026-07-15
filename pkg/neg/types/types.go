@@ -281,6 +281,8 @@ type NegSyncerKey struct {
 	Name string
 	// Name of neg
 	NegName string
+	// Name of NEGBinding (populated only for negBindingManager, where NegName is omitted)
+	NEGBindingName string
 	// PortTuple is the port tuple of the service backing the NEG
 	PortTuple SvcPortTuple
 
@@ -309,11 +311,20 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	s := fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	var s string
+	if key.IsBindingKey() {
+		s = fmt.Sprintf("%s/%s-binding-%s-%s-%s-%s", key.Namespace, key.Name, key.NEGBindingName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	} else {
+		s = fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	}
 	if key.IncludeDrainNodesL4Local {
 		s += "-includeDrainNodesL4Local=true"
 	}
 	return s
+}
+
+func (key NegSyncerKey) IsBindingKey() bool {
+	return key.NEGBindingName != ""
 }
 
 // GetAPIVersion returns the compute API version to be used in order

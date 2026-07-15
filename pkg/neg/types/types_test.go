@@ -804,3 +804,35 @@ func CheckIfAddressIsPresentInData(addressData []AddressData, ready bool, addres
 	}
 	return false
 }
+
+func TestNegSyncerKeyString(t *testing.T) {
+	t.Parallel()
+
+	keyWithNEGName := NegSyncerKey{
+		Namespace:        "ns",
+		Name:             "svc",
+		NegName:          "negName",
+		PortTuple:        SvcPortTuple{Name: "portName", Port: 80},
+		NegType:          VmIpPortEndpointType,
+		EpCalculatorMode: L7Mode,
+	}
+
+	negBindingKey := NegSyncerKey{
+		Namespace:        "ns",
+		Name:             "svc",
+		NEGBindingName:   "negBindingName",
+		PortTuple:        SvcPortTuple{Name: "portName", Port: 80},
+		NegType:          VmIpPortEndpointType,
+		EpCalculatorMode: L7Mode,
+	}
+
+	want := "ns/svc-negName-portName/80--GCE_VM_IP_PORT-L7"
+	if keyWithNEGName.String() != want {
+		t.Errorf("key1.String() = %q, want %q", keyWithNEGName.String(), want)
+	}
+
+	want = "ns/svc-binding-negBindingName-portName/80--GCE_VM_IP_PORT-L7"
+	if negBindingKey.String() != want {
+		t.Errorf("key2.String() = %q, want %q", negBindingKey.String(), want)
+	}
+}
