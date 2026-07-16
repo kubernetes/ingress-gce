@@ -569,6 +569,11 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 		return nil, err
 	}
 
+	// All zones to manage should be set in NEGBinding CR directly
+	if s.NegSyncerKey.IsBindingKey() {
+		return zonesPerSubnet, nil
+	}
+
 	if !flags.F.EnableNEGPreprovisioning {
 		return zonesPerSubnet, nil
 	}
