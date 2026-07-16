@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
+	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -31,9 +33,11 @@ func TestNewInformerSet_OptionalClients(t *testing.T) {
 	testCases := []struct {
 		name             string
 		withSvcNeg       bool
+		withNEGBinding   bool
 		withNetwork      bool
 		withNodeTopology bool
 		wantSvcNeg       bool
+		wantNEGBinding   bool
 		wantNetwork      bool
 		wantGKEParams    bool
 		wantNodeTopology bool
@@ -44,9 +48,11 @@ func TestNewInformerSet_OptionalClients(t *testing.T) {
 		{
 			name:             "all-optional-clients",
 			withSvcNeg:       true,
+			withNEGBinding:   true,
 			withNetwork:      true,
 			withNodeTopology: true,
 			wantSvcNeg:       true,
+			wantNEGBinding:   true,
 			wantNetwork:      true,
 			wantGKEParams:    true,
 			wantNodeTopology: true,
@@ -65,6 +71,11 @@ func TestNewInformerSet_OptionalClients(t *testing.T) {
 				svcNegClient = svcnegfake.NewSimpleClientset()
 			}
 
+			var negBindingClient negbindingclient.Interface
+			if tc.withNEGBinding {
+				negBindingClient = negbindingfake.NewSimpleClientset()
+			}
+
 			var netClient networkclient.Interface
 			if tc.withNetwork {
 				netClient = networkfake.NewSimpleClientset()
@@ -75,13 +86,16 @@ func TestNewInformerSet_OptionalClients(t *testing.T) {
 				topoClient = nodetopologyfake.NewSimpleClientset()
 			}
 
-			inf := NewInformerSet(kubeClient, svcNegClient, netClient, topoClient, metav1.Duration{Duration: 0})
+			inf := NewInformerSet(kubeClient, svcNegClient, negBindingClient, netClient, topoClient, metav1.Duration{Duration: 0})
 			if inf == nil {
 				t.Fatalf("NewInformerSet returned nil")
 			}
 
 			if got := inf.SvcNeg != nil; got != tc.wantSvcNeg {
 				t.Errorf("SvcNeg: got %t, want %t", got, tc.wantSvcNeg)
+			}
+			if got := inf.NEGBinding != nil; got != tc.wantNEGBinding {
+				t.Errorf("NEGBinding: got %t, want %t", got, tc.wantNEGBinding)
 			}
 			if got := inf.Network != nil; got != tc.wantNetwork {
 				t.Errorf("Network: got %t, want %t", got, tc.wantNetwork)
@@ -102,7 +116,7 @@ func TestEndpointSlice_HasRequiredIndexers(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := k8sfake.NewSimpleClientset()
-	inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
+	inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
 	if inf == nil {
 		t.Fatalf("NewInformerSet returned nil")
 	}
@@ -147,7 +161,7 @@ func TestStart_Semantics(t *testing.T) {
 			test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
 		}
 
-		inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
+		inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
 
 		stop := make(chan struct{})
 		defer close(stop)
@@ -166,7 +180,7 @@ func TestStart_Semantics(t *testing.T) {
 		t.Parallel()
 
 		kubeClient := k8sfake.NewSimpleClientset()
-		inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
+		inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
 
 		stop := make(chan struct{})
 		close(stop)
@@ -198,7 +212,7 @@ func TestStart_Semantics(t *testing.T) {
 		for _, r := range resources {
 			test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), r.res, r.obj)
 		}
-		inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
+		inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
 
 		stop := make(chan struct{})
 		defer close(stop)
@@ -259,7 +273,7 @@ func TestFilterByProviderConfig_WrappingAndState(t *testing.T) {
 		ObjectMeta: test.DefaultBookmarkObjectMeta,
 	})
 
-	inf := NewInformerSet(kubeClient, svcClient, nil, nil, metav1.Duration{Duration: 0})
+	inf := NewInformerSet(kubeClient, svcClient, nil, nil, nil, metav1.Duration{Duration: 0})
 
 	// Before starting, filtered should mirror started=false.
 	filteredBefore := inf.FilterByProviderConfig("pc-1")
@@ -325,7 +339,7 @@ func TestFilterByProviderConfig_PreservesIndexers(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := k8sfake.NewSimpleClientset()
-	inf := NewInformerSet(kubeClient, nil, nil, nil, metav1.Duration{Duration: 0})
+	inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
 
 	original := inf.EndpointSlice.GetIndexer().GetIndexers()
 	filtered := inf.FilterByProviderConfig("pc-1").EndpointSlice.GetIndexer().GetIndexers()

@@ -12,6 +12,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/multiproject/common/filteredinformer"
+	"k8s.io/ingress-gce/pkg/neg"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
+	negbindinginformers "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	svcneginformers "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
@@ -25,6 +28,7 @@ type InformerSet struct {
 	svcNegFactory       svcneginformers.SharedInformerFactory
 	networkFactory      networkinformers.SharedInformerFactory
 	nodetopologyFactory nodetopologyinformers.SharedInformerFactory
+	negBindingFactory   negbindinginformers.SharedInformerFactory
 
 	// Core Kubernetes informers (always present)
 	Ingress       cache.SharedIndexInformer
@@ -35,6 +39,7 @@ type InformerSet struct {
 
 	// Custom resource informers (may be nil)
 	SvcNeg           cache.SharedIndexInformer // ServiceNetworkEndpointGroups CRD
+	NEGBinding       cache.SharedIndexInformer // NEGBinding CRD
 	Network          cache.SharedIndexInformer // GKE Network CRD
 	GkeNetworkParams cache.SharedIndexInformer // GKENetworkParamSets CRD
 	NodeTopology     cache.SharedIndexInformer // NodeTopology CRD
@@ -49,6 +54,7 @@ type InformerSet struct {
 func NewInformerSet(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	resyncPeriod metav1.Duration,
@@ -64,6 +70,9 @@ func NewInformerSet(
 	}
 	if nodeTopologyClient != nil {
 		infSet.nodetopologyFactory = nodetopologyinformers.NewSharedInformerFactory(nodeTopologyClient, resyncPeriod.Duration)
+	}
+	if negBindingClient != nil {
+		infSet.negBindingFactory = negbindinginformers.NewSharedInformerFactory(negBindingClient, resyncPeriod.Duration)
 	}
 
 	// Create core Kubernetes informers from factory
@@ -93,6 +102,16 @@ func NewInformerSet(
 
 	if infSet.nodetopologyFactory != nil {
 		infSet.NodeTopology = infSet.nodetopologyFactory.Networking().V1().NodeTopologies().Informer()
+	}
+
+	if infSet.negBindingFactory != nil {
+		negBindingInformer := infSet.negBindingFactory.Networking().V1beta1().NetworkEndpointGroupBindings().Informer()
+		if err := negBindingInformer.AddIndexers(cache.Indexers{
+			neg.ServiceKeyIndex: neg.ServiceKeyIndexFunc,
+		}); err != nil {
+			klog.Fatalf("failed to add indexers to NEGBinding informer: %v", err)
+		}
+		infSet.NEGBinding = negBindingInformer
 	}
 	return infSet
 }
@@ -129,6 +148,9 @@ func (i *InformerSet) Start(stopCh <-chan struct{}, logger klog.Logger) error {
 	}
 	if i.nodetopologyFactory != nil {
 		i.nodetopologyFactory.Start(stopCh)
+	}
+	if i.negBindingFactory != nil {
+		i.negBindingFactory.Start(stopCh)
 	}
 
 	i.started = true
@@ -181,6 +203,9 @@ func (i *InformerSet) FilterByProviderConfig(providerConfigName string) *Informe
 	}
 	if i.NodeTopology != nil {
 		filteredInformers.NodeTopology = newProviderConfigFilteredInformer(i.NodeTopology, providerConfigName)
+	}
+	if i.NEGBinding != nil {
+		filteredInformers.NEGBinding = newProviderConfigFilteredInformer(i.NEGBinding, providerConfigName)
 	}
 
 	return filteredInformers
@@ -238,6 +263,9 @@ func (i *InformerSet) hasSyncedFuncs() []func() bool {
 	}
 	if i.NodeTopology != nil {
 		funcs = append(funcs, i.NodeTopology.HasSynced)
+	}
+	if i.NEGBinding != nil {
+		funcs = append(funcs, i.NEGBinding.HasSynced)
 	}
 
 	return funcs

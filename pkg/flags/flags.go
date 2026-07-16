@@ -112,6 +112,7 @@ var F = struct {
 	EnableL4ILBDualStack                        bool
 	EnableL4NetLBDualStack                      bool
 	EnableNEGController                         bool
+	EnableNEGBinding                            bool
 	EnableL4NEG                                 bool
 	EnableL4NetLBNEG                            bool
 	EnableL4NetLBNEGDefault                     bool
@@ -314,6 +315,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4StandaloneNEGController, "run-l4-standalone-neg-controller", false, `Optional, if enabled then the Standalone NEG L4 LB controller will be run.`)
 	flag.BoolVar(&F.EnableL4StandaloneNEGs, "enable-l4-standalone-negs", false, `Optional, if enabled the NEG controller will process standalone NEGs for services using the StandalonePassthroughNegLoadBalancerClass.`)
 	flag.BoolVar(&F.EnableNEGController, "enable-neg-controller", true, `Optional, if enabled then the NEG controller will be run.`)
+	flag.BoolVar(&F.EnableNEGBinding, "enable-neg-binding", false, `Optional, if enabled then NEG controller will process NEGBinding CRs.`)
 	flag.BoolVar(&F.EnableL4NEG, "enable-l4-neg", false, `Optional, if enabled then the NEG controller will process L4 NEGs.`)
 	flag.BoolVar(&F.EnableL4NetLBNEG, "enable-l4-netlb-neg", false, `Optional, if enabled then the NetLB controller can create L4 NetLB services with NEG backends.`)
 	flag.BoolVar(&F.EnableL4NetLBNEGDefault, "enable-l4-netlb-neg-default", false, `Optional, if enabled then newly created L4 NetLB services will use NEG backends. Has effect only if '--enable-l4-netlb-neg' is set to true.`)

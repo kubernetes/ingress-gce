@@ -12,6 +12,7 @@ import (
 	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -23,6 +24,7 @@ type NEGControllerStarter struct {
 	informers           *multiprojectinformers.InformerSet
 	kubeClient          kubernetes.Interface
 	svcNegClient        svcnegclient.Interface
+	negBindingClient    negbindingclient.Interface
 	networkClient       networkclient.Interface
 	nodetopologyClient  nodetopologyclient.Interface
 	eventRecorderClient kubernetes.Interface
@@ -41,6 +43,7 @@ func NewNEGControllerStarter(
 	informers *multiprojectinformers.InformerSet,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodetopologyClient nodetopologyclient.Interface,
 	eventRecorderClient kubernetes.Interface,
@@ -57,6 +60,7 @@ func NewNEGControllerStarter(
 		informers:           informers,
 		kubeClient:          kubeClient,
 		svcNegClient:        svcNegClient,
+		negBindingClient:    negBindingClient,
 		networkClient:       networkClient,
 		nodetopologyClient:  nodetopologyClient,
 		eventRecorderClient: eventRecorderClient,
@@ -88,6 +92,7 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		s.kubeClient,
 		s.eventRecorderClient,
 		s.svcNegClient,
+		s.negBindingClient,
 		s.networkClient,
 		s.nodetopologyClient,
 		s.kubeSystemUID,

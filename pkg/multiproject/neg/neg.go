@@ -17,6 +17,7 @@ import (
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -48,6 +49,7 @@ func StartNEGController(
 	kubeClient kubernetes.Interface,
 	eventRecorderClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
@@ -94,6 +96,7 @@ func StartNEGController(
 	negController, err := createNEGController(
 		kubeClient,
 		svcNegClient,
+		negBindingClient,
 		eventRecorderClient,
 		kubeSystemUID,
 		filteredInformers.Ingress,
@@ -102,6 +105,7 @@ func StartNEGController(
 		filteredInformers.Node,
 		filteredInformers.EndpointSlice,
 		filteredInformers.SvcNeg,
+		filteredInformers.NEGBinding,
 		filteredInformers.Network,
 		filteredInformers.GkeNetworkParams,
 		filteredInformers.NodeTopology,
@@ -128,6 +132,7 @@ func StartNEGController(
 func createNEGController(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	kubeSystemUID types.UID,
 	ingressInformer cache.SharedIndexInformer,
@@ -136,6 +141,7 @@ func createNEGController(
 	nodeInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
+	negBindingInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamsInformer cache.SharedIndexInformer,
 	nodeTopologyInformer cache.SharedIndexInformer,
@@ -163,6 +169,7 @@ func createNEGController(
 	negController, err := newNEGController(
 		kubeClient,
 		svcNegClient,
+		negBindingClient,
 		eventRecorderClient,
 		kubeSystemUID,
 		ingressInformer,
@@ -171,6 +178,7 @@ func createNEGController(
 		nodeInformer,
 		endpointSliceInformer,
 		svcNegInformer,
+		negBindingInformer,
 		networkInformer,
 		gkeNetworkParamsInformer,
 		nodeTopologyInformer,
@@ -193,6 +201,7 @@ func createNEGController(
 		flags.F.EnableL4NetLBNEG,
 		flags.F.ReadOnlyMode,
 		flags.F.EnableNEGsForIngress,
+		flags.F.EnableNEGBinding,
 		flags.F.EnableL4NEGLocalIncludeDrainNodes,
 		stopCh,
 		logger,

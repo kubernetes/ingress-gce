@@ -674,7 +674,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			defer close(stopCh)
 
 			ctxConfig := ingctx.ControllerContextConfig{Namespace: v1.NamespaceAll}
-			c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
+			c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
 			if err != nil {
 				t.Fatalf("Failed to create controller context: %v", err)
 			}
@@ -857,7 +857,7 @@ func setupControllerContext(t *testing.T) (*fake.Clientset, *gce.Cloud, *Standal
 	stopCh := make(chan struct{})
 
 	ctxConfig := ingctx.ControllerContextConfig{Namespace: v1.NamespaceAll}
-	c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
+	c, err := ingctx.NewControllerContext(kubeClient, nil, nil, nil, nil, nil, nil, nil, nil, nil, kubeClient, fakeGCE, namer, "", ctxConfig, klog.TODO())
 	if err != nil {
 		t.Fatalf("Failed to create controller context: %v", err)
 	}
