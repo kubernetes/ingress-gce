@@ -2,11 +2,15 @@ package filteredinformer
 
 import (
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
 // isObjectInProviderConfig checks if an object belongs to a specific provider config.
 func isObjectInProviderConfig(obj interface{}, providerConfigName string) bool {
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		obj = tombstone.Obj
+	}
 	metaObj, err := meta.Accessor(obj)
 	if err != nil {
 		return false
