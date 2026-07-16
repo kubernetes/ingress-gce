@@ -164,7 +164,12 @@ func NewTransactionSyncer(
 	negMetrics *metrics.NegMetrics,
 ) negtypes.NegSyncer {
 
-	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "primaryNEGName", negSyncerKey.NegName)
+	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name))
+	if negSyncerKey.IsBindingKey() {
+		logger = logger.WithValues("negBindingName", negSyncerKey.NEGBindingName)
+	} else {
+		logger = logger.WithValues("primaryNEGName", negSyncerKey.NegName)
+	}
 
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{

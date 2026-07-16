@@ -76,7 +76,7 @@ func (n *NegBindingNamer) negNameForSubnet(subnet, namespace, svcName string, po
 		binding.Spec.BackendRef.Name != svcName ||
 		binding.Spec.BackendRef.Port != port {
 		gotRef := fmt.Sprintf("%s/%s:%v", namespace, svcName, port)
-		expectedRef := fmt.Sprintf("%s/%s:%v", binding.Namespace, binding.Spec.BackendRef.Name, port)
+		expectedRef := fmt.Sprintf("%s/%s:%v", binding.Namespace, binding.Spec.BackendRef.Name, binding.Spec.BackendRef.Port)
 		return "", fmt.Errorf("%w: backendRef %s, negBinding.Spec.BackendRef %s", ErrNBNamerInvalidBackendRef, gotRef, expectedRef)
 	}
 
