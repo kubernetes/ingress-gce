@@ -56,6 +56,8 @@ const (
 	InvalidForwardingRule = lbConditionReason("InvalidForwardingRule")
 	// ProviderError Reason
 	ProviderError = lbConditionReason("ProviderError")
+	// Maximum number of forwarding rules
+	ForwardingRulesLimit = 10
 )
 
 var (
@@ -340,6 +342,10 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		}
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		return nil, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation"))
+	}
+	if len(parsedRules) > ForwardingRulesLimit {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules.", ForwardingRulesLimit)
+		parsedRules = parsedRules[:ForwardingRulesLimit]
 	}
 
 	var lbIngresses []v1.LoadBalancerIngress

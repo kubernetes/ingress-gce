@@ -17,10 +17,12 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -728,6 +730,140 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Status:  metav1.ConditionFalse,
 				Reason:  "InvalidForwardingRule",
 				Message: "The custom forwarding rule reference is invalid",
+			},
+		},
+		{
+			desc: "Too many forwarding rules, skip remaining",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc3",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: generateForwardingRuleKey("custom-fr-", 12),
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"custom-fr-1": {
+					Name:                "custom-fr-1",
+					IPAddress:           "10.0.0.100",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-2": {
+					Name:                "custom-fr-2",
+					IPAddress:           "10.0.0.101",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-3": {
+					Name:                "custom-fr-3",
+					IPAddress:           "10.0.0.102",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-4": {
+					Name:                "custom-fr-4",
+					IPAddress:           "10.0.0.103",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-5": {
+					Name:                "custom-fr-5",
+					IPAddress:           "10.0.0.104",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-6": {
+					Name:                "custom-fr-6",
+					IPAddress:           "10.0.0.105",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-7": {
+					Name:                "custom-fr-7",
+					IPAddress:           "10.0.0.106",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-8": {
+					Name:                "custom-fr-8",
+					IPAddress:           "10.0.0.107",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-9": {
+					Name:                "custom-fr-9",
+					IPAddress:           "10.0.0.108",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-10": {
+					Name:                "custom-fr-10",
+					IPAddress:           "10.0.0.109",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-11": {
+					Name:                "custom-fr-11",
+					IPAddress:           "10.0.0.110",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"custom-fr-12": {
+					Name:                "custom-fr-12",
+					IPAddress:           "10.0.0.111",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectError: false,
+			expectIPs:   []string{"10.0.0.100", "10.0.0.101", "10.0.0.102", "10.0.0.103", "10.0.0.104", "10.0.0.105", "10.0.0.106", "10.0.0.107", "10.0.0.108", "10.0.0.109"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 10.0.0.100, 10.0.0.101, 10.0.0.102, 10.0.0.103, 10.0.0.104, 10.0.0.105, 10.0.0.106, 10.0.0.107, 10.0.0.108, 10.0.0.109",
 			},
 		},
 	}
@@ -1491,4 +1627,12 @@ func TestClassifyError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateForwardingRuleKey(fr string, num int) string {
+	var buffer bytes.Buffer
+	for i := 1; i <= num; i++ {
+		buffer.WriteString(fmt.Sprintf("%s%d,", fr, i))
+	}
+	return strings.TrimSuffix(buffer.String(), ",")
 }
