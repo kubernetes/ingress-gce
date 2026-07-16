@@ -1089,6 +1089,12 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 
 // getNEGName returns the name of the NEG for the given subnet.
 func (s *transactionSyncer) getNEGName(subnet string) (string, error) {
+	// NEG name for binding syncer should be get from namer only, as there might not be name for default network
+	// or it can be changed during the syncer lifecycle.
+	if s.NegSyncerKey.IsBindingKey() {
+		return s.getNonDefaultSubnetNEGName(subnet)
+	}
+
 	// For multi-net or in case multi-subnet is disabled - default NEG name used (as there is only single subnet then, therefore no need for multiple NEG names)
 	if !flags.F.EnableMultiSubnetClusterPhase1 || !s.networkInfo.IsDefault {
 		return s.NegSyncerKey.NegName, nil
