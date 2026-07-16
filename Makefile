@@ -31,8 +31,6 @@ CONTAINER_BINARIES ?= \
 	psc-e2e-test \
 	neg-e2e-test \
 	ingress-controller-e2e-test \
-	workload-controller \
-	workload-daemon \
 	check-gke-ingress
 
 # Latest commit hash for current branch.
