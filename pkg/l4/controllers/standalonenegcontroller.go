@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 	"strings"
 	"time"
 
@@ -33,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
 	ccontext "k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
@@ -246,35 +244,6 @@ func (lc *StandaloneNEGLBController) parseForwardingRuleKeys(frNamesStr string, 
 	return parsedRules, errs
 }
 
-func getIPVersion(s string) (address.IPVersion, error) {
-	addr, err := netip.ParseAddr(s)
-	if err != nil {
-		return address.UnknownVersion, err
-	}
-	if addr.Is4() {
-		return address.IPv4Version, nil
-	}
-	// Due to ParseAddr we assume that address will always be a valid IPv6 version if it is not IPv4.
-	return address.IPv6Version, nil
-}
-
-func validateIPVersions(fr *composite.ForwardingRule, frName string) error {
-	versions := make([]address.IPVersion, 2)
-	for i, addr := range fr.IPAddresses {
-		// Remove host addressing
-		a := strings.Split(addr, "/")
-		v, err := getIPVersion(a[0])
-		if err != nil {
-			return err
-		}
-		versions[i] = v
-	}
-	if versions[0] != versions[1] {
-		return fmt.Errorf("forwarding rule %s has mixed IP versions in IPAddresses", frName)
-	}
-	return nil
-}
-
 func validateForwardingRule(fr *composite.ForwardingRule, frName string) error {
 	var errs []error
 	if !isSchemeSupported(fr.LoadBalancingScheme) {
@@ -285,12 +254,6 @@ func validateForwardingRule(fr *composite.ForwardingRule, frName string) error {
 	}
 	if len(fr.IPAddresses) > 2 {
 		errs = append(errs, fmt.Errorf("forwarding rule %s has more than 2 IP addresses", frName))
-	}
-	if len(fr.IPAddresses) == 2 {
-		err := validateIPVersions(fr, frName)
-		if err != nil {
-			errs = append(errs, err)
-		}
 	}
 	return errors.Join(errs...)
 }

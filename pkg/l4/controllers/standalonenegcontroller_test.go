@@ -1009,9 +1009,8 @@ func TestValidateForwardingRule(t *testing.T) {
 				IPProtocol:          "TCP",
 				IPAddresses:         []string{"10.0.0.100", "10.0.1.101"},
 			},
-			frName:         "valid-two-ipv4",
-			expectError:    false,
-			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+			frName:      "valid-two-ipv4",
+			expectError: false,
 		},
 		{
 			desc: "Valid two IPv6 addresses",
@@ -1020,20 +1019,8 @@ func TestValidateForwardingRule(t *testing.T) {
 				IPProtocol:          "TCP",
 				IPAddresses:         []string{"2600:1234::1234/96", "2600:1235::123/96"},
 			},
-			frName:         "valid-two-ipv6",
-			expectError:    false,
-			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
-		},
-		{
-			desc: "Mixed IP versions in IPAddresses array",
-			fr: &composite.ForwardingRule{
-				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
-				IPProtocol:          "TCP",
-				IPAddresses:         []string{"10.0.0.100", "2600:1234::/96"},
-			},
-			frName:         "mixed-ips",
-			expectError:    true,
-			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
+			frName:      "valid-two-ipv6",
+			expectError: false,
 		},
 		{
 			desc: "Valid L3_DEFAULT rule",
@@ -1082,17 +1069,6 @@ func TestValidateForwardingRule(t *testing.T) {
 			frName:         "invalid-protocol",
 			expectError:    true,
 			expectErrorMsg: "forwarding rule invalid-protocol has unsupported protocol: ESP, supported protocols are: TCP, UDP, L3_DEFAULT",
-		},
-		{
-			desc: "Mixed IP versions in IPAddresses array",
-			fr: &composite.ForwardingRule{
-				LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
-				IPProtocol:          "TCP",
-				IPAddresses:         []string{"10.0.0.100", "2600:1234::/96"},
-			},
-			frName:         "mixed-ips",
-			expectError:    true,
-			expectErrorMsg: "forwarding rule mixed-ips has mixed IP versions in IPAddresses",
 		},
 		{
 			desc: "More than two IP addresses in IPAddresses array",
