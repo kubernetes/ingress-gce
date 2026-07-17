@@ -40,6 +40,7 @@ import (
 	fakenegbinding "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/network"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -497,6 +498,75 @@ func findCondition(conditions []negbindingv1beta1.Condition, conditionType strin
 		}
 	}
 	return negbindingv1beta1.Condition{}, false
+}
+
+func TestInitializeOwnershipRegistry(t *testing.T) {
+	namespace := "test-namespace"
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
+
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	informer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, utils.NewNamespaceIndexer())
+	negBindingLister := informer.GetIndexer()
+
+	binding1 := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "binding-1"},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{Kind: negbindingv1beta1.ServiceKind, Name: "svc-1", Port: 80},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/neg-1",
+					SubnetURL:   defaultTestSubnetURL,
+				},
+			},
+		},
+	}
+	binding2 := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "binding-2"},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{Kind: negbindingv1beta1.ServiceKind, Name: "svc-2", Port: 80},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-b/networkEndpointGroups/neg-2",
+					SubnetURL:   defaultTestSubnetURL,
+				},
+			},
+		},
+	}
+
+	negBindingLister.Add(binding1)
+	negBindingLister.Add(binding2)
+
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		metrics.NewNegMetrics(),
+		metricscollector.FakeSyncerMetrics(),
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		klog.TODO(),
+	)
+
+	registry := m.ownershipRegistry
+
+	err := m.InitializeOwnershipRegistry()
+	if err != nil {
+		t.Fatalf("InitializeRegistry failed: %v", err)
+	}
+
+	expectedOwner1 := "test-namespace/binding-1"
+	if registry.GetOwner("neg-1") != expectedOwner1 {
+		t.Errorf("neg-1 should be owned by %q, got %q", expectedOwner1, registry.GetOwner("neg-1"))
+	}
+
+	expectedOwner2 := "test-namespace/binding-2"
+	if registry.GetOwner("neg-2") != expectedOwner2 {
+		t.Errorf("neg-2 should be owned by %q, got %q", expectedOwner2, registry.GetOwner("neg-2"))
+	}
 }
 
 func TestNEGBindingManagerConflictResolution(t *testing.T) {
