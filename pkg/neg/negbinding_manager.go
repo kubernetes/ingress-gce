@@ -203,6 +203,8 @@ type negBindingManager struct {
 	reflector     readiness.Reflector
 	kubeSystemUID types.UID
 
+	ownershipRegistry *negOwnershipRegistry
+
 	logger klog.Logger
 }
 
@@ -245,11 +247,13 @@ func newNEGBindingManager(
 		kubeSystemUID:       kubeSystemUID,
 		logger:              logger.WithName("NEGBindingManager"),
 	}
+	m.ownershipRegistry = newNEGOwnershipRegistry(m.tryAssignReleasedNEGs)
 	return m
 }
 
 // EnsureSyncerForNEGBinding ensures corresponding syncer is started for the binding.
 func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
+	m.acquireNEGsForBinding(binding)
 	err := m.validateBackendRef(binding)
 	if err != nil {
 		_ = m.updateBackendRefCondition(binding, err)
@@ -368,6 +372,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		if !hasConfig || !oldConfig.Equals(newConfig) {
 			m.logger.Info("Configuration changed for NEGBinding syncer, recreating", "binding", bindingKey, "old", oldConfig, "new", newConfig)
 			syncer.Stop()
+			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 			delete(m.syncerMap, bindingKey)
 			delete(m.syncerConfigs, bindingKey)
 			// Proceed to create new syncer
@@ -392,7 +397,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		EpCalculatorMode: negtypes.L7Mode,
 	}
 
-	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL)
+	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL, m.ownershipRegistry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create topology provider: %w", err)
 	}
@@ -484,6 +489,7 @@ func (m *negBindingManager) StopSyncer(namespace, name string) {
 	bindingKey := fmt.Sprintf("%s/%s", namespace, name)
 	if syncer, ok := m.syncerMap[bindingKey]; ok {
 		syncer.Stop()
+		m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 		delete(m.syncerMap, bindingKey)
 		delete(m.syncerConfigs, bindingKey)
 	}
@@ -635,4 +641,60 @@ func (m *negBindingManager) ensureCondition(binding *negbindingv1beta1.NetworkEn
 	}
 
 	binding.Status.Conditions[index] = expectedCondition
+}
+
+// tryAssignReleasedNEGs is a callback for released NEGs. In case any other NEGBinding CR refers to any released NEG name, its syncer will be ensured and synced.
+func (m *negBindingManager) tryAssignReleasedNEGs(negNames []string) {
+	if len(negNames) == 0 {
+		return
+	}
+
+	releasedSet := sets.New(negNames...)
+	objs := m.negBindingLister.List()
+	for _, obj := range objs {
+		if len(releasedSet) == 0 {
+			break
+		}
+
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			continue
+		}
+
+		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+		acquiredNEGs := []string{}
+		for _, ref := range binding.Spec.NetworkEndpointGroups {
+			if releasedSet.Has(ref.Name) {
+				acquired, _ := m.ownershipRegistry.Acquire(ref.Name, bindingKey)
+				if acquired {
+					acquiredNEGs = append(acquiredNEGs, ref.Name)
+					releasedSet.Delete(ref.Name)
+				}
+			}
+		}
+
+		if len(acquiredNEGs) > 0 {
+			binding = binding.DeepCopy()
+			if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+				m.logger.Error(err, "Failed to ensure syncer for binding after released by other binding NEGs acquired", "binding", bindingKey, "negName", acquiredNEGs)
+			}
+		}
+	}
+}
+
+// acquireNEGsForBinding tries to acquire ownership for NEGBinding based on its Spec.
+func (m *negBindingManager) acquireNEGsForBinding(binding *negbindingv1beta1.NetworkEndpointGroupBinding) {
+	bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+	acquiredNEGs := sets.New[string]()
+	for _, specRef := range binding.Spec.NetworkEndpointGroups {
+		acquired, currentOwner := m.ownershipRegistry.Acquire(specRef.Name, bindingKey)
+		if acquired {
+			acquiredNEGs.Insert(specRef.Name)
+			m.logger.Info("Acquired NEG ownership from spec", "negName", specRef.Name, "owner", bindingKey)
+		} else {
+			m.logger.Info("Conflict acquiring NEG ownership from spec", "negName", specRef.Name, "attemptedOwner", bindingKey, "currentOwner", currentOwner)
+		}
+	}
+
+	m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, acquiredNEGs)
 }

@@ -31,6 +31,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type negOwnershipRegistry interface {
+	GetOwner(negName string) string
+}
+
 // NEGBindingTopologyProvider provides subnets and zones where NEGs should be managed
 // based on NetworkEndpointGroupBinding CR
 type NEGBindingTopologyProvider struct {
@@ -38,10 +42,11 @@ type NEGBindingTopologyProvider struct {
 	namespace        string
 	negBindingLister cache.Indexer
 	defaultSubnetID  *cloud.ResourceID
+	registry         negOwnershipRegistry
 }
 
 // NewNEGBindingTopologyProvider constructs a new NEGBindingTopologyProvider
-func NewNEGBindingTopologyProvider(namespace, negBindingName string, negBindingLister cache.Indexer, defaultSubnetURL string) (*NEGBindingTopologyProvider, error) {
+func NewNEGBindingTopologyProvider(namespace, negBindingName string, negBindingLister cache.Indexer, defaultSubnetURL string, registry negOwnershipRegistry) (*NEGBindingTopologyProvider, error) {
 	defaultSubnetID, err := cloud.ParseResourceURL(defaultSubnetURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse default subnetwork URL %q: %w", defaultSubnetURL, err)
@@ -52,6 +57,7 @@ func NewNEGBindingTopologyProvider(namespace, negBindingName string, negBindingL
 		namespace:        namespace,
 		negBindingLister: negBindingLister,
 		defaultSubnetID:  defaultSubnetID,
+		registry:         registry,
 	}, nil
 }
 
@@ -71,6 +77,22 @@ func (p *NEGBindingTopologyProvider) getBinding() (*negbindingv1beta1.NetworkEnd
 	return binding, nil
 }
 
+// getOwnedSpecNEGRefs returns owned NEG Refs subset of NEGBinding.Spec.
+func (p *NEGBindingTopologyProvider) getOwnedSpecNEGRefs(binding *negbindingv1beta1.NetworkEndpointGroupBinding, logger klog.Logger) []negbindingv1beta1.SpecNegRef {
+	ownerKey := fmt.Sprintf("%s/%s", p.namespace, p.negBindingName)
+
+	var acquiredRefs []negbindingv1beta1.SpecNegRef
+	for _, ref := range binding.Spec.NetworkEndpointGroups {
+		currentOwner := p.registry.GetOwner(ref.Name)
+		if currentOwner == ownerKey {
+			acquiredRefs = append(acquiredRefs, ref)
+		} else {
+			logger.Info("NEG name is owned by another binding, skipping", "negName", ref.Name, "owner", ownerKey, "currentOwner", currentOwner)
+		}
+	}
+	return acquiredRefs
+}
+
 // ListSubnetsInDefaultNetwork returns the list of subnets declared inside the NegBinding CR Spec.
 func (p *NEGBindingTopologyProvider) ListSubnetsInDefaultNetwork(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	binding, err := p.getBinding()
@@ -79,17 +101,24 @@ func (p *NEGBindingTopologyProvider) ListSubnetsInDefaultNetwork(logger klog.Log
 		return nil
 	}
 
-	configs := make([]nodetopologyv1.SubnetConfig, len(binding.Spec.NetworkEndpointGroups))
-	for i, ref := range binding.Spec.NetworkEndpointGroups {
+	// Return only subnets where NEGs are owned
+	subnets := sets.New[string]()
+	ownedSpecRefs := p.getOwnedSpecNEGRefs(binding, logger)
+	for _, ref := range ownedSpecRefs {
+		subnets.Insert(ref.Subnet)
+	}
+
+	configs := []nodetopologyv1.SubnetConfig{}
+	for subnet := range subnets {
 		key := &meta.Key{
-			Name:   ref.Subnet,
+			Name:   subnet,
 			Region: p.defaultSubnetID.Key.Region,
 		}
 		subnetPath := cloud.SelfLink(meta.VersionGA, p.defaultSubnetID.ProjectID, p.defaultSubnetID.Resource, key)
-		configs[i] = nodetopologyv1.SubnetConfig{
-			Name:       ref.Subnet,
+		configs = append(configs, nodetopologyv1.SubnetConfig{
+			Name:       subnet,
 			SubnetPath: subnetPath,
-		}
+		})
 	}
 	return configs
 }
@@ -107,8 +136,10 @@ func (p *NEGBindingTopologyProvider) ListZonesPerSubnet(_ zonegetter.Filter, net
 		return nil, fmt.Errorf("failed to get NegBinding from store: %w", err)
 	}
 
+	// Return only zones of subnets, where NEGs are owned
+	ownedSpecRefs := p.getOwnedSpecNEGRefs(binding, logger)
 	zonesPerSubnet := make(shared.ZonesPerSubnetMap)
-	for _, ref := range binding.Spec.NetworkEndpointGroups {
+	for _, ref := range ownedSpecRefs {
 		zonesPerSubnet[ref.Subnet] = sets.New(ref.Zones...)
 	}
 	return zonesPerSubnet, nil
