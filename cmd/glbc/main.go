@@ -396,6 +396,7 @@ func main() {
 		logger.Info("Start running the enabled controllers",
 			"L4 controller", flags.F.RunL4Controller,
 			"L4 NetLB controller", flags.F.RunL4NetLBController,
+			"L4 Standalone NEG LB controller", flags.F.RunL4StandaloneNEGController,
 			"InstanceGroup controller", flags.F.EnableIGController,
 			"PSC controller", flags.F.EnablePSC,
 		)
@@ -446,6 +447,7 @@ func main() {
 			logger.Info("Start running L4 leader election",
 				"L4 controller", flags.F.RunL4Controller,
 				"L4 NetLB controller", flags.F.RunL4NetLBController,
+				"L4 Standalone NEG LB controller", flags.F.RunL4StandaloneNEGController,
 				"InstanceGroup controller", flags.F.EnableIGController,
 				"PSC controller", flags.F.EnablePSC,
 			)

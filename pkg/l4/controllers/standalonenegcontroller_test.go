@@ -687,7 +687,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			kubeClient.CoreV1().Services(tc.svc.Namespace).Create(context.TODO(), tc.svc, metav1.CreateOptions{})
 
 			key := tc.svc.Namespace + "/" + tc.svc.Name
-			err = lc.sync(key)
+			err = lc.syncWrapper(key)
 			if (err != nil) != tc.expectError {
 				t.Errorf("sync() error = %v, expectError %v", err, tc.expectError)
 			}
@@ -916,7 +916,7 @@ func TestStandaloneNEGLBControllerMetrics_Success(t *testing.T) {
 
 	svcKey := svc.Namespace + "/" + svc.Name
 
-	err = lc.sync(svcKey)
+	err = lc.syncWrapper(svcKey)
 	if err != nil {
 		t.Fatalf("sync() error = %v", err)
 	}
@@ -982,7 +982,7 @@ func TestStandaloneNEGLBControllerMetrics_UserError(t *testing.T) {
 
 	svcKey := svc.Namespace + "/" + svc.Name
 
-	err = lc.sync(svcKey)
+	err = lc.syncWrapper(svcKey)
 	if err == nil {
 		t.Fatalf("Expected sync to fail")
 	}
@@ -1036,7 +1036,7 @@ func TestStandaloneNEGLBControllerMetrics_SystemError(t *testing.T) {
 
 	svcKey := svc.Namespace + "/" + svc.Name
 
-	err = lc.sync(svcKey)
+	err = lc.syncWrapper(svcKey)
 	if err == nil {
 		t.Fatalf("Expected sync to fail due to GCE error")
 	}
@@ -1104,7 +1104,7 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 	svcKey := svc.Namespace + "/" + svc.Name
 
 	// Initial sync to establish state in metrics
-	err = lc.sync(svcKey)
+	err = lc.syncWrapper(svcKey)
 	if err != nil {
 		t.Fatalf("sync() error = %v", err)
 	}
@@ -1120,7 +1120,7 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 	}
 	lc.ctx.ServiceInformer.GetIndexer().Delete(svc)
 
-	err = lc.sync(svcKey)
+	err = lc.syncWrapper(svcKey)
 	if err != nil {
 		t.Fatalf("sync() error = %v", err)
 	}
