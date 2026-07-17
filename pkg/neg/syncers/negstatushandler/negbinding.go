@@ -19,6 +19,7 @@ package negstatushandler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -36,9 +37,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	NEGsAttached = "NEGsAttached"
+type negOwnershipRegistry interface {
+	GetOwner(negName string) string
+}
 
+const (
+	ManagedCondition = "Managed"
+	NEGsAttached     = "NEGsAttached"
+
+	NEGOwnershipConflict     = "NEGOwnershipConflict"
 	NEGsAttachmentSuccessful = "NEGsAttachmentSuccessful"
 	NEGsAttachmentFailed     = "NEGsAttachmentFailed"
 )
@@ -50,6 +57,7 @@ type NEGBindingStatusHandler struct {
 	negBindingClient negbindingclient.Interface
 	negBindingLister cache.Indexer
 	negMetrics       *metrics.NegMetrics
+	registry         negOwnershipRegistry
 	logger           klog.Logger
 }
 
@@ -60,6 +68,7 @@ func NewNEGBindingStatusHandler(
 	negBindingClient negbindingclient.Interface,
 	negBindingLister cache.Indexer,
 	negMetrics *metrics.NegMetrics,
+	registry negOwnershipRegistry,
 	logger klog.Logger,
 ) *NEGBindingStatusHandler {
 	return &NEGBindingStatusHandler{
@@ -68,6 +77,7 @@ func NewNEGBindingStatusHandler(
 		negBindingClient: negBindingClient,
 		negBindingLister: negBindingLister,
 		negMetrics:       negMetrics,
+		registry:         registry,
 		logger:           logger.WithName("NEGBindingStatusHandler").WithValues("binding", fmt.Sprintf("%s/%s", namespace, negBindingName)),
 	}
 }
@@ -140,6 +150,9 @@ func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpoint
 	binding := origBinding.DeepCopy()
 	binding.Status.NetworkEndpointGroups = statusNegs
 
+	managedCond := h.getManagedCondition(binding)
+	h.ensureCondition(binding, managedCond)
+
 	attachedCondition := h.getAttachedCondition(utilerrors.NewAggregate(errList))
 	finalCondition := h.ensureCondition(binding, attachedCondition)
 	h.negMetrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origBinding.GetCreationTimestamp().Time))
@@ -171,6 +184,7 @@ func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) 
 	}
 	h.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(binding.Status.LastSyncTime.Time))
 
+	h.ensureCondition(binding, h.getManagedCondition(binding))
 	h.ensureCondition(binding, h.getAttachedCondition(syncErr))
 	binding.Status.LastSyncTime = ts
 
@@ -255,4 +269,31 @@ func (h *NEGBindingStatusHandler) patchNegBindingStatus(oldStatus, newStatus neg
 	_, err = h.negBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(h.namespace).Patch(context.Background(), h.negBindingName, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 	h.negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	return err
+}
+
+func (h *NEGBindingStatusHandler) getManagedCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding) negbindingv1beta1.Condition {
+	ownerKey := fmt.Sprintf("%s/%s", h.namespace, h.negBindingName)
+	var conflicts []string
+	for _, ref := range binding.Spec.NetworkEndpointGroups {
+		owner := h.registry.GetOwner(ref.Name)
+		if owner != "" && owner != ownerKey {
+			conflicts = append(conflicts, fmt.Sprintf("NEG %q is owned by %q", ref.Name, owner))
+		}
+	}
+	if len(conflicts) == 0 {
+		return negbindingv1beta1.Condition{
+			Type:               ManagedCondition,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+
+	message := strings.Join(conflicts, "; ")
+	return negbindingv1beta1.Condition{
+		Type:               ManagedCondition,
+		Status:             metav1.ConditionFalse,
+		Reason:             NEGOwnershipConflict,
+		LastTransitionTime: metav1.Now(),
+		Message:            message,
+	}
 }

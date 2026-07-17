@@ -379,6 +379,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		m.negBindingClient,
 		m.negBindingLister,
 		m.negMetrics,
+		m.ownershipRegistry,
 		m.logger,
 	)
 
