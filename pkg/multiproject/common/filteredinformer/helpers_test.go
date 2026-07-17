@@ -7,6 +7,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
@@ -40,6 +41,15 @@ func TestIsObjectInProviderConfig(t *testing.T) {
 			providerConfigName: "p123456-abc",
 			object:             "invalid-object",
 			expectedToMatch:    false,
+		},
+		{
+			desc:               "Tombstone object in provider config should return true",
+			providerConfigName: "p123456-abc",
+			object: cache.DeletedFinalStateUnknown{
+				Key: "some-key",
+				Obj: &metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
+			},
+			expectedToMatch: true,
 		},
 	}
 

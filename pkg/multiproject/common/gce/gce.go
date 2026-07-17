@@ -83,7 +83,8 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 
 	// Update ProjectID
 	projectIDKey := "project-id"
-	globalSection.Key(projectIDKey).SetValue(providerConfig.Spec.ProjectID)
+	projectID := sanitizeINIValue(providerConfig.Spec.ProjectID)
+	globalSection.Key(projectIDKey).SetValue(projectID)
 
 	// Update TokenURL
 	tokenURLKey := "token-url"
@@ -112,7 +113,7 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	if len(networkParts) > 1 {
 		networkName = networkParts[len(networkParts)-1]
 	}
-	globalSection.Key(networkNameKey).SetValue(networkName)
+	globalSection.Key(networkNameKey).SetValue(sanitizeINIValue(networkName))
 
 	subnetworkNameKey := "subnetwork-name"
 	// Subnetwork name is the last part of the subnetwork path
@@ -122,7 +123,7 @@ func generateConfigForProviderConfig(defaultConfigContent string, providerConfig
 	if len(subnetworkParts) > 1 {
 		subnetworkName = subnetworkParts[len(subnetworkParts)-1]
 	}
-	globalSection.Key(subnetworkNameKey).SetValue(subnetworkName)
+	globalSection.Key(subnetworkNameKey).SetValue(sanitizeINIValue(subnetworkName))
 
 	// Write the modified config content to a string with custom options
 	var modifiedConfigContent bytes.Buffer
@@ -150,7 +151,7 @@ func tokenURLForProviderConfig(existingTokenURL string, providerConfig *v1.Provi
 	baseURL := tokenURLParts[0]
 	// Format: {BASE_URL}/projects/{TENANT_PROJECT_NUMBER}/locations/{TENANT_LOCATION}/tenants/{TENANT_ID}:generateTenantToken"
 	formatString := "%s/projects/%d/locations/%s/tenants/%s:generateTenantToken"
-	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, providerConfig.Name)
+	tokenURL := fmt.Sprintf(formatString, baseURL, providerConfig.Spec.ProjectNumber, location, sanitizeINIValue(providerConfig.Name))
 	return tokenURL, nil
 }
 
@@ -205,4 +206,9 @@ func extractLocationFromTokenURL(tokenURL string) string {
 		}
 	}
 	return ""
+}
+
+// sanitizeINIValue removes carriage returns and newlines to prevent CRLF injection
+func sanitizeINIValue(val string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(val, "\r", ""), "\n", "")
 }

@@ -503,3 +503,51 @@ func mustNormalizeJSON(t *testing.T, jsonString string) string {
 
 	return normalizedString
 }
+
+func TestSanitizeINIValue(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "No newlines",
+			input:    "regular-string",
+			expected: "regular-string",
+		},
+		{
+			name:     "Carriage return only",
+			input:    "string\rwith\rcr",
+			expected: "stringwithcr",
+		},
+		{
+			name:     "Newline only",
+			input:    "string\nwith\nnl",
+			expected: "stringwithnl",
+		},
+		{
+			name:     "CRLF",
+			input:    "string\r\nwith\r\ncrlf",
+			expected: "stringwithcrlf",
+		},
+		{
+			name:     "Multiple newlines at end",
+			input:    "string\n\n\r\n",
+			expected: "string",
+		},
+		{
+			name:     "Malicious INI injection attempt",
+			input:    "project\n[malicious_section]\nkey=value",
+			expected: "project[malicious_section]key=value",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := sanitizeINIValue(tc.input)
+			if result != tc.expected {
+				t.Errorf("Expected %q, got %q", tc.expected, result)
+			}
+		})
+	}
+}
