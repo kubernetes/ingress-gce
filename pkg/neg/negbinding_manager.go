@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
@@ -82,6 +83,95 @@ func (c syncerConfig) Equals(other syncerConfig) bool {
 		c.networkInfo.NetworkURL == other.networkInfo.NetworkURL &&
 		c.networkInfo.SubnetworkURL == other.networkInfo.SubnetworkURL &&
 		c.networkInfo.K8sNetwork == other.networkInfo.K8sNetwork
+}
+
+// negOwnershipRegistry allows to track which NEGBinding CR's syncer has rights to modify endpoints of the NEGs based on their name.
+type negOwnershipRegistry struct {
+	mu sync.Mutex
+
+	// Important: owners and ownedNEGs should be changed only using setOwnerLocked and unsetOwnerLocked to make sure these are consistent
+	owners    map[string]string           // negName -> ownerKey
+	ownedNEGs map[string]sets.Set[string] // ownerKey -> set of NEG names
+
+	onRelease func(negNames []string)
+}
+
+// newNEGOwnershipRegistry constructs a new negOwnershipRegistry.
+func newNEGOwnershipRegistry(onRelease func([]string)) *negOwnershipRegistry {
+	return &negOwnershipRegistry{
+		owners:    make(map[string]string),
+		ownedNEGs: make(map[string]sets.Set[string]),
+		onRelease: onRelease,
+	}
+}
+
+// Acquire tries to get exclusive ownership of NEGs with name negName for owner
+func (r *negOwnershipRegistry) Acquire(negName string, owner string) (bool, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	currentOwner, ok := r.owners[negName]
+	if !ok {
+		r.setOwnerLocked(negName, owner)
+		return true, ""
+	}
+	if currentOwner == owner {
+		return true, ""
+	}
+	return false, currentOwner
+}
+
+// ReleaseAllOwnedExcept releases all owned by owner NEG names, except ones in keep set
+func (r *negOwnershipRegistry) ReleaseAllOwnedExcept(owner string, keep sets.Set[string]) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if keep == nil {
+		keep = sets.New[string]()
+	}
+
+	released := []string{}
+	for negName := range r.ownedNEGs[owner] {
+		if !keep.Has(negName) {
+			r.unsetOwnerLocked(negName)
+			released = append(released, negName)
+		}
+	}
+
+	if len(released) > 0 && r.onRelease != nil {
+		go r.onRelease(released)
+	}
+}
+
+// setOwnerLocked ensures that owners and ownedNEGs are consistent when acquiring ownership of NEG for binding. Should have lock when called.
+func (r *negOwnershipRegistry) setOwnerLocked(negName, owner string) {
+	r.owners[negName] = owner
+	if _, ok := r.ownedNEGs[owner]; !ok {
+		r.ownedNEGs[owner] = sets.New[string]()
+	}
+	r.ownedNEGs[owner].Insert(negName)
+}
+
+// setOwnerLocked ensures that owners and ownedNEGs are consistent when releasing NEG ownership. Should have lock when called.
+func (r *negOwnershipRegistry) unsetOwnerLocked(negName string) {
+	owner, ok := r.owners[negName]
+	if !ok {
+		return
+	}
+	delete(r.owners, negName)
+	if _, ok := r.ownedNEGs[owner]; ok {
+		r.ownedNEGs[owner].Delete(negName)
+		if r.ownedNEGs[owner].Len() == 0 {
+			delete(r.ownedNEGs, owner)
+		}
+	}
+}
+
+// GetOwner gets current owner of the NEG name
+func (r *negOwnershipRegistry) GetOwner(negName string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.owners[negName]
 }
 
 // negBindingManager manages the lifecycle of syncers associated with NEGBinding CRs.
