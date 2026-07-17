@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -539,6 +540,39 @@ func (m *negBindingManager) getPortTuple(svc *apiv1.Service, port int32) (negtyp
 		}
 	}
 	return negtypes.SvcPortTuple{}, fmt.Errorf("port %d not found in service %s/%s spec", port, svc.Namespace, svc.Name)
+}
+
+// InitializeOwnershipRegistry reads NEG names from existing NEGBinding CRs' statuses and acquires them.
+// In case same NEG name found in multiple CRs, only one selected.
+func (m *negBindingManager) InitializeOwnershipRegistry() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	bindings := m.negBindingLister.List()
+	for _, obj := range bindings {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			m.logger.Error(nil, "Unexpected object type in negBindingLister during registry init", "type", fmt.Sprintf("%T", obj))
+			continue
+		}
+		ownerKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+
+		for _, ref := range binding.Status.NetworkEndpointGroups {
+			negID, err := cloud.ParseResourceURL(ref.ResourceURL)
+			if err != nil {
+				m.logger.Error(err, "Failed to parse NEG URL from status during registry init", "binding", ownerKey, "url", ref.ResourceURL)
+				continue
+			}
+			negName := negID.Key.Name
+			acquired, currentOwner := m.ownershipRegistry.Acquire(negName, ownerKey)
+			if acquired {
+				m.logger.Info("Restored NEG ownership from status", "negName", negName, "owner", ownerKey)
+			} else {
+				m.logger.Info("Conflict during registry initialization", "negName", negName, "attemptedOwner", ownerKey, "currentOwner", currentOwner)
+			}
+		}
+	}
+	return nil
 }
 
 func (m *negBindingManager) validateBackendRef(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
