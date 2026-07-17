@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -41,6 +42,10 @@ import (
 )
 
 const (
+	StandaloneNEGLBControllerName = "standalone-neg-lb-controller"
+
+	defaultNumWorkers = 1
+
 	// ExternalIPProgrammed Condition Type
 	ExternalIPProgrammed = "ExternalIPProgrammed"
 
@@ -107,7 +112,7 @@ func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan
 		hasSynced: ctx.HasSynced,
 		logger:    logger,
 	}
-	lc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", 1, lc.sync, logger)
+	lc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, lc.syncWrapper, logger)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -167,7 +172,7 @@ func (lc *StandaloneNEGLBController) enqueue(svc *v1.Service) {
 }
 
 func (lc *StandaloneNEGLBController) Run() {
-	lc.logger.Info("Starting StandaloneNEGLBController")
+	lc.logger.Info("Starting StandaloneNEGLBController", "numWorkers", defaultNumWorkers)
 
 	err := wait.PollUntilContextCancel(wait.ContextForChannel(lc.stopCh), 5*time.Second, true, func(ctx context.Context) (done bool, err error) {
 		lc.logger.V(2).Info("Waiting for initial cache sync before starting L4 Standalone NEG controller")
@@ -184,23 +189,43 @@ func (lc *StandaloneNEGLBController) Run() {
 	<-lc.stopCh
 }
 
-func (lc *StandaloneNEGLBController) sync(key string) error {
+func (lc *StandaloneNEGLBController) syncWrapper(key string) (err error) {
+	syncTrackingId := rand.Int31()
+	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
+
+	defer func() {
+		if r := recover(); r != nil {
+			errMessage := fmt.Sprintf("Panic in L4 Standalone NEG LB sync worker goroutine: %v", r)
+			svcLogger.Error(nil, errMessage)
+			l4metrics.PublishL4ControllerPanicCount(StandaloneNEGLBControllerName)
+			err = fmt.Errorf("%s", errMessage)
+		}
+	}()
+	syncErr := lc.sync(key, svcLogger)
+	return syncErr
+}
+
+func (lc *StandaloneNEGLBController) sync(key string, svcLogger klog.Logger) error {
+	l4metrics.PublishL4controllerLastSyncTime(StandaloneNEGLBControllerName)
+
 	obj, exists, err := lc.ctx.ServiceInformer.GetIndexer().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("failed to lookup service for key %s: %w", key, err)
 	}
 	if !exists || obj == nil {
+		svcLogger.V(3).Info("Ignoring sync of non-existent service")
 		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		return nil
 	}
 	svc := obj.(*v1.Service)
-	svcLogger := lc.logger.WithValues("service", klog.KObj(svc))
 
 	if svc.DeletionTimestamp != nil {
+		svcLogger.V(3).Info("Ignoring sync of service undergoing deletion")
 		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		return nil
 	}
 	if !lc.shouldProcess(svc) {
+		svcLogger.V(3).Info("Ignoring sync: service does not match standalone LB criteria")
 		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		if err := lc.clearStatusIngressIP(svc, svcLogger); err != nil {
 			return err
