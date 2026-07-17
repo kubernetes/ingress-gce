@@ -206,6 +206,7 @@ func (lc *StandaloneNEGLBController) syncWrapper(key string) (err error) {
 }
 
 func (lc *StandaloneNEGLBController) sync(key string, svcLogger klog.Logger) error {
+	start := time.Now()
 	l4metrics.PublishL4controllerLastSyncTime(StandaloneNEGLBControllerName)
 
 	obj, exists, err := lc.ctx.ServiceInformer.GetIndexer().GetByKey(key)
@@ -234,7 +235,7 @@ func (lc *StandaloneNEGLBController) sync(key string, svcLogger klog.Logger) err
 	}
 
 	schemes, err := lc.syncStandaloneNEGLB(svc, svcLogger)
-	lc.publishMetrics(key, schemes, err)
+	lc.publishMetrics(key, schemes, err, start)
 	return err
 }
 
@@ -395,7 +396,7 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 	return nil
 }
 
-func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string, syncErr error) {
+func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string, syncErr error, start time.Time) {
 	state := l4metrics.L4StandaloneNEGServiceState{
 		Status: l4metrics.StatusSuccess,
 	}
@@ -414,6 +415,7 @@ func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string
 	state.LBSchemeInternal = slices.Contains(schemes, "INTERNAL")
 
 	lc.ctx.L4Metrics.SetL4StandaloneNEGService(key, state)
+	l4metrics.PublishL4StandaloneNEGSyncLatency(syncErr == nil, start)
 }
 
 func classifyError(err error) lbConditionReason {

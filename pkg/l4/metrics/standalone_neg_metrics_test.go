@@ -116,6 +116,30 @@ func TestExportStandaloneNEGMetric_Deletion(t *testing.T) {
 	verifyL4StandaloneNEGMetric(t, 0, StatusSuccess, "true", "false", "false")
 }
 
+func TestPublishL4StandaloneNEGSyncLatency(t *testing.T) {
+	l4StandaloneNEGSyncLatency.Reset()
+
+	PublishL4StandaloneNEGSyncLatency(true, time.Now().Add(-1*time.Second))
+	PublishL4StandaloneNEGSyncLatency(true, time.Now().Add(-2*time.Second))
+	PublishL4StandaloneNEGSyncLatency(false, time.Now().Add(-1*time.Second))
+
+	successCount, err := countHistogram(l4StandaloneNEGSyncLatency, prometheus.Labels{"sync_result": "success"})
+	if err != nil {
+		t.Fatalf("failed to fetch histogram count for success: %v", err)
+	}
+	if successCount != 2 {
+		t.Errorf("expected 2 success latency samples, got %d", successCount)
+	}
+
+	errorCount, err := countHistogram(l4StandaloneNEGSyncLatency, prometheus.Labels{"sync_result": "error"})
+	if err != nil {
+		t.Fatalf("failed to fetch histogram count for error: %v", err)
+	}
+	if errorCount != 1 {
+		t.Errorf("expected 1 error latency sample, got %d", errorCount)
+	}
+}
+
 func verifyL4StandaloneNEGMetric(t *testing.T, expectedCount int, status L4ServiceStatus, external, externalPassthrough, internal string) {
 	countFloat := testutil.ToFloat64(l4StandaloneNEGCount.With(prometheus.Labels{
 		"status":                         string(status),
