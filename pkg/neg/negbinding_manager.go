@@ -173,6 +173,8 @@ type negBindingManager struct {
 	reflector     readiness.Reflector
 	kubeSystemUID types.UID
 
+	ownershipRegistry *negOwnershipRegistry
+
 	logger klog.Logger
 }
 
@@ -215,6 +217,9 @@ func newNEGBindingManager(
 		kubeSystemUID:       kubeSystemUID,
 		logger:              logger.WithName("NEGBindingManager"),
 	}
+	m.ownershipRegistry = newNEGOwnershipRegistry(func(negName string) {
+		m.tryAssignNEGToBinding(negName)
+	})
 	return m
 }
 
@@ -338,6 +343,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		if !hasConfig || !oldConfig.Equals(newConfig) {
 			m.logger.Info("Configuration changed for NEGBinding syncer, recreating", "binding", bindingKey, "old", oldConfig, "new", newConfig)
 			syncer.Stop()
+			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 			delete(m.syncerMap, bindingKey)
 			delete(m.syncerConfigs, bindingKey)
 			// Proceed to create new syncer
@@ -362,7 +368,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		EpCalculatorMode: negtypes.L7Mode,
 	}
 
-	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL)
+	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL, m.ownershipRegistry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create topology provider: %w", err)
 	}
@@ -454,6 +460,7 @@ func (m *negBindingManager) StopSyncer(namespace, name string) {
 	bindingKey := fmt.Sprintf("%s/%s", namespace, name)
 	if syncer, ok := m.syncerMap[bindingKey]; ok {
 		syncer.Stop()
+		m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 		delete(m.syncerMap, bindingKey)
 		delete(m.syncerConfigs, bindingKey)
 	}
@@ -605,4 +612,27 @@ func (m *negBindingManager) ensureCondition(binding *negbindingv1beta1.NetworkEn
 	}
 
 	binding.Status.Conditions[index] = expectedCondition
+}
+
+// tryAssignNEGToBinding is a callback for released NEGs. In case any other NEGBinding CR refers to the released NEG name, its syncer will be ensured and synced.
+func (m *negBindingManager) tryAssignNEGToBinding(negName string) {
+	objs := m.negBindingLister.List()
+	for _, obj := range objs {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			continue
+		}
+
+		for _, ref := range binding.Spec.NetworkEndpointGroups {
+			if ref.Name == negName {
+				bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+				// It's not guaranteed that this binding will have ownership if conflict with other binding still exists
+				m.logger.Info("Triggering ensure/sync for binding which refers to released NEG", "binding", bindingKey, "negName", negName)
+				if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+					m.logger.Error(err, "Failed to ensure syncer for binding after NEG release", "binding", bindingKey, "negName", negName)
+				}
+				break
+			}
+		}
+	}
 }
