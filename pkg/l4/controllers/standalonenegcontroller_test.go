@@ -87,7 +87,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:          []string{frIP},
@@ -148,7 +148,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"fr2": {
 					Name:                "fr2",
@@ -157,7 +157,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:   []string{frIP, "10.0.0.101"},
@@ -271,7 +271,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"fr2": {
 					Name:                "fr2",
@@ -280,7 +280,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:   []string{frIP, "10.0.0.101"},
@@ -315,7 +315,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Global,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs: []string{"10.0.0.200"},
@@ -349,7 +349,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "INTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:          nil,
@@ -385,7 +385,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "ESP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:          nil,
@@ -421,7 +421,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "L3_DEFAULT",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs: []string{frIP},
@@ -562,7 +562,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectError:     false,
@@ -641,7 +641,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "ESP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectIPs:          nil,
@@ -755,7 +755,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-2": {
 					Name:                "custom-fr-2",
@@ -764,7 +764,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-3": {
 					Name:                "custom-fr-3",
@@ -773,7 +773,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-4": {
 					Name:                "custom-fr-4",
@@ -782,7 +782,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-5": {
 					Name:                "custom-fr-5",
@@ -791,7 +791,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-6": {
 					Name:                "custom-fr-6",
@@ -800,7 +800,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-7": {
 					Name:                "custom-fr-7",
@@ -809,7 +809,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-8": {
 					Name:                "custom-fr-8",
@@ -818,7 +818,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-9": {
 					Name:                "custom-fr-9",
@@ -827,7 +827,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-10": {
 					Name:                "custom-fr-10",
@@ -836,7 +836,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-11": {
 					Name:                "custom-fr-11",
@@ -845,7 +845,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 				"custom-fr-12": {
 					Name:                "custom-fr-12",
@@ -854,16 +854,17 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancingScheme: "EXTERNAL",
 					IPProtocol:          "TCP",
 					Scope:               meta.Regional,
-					Version:             meta.VersionGA,
+					Version:             meta.VersionBeta,
 				},
 			},
 			expectError: false,
-			expectIPs:   []string{"10.0.0.100", "10.0.0.101", "10.0.0.102", "10.0.0.103", "10.0.0.104", "10.0.0.105", "10.0.0.106", "10.0.0.107", "10.0.0.108", "10.0.0.109"},
+			// Note the alphabetical order.
+			expectIPs: []string{"10.0.0.100", "10.0.0.109", "10.0.0.110", "10.0.0.111", "10.0.0.101", "10.0.0.102", "10.0.0.103", "10.0.0.104", "10.0.0.105", "10.0.0.106"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionTrue,
 				Reason:  "IPProgrammed",
-				Message: "IPs programmed: 10.0.0.100, 10.0.0.101, 10.0.0.102, 10.0.0.103, 10.0.0.104, 10.0.0.105, 10.0.0.106, 10.0.0.107, 10.0.0.108, 10.0.0.109",
+				Message: "IPs programmed: 10.0.0.100, 10.0.0.109, 10.0.0.110, 10.0.0.111, 10.0.0.101, 10.0.0.102, 10.0.0.103, 10.0.0.104, 10.0.0.105, 10.0.0.106",
 			},
 		},
 	}
@@ -1136,7 +1137,7 @@ func TestStandaloneNEGLBControllerMetrics_Success(t *testing.T) {
 		LoadBalancingScheme: "EXTERNAL",
 		IPProtocol:          "TCP",
 		Scope:               meta.Regional,
-		Version:             meta.VersionGA,
+		Version:             meta.VersionBeta,
 	}
 	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
 	if err != nil {
@@ -1203,7 +1204,7 @@ func TestStandaloneNEGLBControllerMetrics_UserError(t *testing.T) {
 		LoadBalancingScheme: "INTERNAL_SELF_MANAGED", // Invalid
 		IPProtocol:          "TCP",
 		Scope:               meta.Regional,
-		Version:             meta.VersionGA,
+		Version:             meta.VersionBeta,
 	}
 	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
 	if err != nil {
@@ -1258,11 +1259,11 @@ func TestStandaloneNEGLBControllerMetrics_SystemError(t *testing.T) {
 
 	// Inject GCE error
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
-	if mockGCE.MockForwardingRules.GetError == nil {
-		mockGCE.MockForwardingRules.GetError = make(map[meta.Key]error)
+	if mockGCE.MockBetaForwardingRules.GetError == nil {
+		mockGCE.MockBetaForwardingRules.GetError = make(map[meta.Key]error)
 	}
-	mockGCE.MockForwardingRules.GetError[*key] = fmt.Errorf("internal GCE error")
-	defer delete(mockGCE.MockForwardingRules.GetError, *key)
+	mockGCE.MockBetaForwardingRules.GetError[*key] = fmt.Errorf("internal GCE error")
+	defer delete(mockGCE.MockBetaForwardingRules.GetError, *key)
 
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1323,7 +1324,7 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 		LoadBalancingScheme: "EXTERNAL",
 		IPProtocol:          "TCP",
 		Scope:               meta.Regional,
-		Version:             meta.VersionGA,
+		Version:             meta.VersionBeta,
 	}
 	err = composite.CreateForwardingRule(fakeGCE, key, fr, klog.TODO())
 	if err != nil {

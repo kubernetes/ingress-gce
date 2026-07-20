@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -292,6 +293,20 @@ func frAddresses(fr *composite.ForwardingRule) []string {
 	return ipAddrs
 }
 
+func parsedFRNames(frs []parsedForwardingRule) []string {
+	names := make([]string, len(frs))
+	for i, fr := range frs {
+		names[i] = fr.rawName
+	}
+	return names
+}
+
+func sortParsedFRs(frs []parsedForwardingRule) {
+	sort.Slice(frs, func(i, j int) bool {
+		return frs[i].rawName < frs[j].rawName
+	})
+}
+
 func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLogger klog.Logger) (lbSchemes []string, err error) {
 	frNamesStr, ok := svc.Annotations[annotations.CustomForwardingRuleKey]
 	if !ok || frNamesStr == "" {
@@ -331,8 +346,12 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		return nil, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation"))
 	}
+
 	if len(parsedRules) > ForwardingRulesLimit {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules.", ForwardingRulesLimit)
+		// Sort alphabetically forwarding rules so potentially skipped rules are consistent between resyncs.
+		sortParsedFRs(parsedRules)
+		skippedFrs := strings.Join(parsedFRNames(parsedRules[ForwardingRulesLimit:]), ", ")
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules (%s)", ForwardingRulesLimit, skippedFrs)
 		parsedRules = parsedRules[:ForwardingRulesLimit]
 	}
 
