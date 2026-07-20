@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,6 +60,8 @@ const (
 	InvalidForwardingRule = lbConditionReason("InvalidForwardingRule")
 	// ProviderError Reason
 	ProviderError = lbConditionReason("ProviderError")
+	// Maximum number of forwarding rules
+	ForwardingRulesLimit = 10
 )
 
 var (
@@ -239,7 +242,6 @@ func (lc *StandaloneNEGLBController) sync(key string, svcLogger klog.Logger) err
 }
 
 func (lc *StandaloneNEGLBController) parseForwardingRuleKeys(frNamesStr string, svcLogger klog.Logger) ([]parsedForwardingRule, []error) {
-
 	if frNamesStr == "" {
 		return nil, nil
 	}
@@ -276,7 +278,33 @@ func validateForwardingRule(fr *composite.ForwardingRule, frName string) error {
 	if !isFRProtocolSupported(fr.IPProtocol) {
 		errs = append(errs, l4utils.NewUnsupportedProtocolError(frName, fr.IPProtocol, supportedFRProtocols))
 	}
+	if len(fr.IPAddresses) > 2 {
+		errs = append(errs, fmt.Errorf("forwarding rule %s has more than 2 IP addresses", frName))
+	}
 	return errors.Join(errs...)
+}
+
+// IPAddress field is used for creating Regional NetLB forwarding rules, IPAddresses[] field is used for creating Global NetLB forwarding rules.
+func frAddresses(fr *composite.ForwardingRule) []string {
+	ipAddrs := fr.IPAddresses
+	if len(ipAddrs) == 0 {
+		ipAddrs = []string{fr.IPAddress}
+	}
+	return ipAddrs
+}
+
+func parsedFRNames(frs []parsedForwardingRule) []string {
+	names := make([]string, len(frs))
+	for i, fr := range frs {
+		names[i] = fr.rawName
+	}
+	return names
+}
+
+func sortParsedFRs(frs []parsedForwardingRule) {
+	sort.Slice(frs, func(i, j int) bool {
+		return frs[i].rawName < frs[j].rawName
+	})
 }
 
 func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLogger klog.Logger) (lbSchemes []string, err error) {
@@ -319,12 +347,20 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		return nil, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation"))
 	}
 
+	if len(parsedRules) > ForwardingRulesLimit {
+		// Sort alphabetically forwarding rules so potentially skipped rules are consistent between resyncs.
+		sortParsedFRs(parsedRules)
+		skippedFrs := strings.Join(parsedFRNames(parsedRules[ForwardingRulesLimit:]), ", ")
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules (%s)", ForwardingRulesLimit, skippedFrs)
+		parsedRules = parsedRules[:ForwardingRulesLimit]
+	}
+
 	var lbIngresses []v1.LoadBalancerIngress
 	vipMode := v1.LoadBalancerIPModeVIP
 	var schemes []string
 
 	for _, parsed := range parsedRules {
-		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionGA, svcLogger)
+		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionBeta, svcLogger)
 		if err != nil {
 			svcLogger.Error(err, "failed to get forwarding rule", "frName", parsed.rawName)
 			if utils.IsNotFoundError(err) {
@@ -342,7 +378,10 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			continue
 		}
 
-		lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: fr.IPAddress, IPMode: &vipMode})
+		addrs := frAddresses(fr)
+		for _, a := range addrs {
+			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: a, IPMode: &vipMode})
+		}
 	}
 
 	if len(errs) > 0 {
