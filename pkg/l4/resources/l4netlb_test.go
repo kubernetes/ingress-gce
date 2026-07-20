@@ -1315,6 +1315,16 @@ func TestCheckStrongSessionAffinityRequirements(t *testing.T) {
 			expectError:           true,
 		},
 		{
+			desc:                        "strong session affinity has nil SessionAffinityConfig",
+			enableStrongSessionAffinity: true,
+			serviceAnnotations: map[string]string{
+				annotations.StrongSessionAffinityAnnotationKey: annotations.StrongSessionAffinityEnabled,
+			},
+			sessionAffinityType:   v1.ServiceAffinityClientIP,
+			sessionAffinityConfig: nil,
+			expectError:           true,
+		},
+		{
 			desc:                        "strong session affinity set up is correct",
 			enableStrongSessionAffinity: true,
 			serviceAnnotations: map[string]string{
