@@ -618,16 +618,14 @@ func TestFirewallToGCloud_FieldExhaustiveness(t *testing.T) {
 		"NullFields":      false,
 	}
 
-	tType := reflect.TypeOf(compute.Firewall{})
-	for i := 0; i < tType.NumField(); i++ {
-		fieldName := tType.Field(i).Name
-		if _, evaluated := knownFields[fieldName]; !evaluated {
+	for field := range reflect.TypeOf(compute.Firewall{}).Fields() {
+		if _, evaluated := knownFields[field.Name]; !evaluated {
 			t.Fatalf(
 				"New field %q added to compute.Firewall!\n"+
 					"Evaluate whether it needs gcloud flag mapping in\n"+
 					"FirewallToGCloudCreateCmd / FirewallToGCloudUpdateCmd,\n"+
 					"then update knownFields in this test.",
-				fieldName,
+				field.Name,
 			)
 		}
 	}
