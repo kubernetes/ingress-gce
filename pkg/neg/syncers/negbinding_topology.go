@@ -80,8 +80,30 @@ func (p *NEGBindingTopologyProvider) getBinding() (*negbindingv1beta1.NetworkEnd
 
 // acquireSpecNEGRefs tries to acquire ownership of the NEG names from NEGBinding.Spec.
 func (p *NEGBindingTopologyProvider) acquireSpecNEGRefs(binding *negbindingv1beta1.NetworkEndpointGroupBinding, logger klog.Logger) []negbindingv1beta1.SpecNegRef {
+	statusNEGNamesPerSubnet := make(map[string]string)
+	for _, ref := range binding.Status.NetworkEndpointGroups {
+		subnetID, err := cloud.ParseResourceURL(ref.SubnetURL)
+		if err != nil {
+			continue
+		}
+		negID, err := cloud.ParseResourceURL(ref.ResourceURL)
+		if err != nil {
+			continue
+		}
+		statusNEGNamesPerSubnet[subnetID.Key.Name] = negID.Key.Name
+	}
+
 	keepNEGs := sets.New[string]()
+	for _, negName := range statusNEGNamesPerSubnet {
+		keepNEGs.Insert(negName)
+	}
+
+	desiredSpecNEGs := sets.New[string]()
 	for _, ref := range binding.Spec.NetworkEndpointGroups {
+		if negName, ok := statusNEGNamesPerSubnet[ref.Subnet]; ok && negName != ref.Name {
+			continue
+		}
+		desiredSpecNEGs.Insert(ref.Name)
 		keepNEGs.Insert(ref.Name)
 	}
 
@@ -90,6 +112,11 @@ func (p *NEGBindingTopologyProvider) acquireSpecNEGRefs(binding *negbindingv1bet
 
 	var acquiredRefs []negbindingv1beta1.SpecNegRef
 	for _, ref := range binding.Spec.NetworkEndpointGroups {
+		if !desiredSpecNEGs.Has(ref.Name) {
+			// There is currently NEG in status with same subnet which should be cleaned up before acquiring one from Spec
+			continue
+		}
+
 		acquired, owner := p.registry.Acquire(ref.Name, ownerKey)
 		if acquired {
 			acquiredRefs = append(acquiredRefs, ref)
@@ -98,6 +125,20 @@ func (p *NEGBindingTopologyProvider) acquireSpecNEGRefs(binding *negbindingv1bet
 		}
 	}
 	return acquiredRefs
+}
+
+// getSubnetsFromStatus returns the list of subnet names present in the NegBinding CR Status.
+func (p *NEGBindingTopologyProvider) getSubnetsFromStatus(binding *negbindingv1beta1.NetworkEndpointGroupBinding, logger klog.Logger) []string {
+	subnets := sets.New[string]()
+	for _, ref := range binding.Status.NetworkEndpointGroups {
+		subnetID, err := cloud.ParseResourceURL(ref.SubnetURL)
+		if err != nil {
+			logger.Error(err, "Failed to parse subnet URL from status", "subnetURL", ref.SubnetURL)
+			continue
+		}
+		subnets.Insert(subnetID.Key.Name)
+	}
+	return subnets.UnsortedList()
 }
 
 // ListSubnetsInDefaultNetwork returns the list of subnets declared inside the NegBinding CR Spec.
@@ -114,6 +155,7 @@ func (p *NEGBindingTopologyProvider) ListSubnetsInDefaultNetwork(logger klog.Log
 	for _, ref := range ownedSpecRefs {
 		subnets.Insert(ref.Subnet)
 	}
+	subnets.Insert(p.getSubnetsFromStatus(binding, logger)...)
 
 	configs := []nodetopologyv1.SubnetConfig{}
 	for subnet := range subnets {

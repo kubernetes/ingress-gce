@@ -456,3 +456,75 @@ func sortSubnetConfigs(configs []nodetopologyv1.SubnetConfig) {
 		return configs[i].Name < configs[j].Name
 	})
 }
+
+func TestNEGBindingTopologyProviderConflict(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+	defaultSubnetURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet"
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	informer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer())
+	negBindingLister := informer.GetIndexer()
+
+	registry := newMockRegistry()
+	ownerKey := fmt.Sprintf("%s/%s", namespace, name)
+	p, err := NewNEGBindingTopologyProvider(namespace, name, negBindingLister, defaultSubnetURL, registry)
+	if err != nil {
+		t.Fatalf("NewNEGBindingTopologyProvider() failed unexpectedly: %v", err)
+	}
+
+	// 1. Pre-acquire "neg-old" (simulating it was acquired in previous sync)
+	acquired, _ := registry.Acquire("neg-old", ownerKey)
+	if !acquired {
+		t.Fatalf("Failed to pre-acquire lock")
+	}
+
+	// 2. Create binding with "neg-old" in status and "neg-new" in spec (conflict on subnet-1)
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-new",
+					Subnet: "subnet-1",
+					Zones:  []string{"zone-a"},
+				},
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/test-project/zones/zone-b/networkEndpointGroups/neg-old",
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+				},
+			},
+		},
+	}
+	negBindingLister.Add(binding)
+
+	// 3. Call ListZonesPerSubnet.
+	// Since there is a conflict on subnet-1 (status has neg-old, spec has neg-new),
+	// getOwnedNegRefs should NOT try to acquire "neg-new".
+	// And it should NOT return "neg-new" in owned.
+	// So ListZonesPerSubnet should return empty map.
+	zones, err := p.ListZonesPerSubnet(zonegetter.AllNodesFilter, network.NetworkInfo{IsDefault: true}, klog.TODO())
+	if err != nil {
+		t.Errorf("ListZonesPerSubnet() returned unexpected error: %v", err)
+	}
+	if len(zones) != 0 {
+		t.Errorf("ListZonesPerSubnet() returned %+v, expected empty due to conflict", zones)
+	}
+
+	// 4. Verify locks in registry.
+	// "neg-old" should STILL be owned (not released).
+	// "neg-new" should NOT be owned (not acquired).
+	if registry.GetOwner("neg-old") != ownerKey {
+		t.Errorf("neg-old should still be owned by %q, got %q", ownerKey, registry.GetOwner("neg-old"))
+	}
+	if registry.GetOwner("neg-new") != "" {
+		t.Errorf("neg-new should not be owned, got owned by %q", registry.GetOwner("neg-new"))
+	}
+}
