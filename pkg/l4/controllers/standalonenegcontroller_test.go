@@ -136,6 +136,41 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			},
 		},
 		{
+			desc: "GCP IPv6 forwarding rule canonicalizes non-standard IPv6 address",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-ipv6-canonical",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "fr-ipv6-noncanonical",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"fr-ipv6-noncanonical": {
+					Name:                "fr-ipv6-noncanonical",
+					IPAddress:           "2600:1900:4000:0001:0000:0000:0000:000A/96",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{"2600:1900:4000:1::a"},
+			expectError: false,
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 2600:1900:4000:1::a",
+			},
+		},
+		{
 			desc: "Dual stack forwarding rules (IPv4 and IPv6)",
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
