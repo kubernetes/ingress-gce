@@ -176,31 +176,38 @@ func FirewallToGCloudDeleteCmd(fwName, projectID string) string {
 	return fmt.Sprintf("gcloud compute firewall-rules delete %v --project %v", fwName, projectID)
 }
 
+func formatFirewallRuleSpecs(protocol string, ports []string) []string {
+	if len(ports) == 0 {
+		return []string{protocol}
+	}
+	var specs []string
+	for _, p := range ports {
+		specs = append(specs, fmt.Sprintf("%v:%v", protocol, p))
+	}
+	return specs
+}
+
 func firewallToGcloudArgs(fw *compute.Firewall, projectID string) string {
 	var args []string
 
 	args = append(args, fmt.Sprintf("--description %q", fw.Description))
 
 	if len(fw.Allowed) > 0 {
-		var allPorts []string
+		var allowSpecs []string
 		for _, a := range fw.Allowed {
-			for _, p := range a.Ports {
-				allPorts = append(allPorts, fmt.Sprintf("%v:%v", a.IPProtocol, p))
-			}
+			allowSpecs = append(allowSpecs, formatFirewallRuleSpecs(a.IPProtocol, a.Ports)...)
 		}
-		sort.Strings(allPorts)
-		args = append(args, fmt.Sprintf("--allow %v", strings.Join(allPorts, ",")))
+		sort.Strings(allowSpecs)
+		args = append(args, fmt.Sprintf("--allow %v", strings.Join(allowSpecs, ",")))
 	}
 
 	if len(fw.Denied) > 0 {
-		var denyPorts []string
+		var denySpecs []string
 		for _, d := range fw.Denied {
-			for _, p := range d.Ports {
-				denyPorts = append(denyPorts, fmt.Sprintf("%v:%v", d.IPProtocol, p))
-			}
+			denySpecs = append(denySpecs, formatFirewallRuleSpecs(d.IPProtocol, d.Ports)...)
 		}
-		sort.Strings(denyPorts)
-		args = append(args, fmt.Sprintf("--deny %v", strings.Join(denyPorts, ",")))
+		sort.Strings(denySpecs)
+		args = append(args, fmt.Sprintf("--deny %v", strings.Join(denySpecs, ",")))
 	}
 
 	if len(fw.SourceRanges) > 0 {
