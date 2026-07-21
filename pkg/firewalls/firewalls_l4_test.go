@@ -337,4 +337,3 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 		})
 	}
 }
-
