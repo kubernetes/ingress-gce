@@ -716,7 +716,7 @@ func TestFirewallToGCloud_FieldExhaustiveness(t *testing.T) {
 		"NullFields":      false,
 	}
 
-	for field := range reflect.TypeOf(compute.Firewall{}).Fields() {
+	for field := range reflect.TypeFor[compute.Firewall]().Fields() {
 		if _, evaluated := knownFields[field.Name]; !evaluated {
 			t.Fatalf(
 				"New field %q added to compute.Firewall!\n"+
