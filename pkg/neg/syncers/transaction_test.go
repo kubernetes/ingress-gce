@@ -3193,7 +3193,7 @@ func TestUnknownNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get subnet to zones map: %v", err)
 	}
-	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3499,7 +3499,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get subnet to zones map: %v", err)
 			}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3516,7 +3516,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				if statusErr != nil {
 					return false, nil
 				}
-				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
 				if err != nil {
 					return false, nil
 				}
@@ -4244,7 +4244,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get subnet to zones map: %v", err)
 			}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}
