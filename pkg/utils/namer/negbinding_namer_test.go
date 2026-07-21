@@ -137,6 +137,79 @@ func TestNegBindingNamer(t *testing.T) {
 		t.Errorf("Expected error to be ErrNBNamerInvalidBackendRef, got %v", err)
 	}
 
+	// Test cases for Status lookup (conflict resolution and removed subnets)
+	// Reset binding in store with status
+	bindingWithStatus := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Name: svcName,
+				Port: svcPort,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Subnet: subnetName,
+					Name:   negName, // Matches status
+				},
+				{
+					Subnet: subnetName2,
+					Name:   "new-neg-name-2", // Conflicts with status (status has neg-name-2)
+				},
+				// subnetName3 is removed from Spec (only exists in status)
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/" + negName,
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/" + subnetName,
+				},
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/" + negName2, // neg-name-2
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/" + subnetName2,
+				},
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/neg-name-3",
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/subnet-name-3",
+				},
+			},
+		},
+	}
+	err = negBindingLister.Update(bindingWithStatus)
+	if err != nil {
+		t.Fatalf("Failed to update NEGBinding in store: %v", err)
+	}
+
+	// Case 1: Matches both Spec and Status -> should return Spec/Status name (neg-name)
+	gotNegName, err = namer.NonDefaultSubnetNEG(namespace, svcName, subnetName, svcPort)
+	if err != nil {
+		t.Errorf("Status lookup (match): Unexpected error: %v", err)
+	}
+	if gotNegName != negName {
+		t.Errorf("Status lookup (match): Expected %s, got %s", negName, gotNegName)
+	}
+
+	// Case 2: Conflicts (Spec has new-neg-name-2, Status has neg-name-2) -> should return Status name (neg-name-2)
+	gotNegName, err = namer.NonDefaultSubnetNEG(namespace, svcName, subnetName2, svcPort)
+	if err != nil {
+		t.Errorf("Status lookup (conflict): Unexpected error: %v", err)
+	}
+	if gotNegName != negName2 {
+		t.Errorf("Status lookup (conflict): Expected %s (from status), got %s", negName2, gotNegName)
+	}
+
+	// Case 3: Removed from Spec (only in Status subnet-name-3) -> should return Status name (neg-name-3)
+	gotNegName, err = namer.NonDefaultSubnetNEG(namespace, svcName, "subnet-name-3", svcPort)
+	if err != nil {
+		t.Errorf("Status lookup (removed): Unexpected error: %v", err)
+	}
+	if gotNegName != "neg-name-3" {
+		t.Errorf("Status lookup (removed): Expected neg-name-3, got %s", gotNegName)
+	}
+
 	// Unexpected object type in cache
 	invalidObj := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

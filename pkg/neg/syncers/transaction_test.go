@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -53,11 +54,14 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/negannotation"
+	fakenegbinding "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
+	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -5381,5 +5385,41 @@ func TestSyncNEGsPartialFailure(t *testing.T) {
 				t.Errorf("endpoints in zone2 were synced, expected empty: %+v", endpointsZone2)
 			}
 		})
+	}
+}
+
+func TestGetNEGNameNEGBinding(t *testing.T) {
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	testBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-binding"},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{Kind: negbindingv1beta1.ServiceKind, Name: "test-svc", Port: 80},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{Name: "custom-neg-1", Subnet: "default"},
+			},
+		},
+	}
+	_, _ = fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings("test-ns").Create(context.TODO(), testBinding, metav1.CreateOptions{})
+	nbInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, utils.NewNamespaceIndexer())
+	_ = nbInformer.GetIndexer().Add(testBinding)
+
+	syncer := &transactionSyncer{
+		NegSyncerKey: negtypes.NegSyncerKey{
+			Namespace:      "test-ns",
+			Name:           "test-svc",
+			NEGBindingName: "test-binding",
+			NegName:        "",
+			PortTuple:      negtypes.SvcPortTuple{Port: 80},
+		},
+		networkInfo: network.NetworkInfo{IsDefault: true},
+		namer:       namer.NewNegBindingNamer("test-ns", "test-binding", nbInformer.GetIndexer()),
+	}
+
+	name, err := syncer.getNEGName("default")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "custom-neg-1" {
+		t.Errorf("expected custom-neg-1, got %q", name)
 	}
 }
