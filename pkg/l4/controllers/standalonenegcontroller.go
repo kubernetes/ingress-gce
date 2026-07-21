@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -383,6 +384,10 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		for _, a := range addrs {
 			// GCP IPv6 forwarding rules provide the IP in CIDR form (e.g. /96 range). We must extract the base IP.
 			trimmedIP := strings.Split(a, "/")[0]
+			// And make it canonical to avoid warnings from k8s apiserver
+			if ipAddr, err := netip.ParseAddr(trimmedIP); err == nil {
+				trimmedIP = ipAddr.String()
+			}
 			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: trimmedIP, IPMode: &vipMode})
 		}
 	}
