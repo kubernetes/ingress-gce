@@ -24,6 +24,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	L4StandaloneNEGServicesSyncDurationMetricName = "l4_standalone_neg_services_sync_duration_seconds"
+	L4StandaloneNEGServicesCountMetricName        = "l4_standalone_neg_services_count"
+)
+
 // L4StandaloneNEGServiceState tracks the state of an L4 Standalone NEG Service.
 type L4StandaloneNEGServiceState struct {
 	Status                      L4ServiceStatus
@@ -36,10 +41,18 @@ type L4StandaloneNEGServiceState struct {
 var (
 	l4StandaloneNEGCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "l4_standalone_neg_services_count",
+			Name: L4StandaloneNEGServicesCountMetricName,
 			Help: "Metric containing the number of L4 Standalone NEG Services that can be filtered by scheme labels and status",
 		},
 		[]string{"status", "lb_scheme_external", "lb_scheme_external_passthrough", "lb_scheme_internal"},
+	)
+	l4StandaloneNEGSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    L4StandaloneNEGServicesSyncDurationMetricName,
+			Help:    "Latency of an L4 Standalone NEG Service Sync",
+			Buckets: prometheus.ExponentialBuckets(0.5, 2, 15),
+		},
+		[]string{"sync_result"},
 	)
 )
 
@@ -76,6 +89,15 @@ func (c *Collector) StandaloneNEGServiceState(svcKey string) (L4StandaloneNEGSer
 
 	state, ok := c.l4StandaloneNEGServiceMap[svcKey]
 	return state, ok
+}
+
+// PublishL4StandaloneNEGSyncLatency exports the given sync latency datapoint for L4 Standalone NEG.
+func PublishL4StandaloneNEGSyncLatency(success bool, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4StandaloneNEGSyncLatency.WithLabelValues(status).Observe(time.Since(startTime).Seconds())
 }
 
 func (c *Collector) exportStandaloneNEG() {
