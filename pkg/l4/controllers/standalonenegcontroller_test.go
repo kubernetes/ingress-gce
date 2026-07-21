@@ -101,6 +101,120 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			},
 		},
 		{
+			desc: "GCP IPv6 forwarding rule strips /96 from IPAddress string",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-ipv6-strip",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "fr-ipv6",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"fr-ipv6": {
+					Name:                "fr-ipv6",
+					IPAddress:           "2600:1900:4000:1::/96",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{"2600:1900:4000:1::"},
+			expectError: false,
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 2600:1900:4000:1::",
+			},
+		},
+		{
+			desc: "Dual stack forwarding rules (IPv4 and IPv6)",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-dual-stack",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "fr-ipv4,fr-ipv6",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"fr-ipv4": {
+					Name:                "fr-ipv4",
+					IPAddress:           "34.1.2.3",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+				"fr-ipv6": {
+					Name:                "fr-ipv6",
+					IPAddress:           "2600:1900:4000:1::/96",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{"34.1.2.3", "2600:1900:4000:1::"},
+			expectError: false,
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 34.1.2.3, 2600:1900:4000:1::",
+			},
+		},
+		{
+			desc: "Forwarding rule with empty IPAddress does not panic on split",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-empty-ip",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "fr-empty",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"fr-empty": {
+					Name:                "fr-empty",
+					IPAddress:           "",
+					BackendService:      bsURL,
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionGA,
+				},
+			},
+			expectIPs:   []string{""},
+			expectError: false,
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: ",
+			},
+		},
+		{
 			desc: "Multiple forwarding rules, all missing, error",
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{

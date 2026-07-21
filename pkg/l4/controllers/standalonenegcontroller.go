@@ -380,7 +380,9 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 
 		addrs := frAddresses(fr)
 		for _, a := range addrs {
-			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: a, IPMode: &vipMode})
+			// GCP IPv6 forwarding rules provide the IP in CIDR form (e.g. /96 range). We must extract the base IP.
+			trimmedIP := strings.Split(a, "/")[0]
+			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: trimmedIP, IPMode: &vipMode})
 		}
 	}
 
