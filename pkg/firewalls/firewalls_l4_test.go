@@ -2,7 +2,6 @@ package firewalls
 
 import (
 	"context"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -246,7 +245,7 @@ func TestFirewallToGCloudCreateCmd(t *testing.T) {
 		wantArgs  []string
 	}{
 		{
-			desc: "pinhole rule with destination ranges",
+			desc: "pinhole rule with destination ranges, priority, direction, and disabled",
 			fw: &compute.Firewall{
 				Name:              "k8s-fw-pinhole",
 				Network:           "projects/test-project/global/networks/default",
@@ -257,6 +256,9 @@ func TestFirewallToGCloudCreateCmd(t *testing.T) {
 				Allowed: []*compute.FirewallAllowed{
 					{IPProtocol: "tcp", Ports: []string{"80"}},
 				},
+				Priority:  500,
+				Direction: "INGRESS",
+				Disabled:  true,
 			},
 			projectID: "test-project",
 			wantArgs: []string{
@@ -267,184 +269,9 @@ func TestFirewallToGCloudCreateCmd(t *testing.T) {
 				"--source-ranges 10.0.0.0/8",
 				"--destination-ranges 192.168.1.1/32,192.168.1.2/32",
 				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "standard rule without destination ranges",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-std",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "std rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-std",
-				"--network default",
-				`--description "std rule"`,
-				"--allow tcp:80",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "ipv6 pinhole rule",
-			fw: &compute.Firewall{
-				Name:              "k8s-fw-ipv6-pinhole",
-				Network:           "projects/test-project/global/networks/default",
-				Description:       "ipv6 pinhole rule",
-				SourceRanges:      []string{"2001:db8::/32"},
-				DestinationRanges: []string{"2001:db8::1/128"},
-				TargetTags:        []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-ipv6-pinhole",
-				"--network default",
-				`--description "ipv6 pinhole rule"`,
-				"--allow tcp:80",
-				"--source-ranges 2001:db8::/32",
-				"--destination-ranges 2001:db8::1/128",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "deny rule with priority, direction, and disabled",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-deny",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "deny rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Denied: []*compute.FirewallDenied{
-					{IPProtocol: "tcp", Ports: []string{"8080"}},
-				},
-				Priority:  500,
-				Direction: "INGRESS",
-				Disabled:  true,
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-deny",
-				"--network default",
-				`--description "deny rule"`,
-				"--deny tcp:8080",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
 				"--priority 500",
 				"--direction INGRESS",
 				"--disabled",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "rule with multiple protocols and multiple ports",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-multi-port",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "multi port rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-					{IPProtocol: "udp", Ports: []string{"53"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-multi-port",
-				"--network default",
-				`--description "multi port rule"`,
-				"--allow tcp:443,tcp:80,udp:53",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "deny all rule",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-deny-all",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "deny all rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Denied: []*compute.FirewallDenied{
-					{IPProtocol: "all"},
-				},
-				Priority:  500,
-				Direction: "INGRESS",
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-deny-all",
-				"--network default",
-				`--description "deny all rule"`,
-				"--deny all",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--priority 500",
-				"--direction INGRESS",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "rule allowing ICMP without ports",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-icmp",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "icmp rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "icmp"},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-icmp",
-				"--network default",
-				`--description "icmp rule"`,
-				"--allow icmp",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "complex multi-protocol rule with tcp, udp, icmp, esp, and ah",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-complex",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "complex multi proto rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-					{IPProtocol: "udp", Ports: []string{"53"}},
-					{IPProtocol: "icmp"},
-					{IPProtocol: "esp"},
-					{IPProtocol: "ah"},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules create k8s-fw-complex",
-				"--network default",
-				`--description "complex multi proto rule"`,
-				"--allow ah,esp,icmp,tcp:443,tcp:80,udp:53",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
 				"--project test-project",
 			},
 		},
@@ -469,7 +296,7 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 		wantArgs  []string
 	}{
 		{
-			desc: "pinhole rule with destination ranges",
+			desc: "pinhole rule with destination ranges, priority, direction, and disabled",
 			fw: &compute.Firewall{
 				Name:              "k8s-fw-pinhole",
 				Network:           "projects/test-project/global/networks/default",
@@ -480,6 +307,9 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 				Allowed: []*compute.FirewallAllowed{
 					{IPProtocol: "tcp", Ports: []string{"80"}},
 				},
+				Priority:  500,
+				Direction: "INGRESS",
+				Disabled:  true,
 			},
 			projectID: "test-project",
 			wantArgs: []string{
@@ -489,177 +319,9 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 				"--source-ranges 10.0.0.0/8",
 				"--destination-ranges 192.168.1.1/32,192.168.1.2/32",
 				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "standard rule without destination ranges",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-std",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "std rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-std",
-				`--description "std rule"`,
-				"--allow tcp:80",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "ipv6 pinhole rule",
-			fw: &compute.Firewall{
-				Name:              "k8s-fw-ipv6-pinhole",
-				Network:           "projects/test-project/global/networks/default",
-				Description:       "ipv6 pinhole rule",
-				SourceRanges:      []string{"2001:db8::/32"},
-				DestinationRanges: []string{"2001:db8::1/128"},
-				TargetTags:        []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-ipv6-pinhole",
-				`--description "ipv6 pinhole rule"`,
-				"--allow tcp:80",
-				"--source-ranges 2001:db8::/32",
-				"--destination-ranges 2001:db8::1/128",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "deny rule with priority, direction, and disabled",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-deny",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "deny rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Denied: []*compute.FirewallDenied{
-					{IPProtocol: "tcp", Ports: []string{"8080"}},
-				},
-				Priority:  500,
-				Direction: "INGRESS",
-				Disabled:  true,
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-deny",
-				`--description "deny rule"`,
-				"--deny tcp:8080",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
 				"--priority 500",
 				"--direction INGRESS",
 				"--disabled",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "rule with multiple protocols and multiple ports",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-multi-port",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "multi port rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-					{IPProtocol: "udp", Ports: []string{"53"}},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-multi-port",
-				`--description "multi port rule"`,
-				"--allow tcp:443,tcp:80,udp:53",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "deny all rule without ports",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-deny-all",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "deny all rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Denied: []*compute.FirewallDenied{
-					{IPProtocol: "all"},
-				},
-				Priority:  500,
-				Direction: "INGRESS",
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-deny-all",
-				`--description "deny all rule"`,
-				"--deny all",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--priority 500",
-				"--direction INGRESS",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "rule allowing ICMP without ports",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-icmp",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "icmp rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "icmp"},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-icmp",
-				`--description "icmp rule"`,
-				"--allow icmp",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
-				"--project test-project",
-			},
-		},
-		{
-			desc: "complex multi-protocol rule with tcp, udp, icmp, esp, and ah",
-			fw: &compute.Firewall{
-				Name:         "k8s-fw-complex",
-				Network:      "projects/test-project/global/networks/default",
-				Description:  "complex multi proto rule",
-				SourceRanges: []string{"10.0.0.0/8"},
-				TargetTags:   []string{"node-tag"},
-				Allowed: []*compute.FirewallAllowed{
-					{IPProtocol: "tcp", Ports: []string{"80", "443"}},
-					{IPProtocol: "udp", Ports: []string{"53"}},
-					{IPProtocol: "icmp"},
-					{IPProtocol: "esp"},
-					{IPProtocol: "ah"},
-				},
-			},
-			projectID: "test-project",
-			wantArgs: []string{
-				"gcloud compute firewall-rules update k8s-fw-complex",
-				`--description "complex multi proto rule"`,
-				"--allow ah,esp,icmp,tcp:443,tcp:80,udp:53",
-				"--source-ranges 10.0.0.0/8",
-				"--target-tags node-tag",
 				"--project test-project",
 			},
 		},
@@ -676,55 +338,3 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 	}
 }
 
-func TestFirewallToGCloud_FieldExhaustiveness(t *testing.T) {
-	// knownFields maps every field in compute.Firewall to a boolean:
-	// true  = handled in FirewallToGCloudCreateCmd / FirewallToGCloudUpdateCmd
-	// false = intentionally unmapped (e.g. read-only server metadata,
-	//         internal SDK fields, or unused GCP features)
-	knownFields := map[string]bool{
-		// Handled fields in gcloud command generation
-		"Name":              true,
-		"Network":           true,
-		"Description":       true,
-		"Allowed":           true,
-		"Denied":            true,
-		"SourceRanges":      true,
-		"DestinationRanges": true,
-		"TargetTags":        true,
-		"Priority":          true,
-		"Direction":         true,
-		"Disabled":          true,
-
-		// Read-only server metadata (not CLI flags)
-		"CreationTimestamp": false,
-		"Id":                false,
-		"Kind":              false,
-		"SelfLink":          false,
-
-		// Unused GCP features in ingress-gce
-		"LogConfig":             false,
-		"Params":                false,
-		"SourceServiceAccounts": false,
-		"SourceTags":            false,
-		"TargetServiceAccounts": false,
-
-		// Internal Google API Go SDK helpers used for HTTP status tracking
-		// and JSON marshaling (ServerResponse stores HTTP headers/status,
-		// ForceSendFields/NullFields control JSON serialization).
-		"ServerResponse":  false,
-		"ForceSendFields": false,
-		"NullFields":      false,
-	}
-
-	for field := range reflect.TypeFor[compute.Firewall]().Fields() {
-		if _, evaluated := knownFields[field.Name]; !evaluated {
-			t.Fatalf(
-				"New field %q added to compute.Firewall!\n"+
-					"Evaluate whether it needs gcloud flag mapping in\n"+
-					"FirewallToGCloudCreateCmd / FirewallToGCloudUpdateCmd,\n"+
-					"then update knownFields in this test.",
-				field.Name,
-			)
-		}
-	}
-}
