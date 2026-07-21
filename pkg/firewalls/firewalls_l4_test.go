@@ -2,6 +2,7 @@ package firewalls
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -474,5 +475,60 @@ func TestFirewallToGCloudUpdateCmd(t *testing.T) {
 				t.Errorf("%s failed:\nGot:  %q\nWant: %q", tc.desc, got, want)
 			}
 		})
+	}
+}
+
+func TestFirewallToGCloud_FieldExhaustiveness(t *testing.T) {
+	// knownFields maps every field in compute.Firewall to a boolean:
+	// true  = handled in FirewallToGCloudCreateCmd / FirewallToGCloudUpdateCmd
+	// false = intentionally unmapped (e.g. read-only server metadata,
+	//         internal SDK fields, or unused GCP features)
+	knownFields := map[string]bool{
+		// Handled fields in gcloud command generation
+		"Name":              true,
+		"Network":           true,
+		"Description":       true,
+		"Allowed":           true,
+		"Denied":            true,
+		"SourceRanges":      true,
+		"DestinationRanges": true,
+		"TargetTags":        true,
+		"Priority":          true,
+		"Direction":         true,
+		"Disabled":          true,
+
+		// Read-only server metadata (not CLI flags)
+		"CreationTimestamp": false,
+		"Id":                false,
+		"Kind":              false,
+		"SelfLink":          false,
+
+		// Unused GCP features in ingress-gce
+		"LogConfig":             false,
+		"Params":                false,
+		"SourceServiceAccounts": false,
+		"SourceTags":            false,
+		"TargetServiceAccounts": false,
+
+		// Internal Google API Go SDK helpers used for HTTP status tracking
+		// and JSON marshaling (ServerResponse stores HTTP headers/status,
+		// ForceSendFields/NullFields control JSON serialization).
+		"ServerResponse":  false,
+		"ForceSendFields": false,
+		"NullFields":      false,
+	}
+
+	tType := reflect.TypeOf(compute.Firewall{})
+	for i := 0; i < tType.NumField(); i++ {
+		fieldName := tType.Field(i).Name
+		if _, evaluated := knownFields[fieldName]; !evaluated {
+			t.Fatalf(
+				"New field %q added to compute.Firewall!\n"+
+					"Evaluate whether it needs gcloud flag mapping in\n"+
+					"FirewallToGCloudCreateCmd / FirewallToGCloudUpdateCmd,\n"+
+					"then update knownFields in this test.",
+				fieldName,
+			)
+		}
 	}
 }
