@@ -177,21 +177,62 @@ func FirewallToGCloudDeleteCmd(fwName, projectID string) string {
 }
 
 func firewallToGcloudArgs(fw *compute.Firewall, projectID string) string {
-	var allPorts []string
-	for _, a := range fw.Allowed {
-		for _, p := range a.Ports {
-			allPorts = append(allPorts, fmt.Sprintf("%v:%v", a.IPProtocol, p))
+	var args []string
+
+	args = append(args, fmt.Sprintf("--description %q", fw.Description))
+
+	if len(fw.Allowed) > 0 {
+		var allPorts []string
+		for _, a := range fw.Allowed {
+			for _, p := range a.Ports {
+				allPorts = append(allPorts, fmt.Sprintf("%v:%v", a.IPProtocol, p))
+			}
 		}
+		sort.Strings(allPorts)
+		args = append(args, fmt.Sprintf("--allow %v", strings.Join(allPorts, ",")))
 	}
 
-	// Sort all slices to prevent the event from being duped
-	sort.Strings(allPorts)
-	allow := strings.Join(allPorts, ",")
-	sort.Strings(fw.SourceRanges)
-	srcRngs := strings.Join(fw.SourceRanges, ",")
-	sort.Strings(fw.TargetTags)
-	targets := strings.Join(fw.TargetTags, ",")
-	return fmt.Sprintf("--description %q --allow %v --source-ranges %v --target-tags %v --project %v", fw.Description, allow, srcRngs, targets, projectID)
+	if len(fw.Denied) > 0 {
+		var denyPorts []string
+		for _, d := range fw.Denied {
+			for _, p := range d.Ports {
+				denyPorts = append(denyPorts, fmt.Sprintf("%v:%v", d.IPProtocol, p))
+			}
+		}
+		sort.Strings(denyPorts)
+		args = append(args, fmt.Sprintf("--deny %v", strings.Join(denyPorts, ",")))
+	}
+
+	if len(fw.SourceRanges) > 0 {
+		sort.Strings(fw.SourceRanges)
+		args = append(args, fmt.Sprintf("--source-ranges %v", strings.Join(fw.SourceRanges, ",")))
+	}
+
+	if len(fw.DestinationRanges) > 0 {
+		sort.Strings(fw.DestinationRanges)
+		args = append(args, fmt.Sprintf("--destination-ranges %v", strings.Join(fw.DestinationRanges, ",")))
+	}
+
+	if len(fw.TargetTags) > 0 {
+		sort.Strings(fw.TargetTags)
+		args = append(args, fmt.Sprintf("--target-tags %v", strings.Join(fw.TargetTags, ",")))
+	}
+
+	if fw.Priority != 0 {
+		args = append(args, fmt.Sprintf("--priority %v", fw.Priority))
+	}
+
+	if fw.Direction != "" {
+		args = append(args, fmt.Sprintf("--direction %v", fw.Direction))
+	}
+
+	if fw.Disabled {
+		args = append(args, "--disabled")
+	}
+
+	args = append(args, fmt.Sprintf("--project %v", projectID))
+
+	return strings.Join(args, " ")
 }
 
 // Take a GCE instance 'hostname' and break it down to something that can be fed

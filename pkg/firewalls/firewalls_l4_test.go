@@ -2,6 +2,7 @@ package firewalls
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"k8s.io/klog/v2"
@@ -233,5 +234,245 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, tag string) {
 		})
 	if err != nil {
 		t.Errorf("failed to create instance err=%v", err)
+	}
+}
+
+func TestFirewallToGCloudCreateCmd(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		fw        *compute.Firewall
+		projectID string
+		wantArgs  []string
+	}{
+		{
+			desc: "pinhole rule with destination ranges",
+			fw: &compute.Firewall{
+				Name:              "k8s-fw-pinhole",
+				Network:           "projects/test-project/global/networks/default",
+				Description:       "pinhole rule",
+				SourceRanges:      []string{"10.0.0.0/8"},
+				DestinationRanges: []string{"192.168.1.2/32", "192.168.1.1/32"},
+				TargetTags:        []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules create k8s-fw-pinhole",
+				"--network default",
+				`--description "pinhole rule"`,
+				"--allow tcp:80",
+				"--source-ranges 10.0.0.0/8",
+				"--destination-ranges 192.168.1.1/32,192.168.1.2/32",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "standard rule without destination ranges",
+			fw: &compute.Firewall{
+				Name:         "k8s-fw-std",
+				Network:      "projects/test-project/global/networks/default",
+				Description:  "std rule",
+				SourceRanges: []string{"10.0.0.0/8"},
+				TargetTags:   []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules create k8s-fw-std",
+				"--network default",
+				`--description "std rule"`,
+				"--allow tcp:80",
+				"--source-ranges 10.0.0.0/8",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "ipv6 pinhole rule",
+			fw: &compute.Firewall{
+				Name:              "k8s-fw-ipv6-pinhole",
+				Network:           "projects/test-project/global/networks/default",
+				Description:       "ipv6 pinhole rule",
+				SourceRanges:      []string{"2001:db8::/32"},
+				DestinationRanges: []string{"2001:db8::1/128"},
+				TargetTags:        []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules create k8s-fw-ipv6-pinhole",
+				"--network default",
+				`--description "ipv6 pinhole rule"`,
+				"--allow tcp:80",
+				"--source-ranges 2001:db8::/32",
+				"--destination-ranges 2001:db8::1/128",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "deny rule with priority, direction, and disabled",
+			fw: &compute.Firewall{
+				Name:         "k8s-fw-deny",
+				Network:      "projects/test-project/global/networks/default",
+				Description:  "deny rule",
+				SourceRanges: []string{"10.0.0.0/8"},
+				TargetTags:   []string{"node-tag"},
+				Denied: []*compute.FirewallDenied{
+					{IPProtocol: "tcp", Ports: []string{"8080"}},
+				},
+				Priority:  500,
+				Direction: "INGRESS",
+				Disabled:  true,
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules create k8s-fw-deny",
+				"--network default",
+				`--description "deny rule"`,
+				"--deny tcp:8080",
+				"--source-ranges 10.0.0.0/8",
+				"--target-tags node-tag",
+				"--priority 500",
+				"--direction INGRESS",
+				"--disabled",
+				"--project test-project",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := gce.FirewallToGCloudCreateCmd(tc.fw, tc.projectID)
+			want := strings.Join(tc.wantArgs, " ")
+			if got != want {
+				t.Errorf("%s failed:\nGot:  %q\nWant: %q", tc.desc, got, want)
+			}
+		})
+	}
+}
+
+func TestFirewallToGCloudUpdateCmd(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		fw        *compute.Firewall
+		projectID string
+		wantArgs  []string
+	}{
+		{
+			desc: "pinhole rule with destination ranges",
+			fw: &compute.Firewall{
+				Name:              "k8s-fw-pinhole",
+				Network:           "projects/test-project/global/networks/default",
+				Description:       "pinhole rule",
+				SourceRanges:      []string{"10.0.0.0/8"},
+				DestinationRanges: []string{"192.168.1.2/32", "192.168.1.1/32"},
+				TargetTags:        []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules update k8s-fw-pinhole",
+				`--description "pinhole rule"`,
+				"--allow tcp:80",
+				"--source-ranges 10.0.0.0/8",
+				"--destination-ranges 192.168.1.1/32,192.168.1.2/32",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "standard rule without destination ranges",
+			fw: &compute.Firewall{
+				Name:         "k8s-fw-std",
+				Network:      "projects/test-project/global/networks/default",
+				Description:  "std rule",
+				SourceRanges: []string{"10.0.0.0/8"},
+				TargetTags:   []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules update k8s-fw-std",
+				`--description "std rule"`,
+				"--allow tcp:80",
+				"--source-ranges 10.0.0.0/8",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "ipv6 pinhole rule",
+			fw: &compute.Firewall{
+				Name:              "k8s-fw-ipv6-pinhole",
+				Network:           "projects/test-project/global/networks/default",
+				Description:       "ipv6 pinhole rule",
+				SourceRanges:      []string{"2001:db8::/32"},
+				DestinationRanges: []string{"2001:db8::1/128"},
+				TargetTags:        []string{"node-tag"},
+				Allowed: []*compute.FirewallAllowed{
+					{IPProtocol: "tcp", Ports: []string{"80"}},
+				},
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules update k8s-fw-ipv6-pinhole",
+				`--description "ipv6 pinhole rule"`,
+				"--allow tcp:80",
+				"--source-ranges 2001:db8::/32",
+				"--destination-ranges 2001:db8::1/128",
+				"--target-tags node-tag",
+				"--project test-project",
+			},
+		},
+		{
+			desc: "deny rule with priority, direction, and disabled",
+			fw: &compute.Firewall{
+				Name:         "k8s-fw-deny",
+				Network:      "projects/test-project/global/networks/default",
+				Description:  "deny rule",
+				SourceRanges: []string{"10.0.0.0/8"},
+				TargetTags:   []string{"node-tag"},
+				Denied: []*compute.FirewallDenied{
+					{IPProtocol: "tcp", Ports: []string{"8080"}},
+				},
+				Priority:  500,
+				Direction: "INGRESS",
+				Disabled:  true,
+			},
+			projectID: "test-project",
+			wantArgs: []string{
+				"gcloud compute firewall-rules update k8s-fw-deny",
+				`--description "deny rule"`,
+				"--deny tcp:8080",
+				"--source-ranges 10.0.0.0/8",
+				"--target-tags node-tag",
+				"--priority 500",
+				"--direction INGRESS",
+				"--disabled",
+				"--project test-project",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := gce.FirewallToGCloudUpdateCmd(tc.fw, tc.projectID)
+			want := strings.Join(tc.wantArgs, " ")
+			if got != want {
+				t.Errorf("%s failed:\nGot:  %q\nWant: %q", tc.desc, got, want)
+			}
+		})
 	}
 }
