@@ -80,8 +80,10 @@ func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink,
 	env := &translator.Env{VIP: ip, Network: l7.cloud.NetworkURL(), Subnetwork: l7.cloud.SubnetworkURL()}
 	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet)
 
+	fr.AllowGlobalAccess = utils.IsGCEL7ILBIngressGlobalAccessEnabled(&l7.ingress)
+	
 	existing, _ = composite.GetForwardingRule(l7.cloud, key, version, l7.logger)
-	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
+	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange || existing.AllowGlobalAccess != fr.AllowGlobalAccess) {
 		l7.logger.Info("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			"existingIp", existing.IPAddress, "existingPortRange", existing.PortRange,
 			"targetIp", fr.IPAddress, "targetPortRange", fr.PortRange)
