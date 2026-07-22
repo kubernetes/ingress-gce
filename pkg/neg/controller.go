@@ -486,29 +486,33 @@ func (c *Controller) stop() {
 }
 
 func (c *Controller) endpointWorker() {
-	for {
-		func() {
-			key, quit := c.endpointQueue.Get()
-			if quit {
-				return
-			}
-			c.processEndpoint(key.(string))
-			c.endpointQueue.Done(key)
-		}()
+	for c.processNextEndpointWorkItem() {
 	}
 }
 
-func (c *Controller) nodeWorker() {
-	for {
-		func() {
-			key, quit := c.nodeQueue.Get()
-			if quit {
-				return
-			}
-			c.processNode()
-			c.nodeQueue.Done(key)
-		}()
+func (c *Controller) processNextEndpointWorkItem() bool {
+	key, quit := c.endpointQueue.Get()
+	if quit {
+		return false
 	}
+	defer c.endpointQueue.Done(key)
+	c.processEndpoint(key.(string))
+	return true
+}
+
+func (c *Controller) nodeWorker() {
+	for c.processNextNodeWorkItem() {
+	}
+}
+
+func (c *Controller) processNextNodeWorkItem() bool {
+	key, quit := c.nodeQueue.Get()
+	if quit {
+		return false
+	}
+	defer c.nodeQueue.Done(key)
+	c.processNode()
+	return true
 }
 
 // processNode finds the related syncers and signal it to sync
@@ -549,18 +553,20 @@ func (c *Controller) processEndpoint(key string) {
 }
 
 func (c *Controller) serviceWorker() {
-	for {
-		func() {
-			key, quit := c.serviceQueue.Get()
-			if quit {
-				return
-			}
-			defer c.serviceQueue.Done(key)
-			err := c.processService(key.(string))
-			c.handleErr(err, key)
-			c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
-		}()
+	for c.processNextServiceWorkItem() {
 	}
+}
+
+func (c *Controller) processNextServiceWorkItem() bool {
+	key, quit := c.serviceQueue.Get()
+	if quit {
+		return false
+	}
+	defer c.serviceQueue.Done(key)
+	err := c.processService(key.(string))
+	c.handleErr(err, key)
+	c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
+	return true
 }
 
 // processService takes a service and determines whether it needs NEGs or not.
@@ -646,21 +652,23 @@ func (c *Controller) processService(key string) error {
 }
 
 func (c *Controller) nodeTopologyWorker() {
-	for {
-		func() {
-			key, quit := c.nodeTopologyQueue.Get()
-			if quit {
-				return
-			}
-			c.processNodeTopology()
-			// Node Topology CR is a cluster-wide resource, so the key will
-			// always be the same.
-			// Done() ensures that if the item is updated while it is being
-			// process, it will be re-added to the queue for re-processing,
-			// so we won't miss any updates.
-			c.nodeTopologyQueue.Done(key)
-		}()
+	for c.processNextNodeTopologyWorkItem() {
 	}
+}
+
+func (c *Controller) processNextNodeTopologyWorkItem() bool {
+	key, quit := c.nodeTopologyQueue.Get()
+	if quit {
+		return false
+	}
+	// Node Topology CR is a cluster-wide resource, so the key will
+	// always be the same.
+	// Done() ensures that if the item is updated while it is being
+	// process, it will be re-added to the queue for re-processing,
+	// so we won't miss any updates.
+	defer c.nodeTopologyQueue.Done(key)
+	c.processNodeTopology()
+	return true
 }
 
 // processNodeTopology signals all syncers to sync
