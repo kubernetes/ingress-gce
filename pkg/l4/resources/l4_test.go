@@ -3439,3 +3439,50 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureInternalLoadBalancerIPCollectionError(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4ILBService(false, 8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4Params := &L4ILBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4 := NewL4Handler(l4Params, klog.TODO())
+
+	if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Expected no error for conflicting annotations, but got %v", result.Error)
+	}
+
+	fakeRecorder := l4.recorder.(*record.FakeRecorder)
+	warningFound := false
+	for len(fakeRecorder.Events) > 0 {
+		event := <-fakeRecorder.Events
+		if strings.Contains(event, "Warning IPCollectionV6Error") {
+			warningFound = true
+			break
+		}
+	}
+	if !warningFound {
+		t.Errorf("Expected IPCollectionV6Error warning event, but got none")
+	}
+}

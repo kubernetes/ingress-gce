@@ -424,6 +424,12 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	l4.network = *svcNetwork
 
+	// Check if ip-collection is specified for IPv4 service
+	if flags.F.EnableBYOIPv6 && annotations.FromService(svc).GetIPCollectionV6() != "" && l4utils.NeedsIPv4(svc) {
+		err := fmt.Errorf("%s is currently only supported for IPv6-only Services", annotations.IPCollectionV6AnnotationKey)
+		l4.recorder.Event(l4.Service, corev1.EventTypeWarning, "IPCollectionV6Error", err.Error())
+	}
+
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with Internal IPv6 ranges is used.
 	if l4.enableDualStack && l4utils.NeedsIPv6(l4.Service) {
 		err := l4.serviceSubnetHasInternalIPv6Range()
@@ -494,6 +500,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var ipv6AddressName string
 	if l4.enableDualStack && l4utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
+
 		ipv6AddrToUse, ipv6AddressName, err = address.IPv6ToUse(l4.cloud, l4.Service, existingIPv6FR, subnetworkURL, l4.svcLogger)
 		if err != nil {
 			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: address.IPv6ToUse returned error: %w", err)
