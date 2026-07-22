@@ -192,7 +192,7 @@ func (c *Controller) Run() {
 		c.svcAttachmentQueue.ShutDown()
 	}()
 
-	go wait.Until(func() { c.serviceAttachmentWorker(c.stopCh) }, time.Second, c.stopCh)
+	go wait.Until(c.serviceAttachmentWorker, time.Second, c.stopCh)
 
 	go func() {
 		// Wait a GC period before starting to ensure that resources have enough time to sync
@@ -206,25 +206,20 @@ func (c *Controller) Run() {
 
 // serviceAttachmentWorker keeps processing service attachment keys in the queue
 // until stopChan has been signaled
-func (c *Controller) serviceAttachmentWorker(stopChan <-chan struct{}) {
-	processKey := func() {
-		key, quit := c.svcAttachmentQueue.Get()
-		if quit {
-			return
-		}
-		defer c.svcAttachmentQueue.Done(key)
-		err := c.processServiceAttachment(key.(string))
-		c.handleErr(err, key)
+func (c *Controller) serviceAttachmentWorker() {
+	for c.processNextServiceAttachmentWorkItem() {
 	}
+}
 
-	for {
-		select {
-		case <-stopChan:
-			return
-		default:
-			processKey()
-		}
+func (c *Controller) processNextServiceAttachmentWorkItem() bool {
+	key, quit := c.svcAttachmentQueue.Get()
+	if quit {
+		return false
 	}
+	defer c.svcAttachmentQueue.Done(key)
+	err := c.processServiceAttachment(key.(string))
+	c.handleErr(err, key)
+	return true
 }
 
 // handleErr will check for an error and report it as an event on the provided
