@@ -179,10 +179,14 @@ func NewController(ctx *context.ControllerContext, stopCh <-chan struct{}, logge
 // Run waits for the initial sync and will process keys in the queue and run GC
 // until signaled
 func (c *Controller) Run() {
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+	// An error means stopCh was closed while waiting; proceed anyway since the
+	// workers below exit immediately and the deferred cleanup still runs.
+	if err := wait.PollUntilContextCancel(wait.ContextForChannel(c.stopCh), 5*time.Second, false, func(context2.Context) (bool, error) {
 		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
-	}, c.stopCh)
+	}); err != nil {
+		c.logger.Error(err, "Stopped waiting for initial sync")
+	}
 
 	c.logger.V(2).Info("Starting private service connect controller")
 	activecontrollermetrics.RecordRunningController(activecontrollermetrics.PSCControllerLabel)

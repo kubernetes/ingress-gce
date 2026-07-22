@@ -135,10 +135,14 @@ func NewController(ctx *ControllerContext, logger klog.Logger) *Controller {
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+	// An error means stopCh was closed while waiting; proceed anyway since the
+	// workers below exit immediately and the deferred cleanup still runs.
+	if err := wait.PollUntilContextCancel(wait.ContextForChannel(stopCh), 5*time.Second, false, func(context.Context) (bool, error) {
 		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
-	}, stopCh)
+	}); err != nil {
+		c.logger.Error(err, "Stopped waiting for initial sync")
+	}
 
 	c.logger.V(2).Info("Starting workload controller")
 	defer func() {
