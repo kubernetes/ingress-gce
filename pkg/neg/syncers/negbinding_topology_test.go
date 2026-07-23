@@ -528,3 +528,65 @@ func TestNEGBindingTopologyProviderConflict(t *testing.T) {
 		t.Errorf("neg-new should not be owned, got owned by %q", registry.GetOwner("neg-new"))
 	}
 }
+
+func TestNEGBindingTopologyProviderDeletion(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+	defaultSubnetURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet"
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	informer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer())
+	negBindingLister := informer.GetIndexer()
+
+	registry := newMockRegistry()
+	ownerKey := fmt.Sprintf("%s/%s", namespace, name)
+	p, err := NewNEGBindingTopologyProvider(namespace, name, negBindingLister, defaultSubnetURL, registry)
+	if err != nil {
+		t.Fatalf("NewNEGBindingTopologyProvider() failed unexpectedly: %v", err)
+	}
+
+	registry.Acquire("neg-1", ownerKey)
+	now := metav1.Now()
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:         namespace,
+			Name:              name,
+			DeletionTimestamp: &now,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-1",
+					Subnet: "subnet-1",
+					Zones:  []string{"zone-a"},
+				},
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/test-project/zones/zone-a/networkEndpointGroups/neg-1",
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+				},
+			},
+		},
+	}
+	negBindingLister.Add(binding)
+
+	zones, err := p.ListZonesPerSubnet(zonegetter.AllNodesFilter, network.NetworkInfo{IsDefault: true}, klog.TODO())
+	if err != nil {
+		t.Fatalf("ListZonesPerSubnet() returned error: %v", err)
+	}
+	if len(zones) != 0 {
+		t.Errorf("Expected 0 zones when DeletionTimestamp is set, got %v", zones)
+	}
+
+	subnets := p.ListSubnetsInDefaultNetwork(klog.TODO())
+	if len(subnets) != 1 || subnets[0].Name != "subnet-1" {
+		t.Errorf("Expected subnet-1 from status in ListSubnetsInDefaultNetwork, got %v", subnets)
+	}
+
+	if registry.GetOwner("neg-1") != ownerKey {
+		t.Errorf("neg-1 in status should remain owned during draining, got %q", registry.GetOwner("neg-1"))
+	}
+}

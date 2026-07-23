@@ -98,6 +98,13 @@ func (p *NEGBindingTopologyProvider) acquireSpecNEGRefs(binding *negbindingv1bet
 		keepNEGs.Insert(negName)
 	}
 
+	ownerKey := fmt.Sprintf("%s/%s", p.namespace, p.negBindingName)
+	if binding.DeletionTimestamp != nil {
+		// Don't acquire any new NEGs if cleanup in progress
+		p.registry.ReleaseAllOwnedExcept(ownerKey, keepNEGs)
+		return nil
+	}
+
 	desiredSpecNEGs := sets.New[string]()
 	for _, ref := range binding.Spec.NetworkEndpointGroups {
 		if negName, ok := statusNEGNamesPerSubnet[ref.Subnet]; ok && negName != ref.Name {
@@ -107,7 +114,6 @@ func (p *NEGBindingTopologyProvider) acquireSpecNEGRefs(binding *negbindingv1bet
 		keepNEGs.Insert(ref.Name)
 	}
 
-	ownerKey := fmt.Sprintf("%s/%s", p.namespace, p.negBindingName)
 	p.registry.ReleaseAllOwnedExcept(ownerKey, keepNEGs)
 
 	var acquiredRefs []negbindingv1beta1.SpecNegRef
