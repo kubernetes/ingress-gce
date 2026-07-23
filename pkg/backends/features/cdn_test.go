@@ -31,9 +31,11 @@ import (
 )
 
 var (
-	cacheAllStatic   string = "CACHE_ALL_STATIC"
-	useOriginHeaders string = "USE_ORIGIN_HEADERS"
-	forceCacheAll    string = "FORCE_CACHE_ALL"
+	cacheAllStatic           string = "CACHE_ALL_STATIC"
+	useOriginHeaders         string = "USE_ORIGIN_HEADERS"
+	forceCacheAll            string = "FORCE_CACHE_ALL"
+	compressionModeAutomatic string = "AUTOMATIC"
+	compressionModeDisabled  string = "DISABLED"
 )
 
 func init() {
@@ -244,12 +246,14 @@ func TestEnsureCDN(t *testing.T) {
 								{HeaderName: "header"},
 							},
 							SignedUrlCacheMaxAgeSec: createInt64(3600),
+							CompressionMode:         &compressionModeDisabled,
 						},
 					},
 				},
 			},
 			be: &composite.BackendService{
-				EnableCDN: true,
+				EnableCDN:       true,
+				CompressionMode: compressionModeAutomatic,
 				CdnPolicy: &composite.BackendServiceCdnPolicy{
 					CacheKeyPolicy: &composite.CacheKeyPolicy{
 						IncludeHost:          true,
@@ -277,7 +281,8 @@ func TestEnsureCDN(t *testing.T) {
 			},
 			updateExpected: false,
 			beAfter: &composite.BackendService{
-				EnableCDN: true,
+				EnableCDN:       true,
+				CompressionMode: compressionModeAutomatic,
 				CdnPolicy: &composite.BackendServiceCdnPolicy{
 					CacheKeyPolicy: &composite.CacheKeyPolicy{
 						IncludeHost:          true,
@@ -363,6 +368,7 @@ func TestEnsureCDN(t *testing.T) {
 				cdn.ServeWhileStale = createInt64(defCdn.ServeWhileStale)
 				cdn.RequestCoalescing = createBool(defCdn.RequestCoalescing)
 				cdn.SignedUrlCacheMaxAgeSec = createInt64(defCdn.SignedUrlCacheMaxAgeSec)
+				cdn.CompressionMode = &defaultCompressionMode
 			}).build(),
 			be:             newDefaultBackendService().build(),
 			updateExpected: false,
