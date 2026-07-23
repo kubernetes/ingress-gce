@@ -1171,3 +1171,64 @@ func TestRestartScenarioNoService(t *testing.T) {
 		t.Errorf("Expected NEG 'neg-1' to be owned by %s after ensuring syncer, got %s", bindingKey, owner)
 	}
 }
+
+func TestNEGBindingManagerDeletionNoAcquireReleased(t *testing.T) {
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	namespace := "test-ns"
+	bindingName := "deleting-binding"
+	now := metav1.Now()
+
+	deletingBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:         namespace,
+			Name:              bindingName,
+			DeletionTimestamp: &now,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: "test-svc",
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-released",
+					Subnet: "default",
+				},
+			},
+		},
+	}
+
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+		ServiceKeyIndex:      ServiceKeyIndexFunc,
+	}
+	negBindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
+	negBindingLister.Add(deletingBinding)
+
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		klog.TODO(),
+	)
+
+	m.tryAssignReleasedNEGs([]string{"neg-released"})
+
+	owner := m.ownershipRegistry.GetOwner("neg-released")
+	if owner != "" {
+		t.Errorf("Expected released NEG 'neg-released' not to be acquired by deleting binding, got owner %s", owner)
+	}
+}

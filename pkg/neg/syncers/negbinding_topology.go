@@ -79,6 +79,9 @@ func (p *NEGBindingTopologyProvider) getBinding() (*negbindingv1beta1.NetworkEnd
 
 // getOwnedSpecNEGRefs returns owned NEG Refs subset of NEGBinding.Spec.
 func (p *NEGBindingTopologyProvider) getOwnedSpecNEGRefs(binding *negbindingv1beta1.NetworkEndpointGroupBinding, logger klog.Logger) []negbindingv1beta1.SpecNegRef {
+	if binding.DeletionTimestamp != nil {
+		return nil
+	}
 	ownerKey := fmt.Sprintf("%s/%s", p.namespace, p.negBindingName)
 
 	var acquiredRefs []negbindingv1beta1.SpecNegRef
@@ -168,6 +171,10 @@ func (p *NEGBindingTopologyProvider) ListZonesPerSubnet(_ zonegetter.Filter, net
 	binding, err := p.getBinding()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get NegBinding from store: %w", err)
+	}
+
+	if binding.DeletionTimestamp != nil {
+		return make(shared.ZonesPerSubnetMap), nil
 	}
 
 	zonesPerSubnet := make(shared.ZonesPerSubnetMap)

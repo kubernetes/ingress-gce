@@ -864,6 +864,9 @@ func (m *negBindingManager) tryAssignReleasedNEGs(negNames []string) {
 		if !ok {
 			continue
 		}
+		if binding.DeletionTimestamp != nil {
+			continue
+		}
 
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 		subnetsInStatus := sets.New[string]()
@@ -927,17 +930,19 @@ func (m *negBindingManager) acquireNEGsForBinding(binding *negbindingv1beta1.Net
 		subnetsInStatus.Insert(subnetID.Key.Name)
 	}
 
-	for _, specRef := range binding.Spec.NetworkEndpointGroups {
-		if subnetsInStatus.Has(specRef.Subnet) {
-			continue
-		}
+	if binding.DeletionTimestamp == nil {
+		for _, specRef := range binding.Spec.NetworkEndpointGroups {
+			if subnetsInStatus.Has(specRef.Subnet) {
+				continue
+			}
 
-		acquired, currentOwner := m.ownershipRegistry.Acquire(specRef.Name, bindingKey)
-		if acquired {
-			acquiredNEGs.Insert(specRef.Name)
-			m.logger.Info("Acquired NEG ownership from spec", "negName", specRef.Name, "owner", bindingKey)
-		} else {
-			m.logger.Info("Conflict acquiring NEG ownership from spec", "negName", specRef.Name, "attemptedOwner", bindingKey, "currentOwner", currentOwner)
+			acquired, currentOwner := m.ownershipRegistry.Acquire(specRef.Name, bindingKey)
+			if acquired {
+				acquiredNEGs.Insert(specRef.Name)
+				m.logger.Info("Acquired NEG ownership from spec", "negName", specRef.Name, "owner", bindingKey)
+			} else {
+				m.logger.Info("Conflict acquiring NEG ownership from spec", "negName", specRef.Name, "attemptedOwner", bindingKey, "currentOwner", currentOwner)
+			}
 		}
 	}
 
