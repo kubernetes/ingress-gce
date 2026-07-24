@@ -451,14 +451,19 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				tc.networkInfo.NetworkURL = fakeCloud.NetworkURL()
 				tc.networkInfo.SubnetworkURL = fakeCloud.SubnetworkURL()
 			}
+			expectedNegDesc := utils.StandardNEGDescription{
+				ClusterUID:  testKubesystemUID,
+				Namespace:   testServiceNameSpace,
+				ServiceName: testServiceName,
+				Port:        testPort,
+			}
 			_, err := ensureNetworkEndpointGroup(
 				testServiceNameSpace,
 				testServiceName,
 				tc.negName,
 				testZone,
 				testNamedPort,
-				testKubesystemUID,
-				testPort,
+				expectedNegDesc,
 				tc.networkEndpointType,
 				fakeCloud,
 				nil,
@@ -494,13 +499,6 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				t.Errorf("Unexpected Network, expecting %q but got %q", tc.expectedNetwork, neg.Network)
 			}
 
-			expectedNegDesc := utils.StandardNEGDescription{
-				ClusterUID:  testKubesystemUID,
-				Namespace:   testServiceNamespace,
-				ServiceName: testServiceName,
-				Port:        testPort,
-			}
-
 			actualNegDesc, err := utils.NEGDescriptionFromString[utils.StandardNEGDescription](neg.Description)
 			if err != nil {
 				t.Errorf("Invalid neg description: %s", err)
@@ -517,8 +515,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				tc.negName,
 				testZone,
 				testNamedPort,
-				testKubesystemUID,
-				testPort,
+				expectedNegDesc,
 				tc.networkEndpointType,
 				fakeCloud,
 				nil,
@@ -1902,14 +1899,19 @@ func TestNameUniqueness(t *testing.T) {
 		}
 	)
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	expectedNegDesc := utils.StandardNEGDescription{
+		ClusterUID:  testKubesystemUID,
+		Namespace:   testServiceNameSpace,
+		ServiceName: testServiceName,
+		Port:        testPort,
+	}
 	_, err := ensureNetworkEndpointGroup(
 		testServiceNameSpace,
 		testServiceName,
 		negName,
 		testZone,
 		testNamedPort,
-		testKubesystemUID,
-		testPort,
+		expectedNegDesc,
 		networkEndpointType,
 		fakeCloud,
 		nil,
@@ -1934,6 +1936,12 @@ func TestNameUniqueness(t *testing.T) {
 		t.Errorf("Failed to find neg")
 	}
 
+	expectedNegDesc2 := utils.StandardNEGDescription{
+		ClusterUID:  testKubesystemUID,
+		Namespace:   testServiceNameSpace,
+		ServiceName: testServiceName2,
+		Port:        testPort,
+	}
 	// Call ensureNetworkEndpointGroup with the same NEG name and different service name
 	_, err = ensureNetworkEndpointGroup(
 		testServiceNameSpace,
@@ -1941,8 +1949,7 @@ func TestNameUniqueness(t *testing.T) {
 		negName,
 		testZone,
 		testNamedPort,
-		testKubesystemUID,
-		testPort,
+		expectedNegDesc2,
 		networkEndpointType,
 		fakeCloud,
 		nil,
@@ -1984,14 +1991,19 @@ func TestNegObjectCrd(t *testing.T) {
 		negtypes.NonGCPPrivateEndpointType,
 	} {
 		fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+		expectedNegDesc := utils.StandardNEGDescription{
+			ClusterUID:  testKubesystemUID,
+			Namespace:   testServiceNameSpace,
+			ServiceName: testServiceName,
+			Port:        testPort,
+		}
 		negObj, err := ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
 			negName,
 			testZone,
 			testNamedPort,
-			testKubesystemUID,
-			testPort,
+			expectedNegDesc,
 			networkEndpointType,
 			fakeCloud,
 			nil,
@@ -2026,8 +2038,7 @@ func TestNegObjectCrd(t *testing.T) {
 			negName,
 			testZone,
 			testNamedPort,
-			testKubesystemUID,
-			testPort,
+			expectedNegDesc,
 			networkEndpointType,
 			fakeCloud,
 			nil,
@@ -2192,6 +2203,12 @@ func TestNEGRecreate(t *testing.T) {
 			Description:         tc.negDescription,
 		}, testZone, klog.TODO())
 
+		expectedNegDesc := utils.StandardNEGDescription{
+			ClusterUID:  testKubesystemUID,
+			Namespace:   testServiceNameSpace,
+			ServiceName: testServiceName,
+			Port:        testPort,
+		}
 		// Ensure with the correct network and subnet
 		_, err := ensureNetworkEndpointGroup(
 			testServiceNameSpace,
@@ -2199,8 +2216,7 @@ func TestNEGRecreate(t *testing.T) {
 			negName,
 			testZone,
 			testNamedPort,
-			testKubesystemUID,
-			testPort,
+			expectedNegDesc,
 			tc.negType,
 			fakeCloud,
 			nil,
@@ -2266,6 +2282,12 @@ func TestEnsureNetworkEndpointGroupManageLifecycle(t *testing.T) {
 		t.Run(fmt.Sprintf("manageLifecycle=%v", tc.manageLifecycle), func(t *testing.T) {
 			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
+			expectedNegDesc := utils.StandardNEGDescription{
+				ClusterUID:  testKubesystemUID,
+				Namespace:   testServiceNameSpace,
+				ServiceName: testServiceName,
+				Port:        testPort,
+			}
 			// If there is no NEG in location it is expected to be for manageLifecycle=true it should create it
 			// and complete without any errors. Otherwise should return not found error.
 			_, err := ensureNetworkEndpointGroup(
@@ -2274,8 +2296,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycle(t *testing.T) {
 				negName,
 				testZone,
 				testNamedPort,
-				testKubesystemUID,
-				testPort,
+				expectedNegDesc,
 				negtypes.VmIpPortEndpointType,
 				fakeCloud,
 				nil,
@@ -2367,6 +2388,12 @@ func TestEnsureNetworkEndpointGroupManageLifecycleNetSubnetMismatch(t *testing.T
 				Description:         matchingNegDesc,
 			}, testZone, klog.TODO())
 
+			expectedNegDesc := utils.StandardNEGDescription{
+				ClusterUID:  testKubesystemUID,
+				Namespace:   testServiceNameSpace,
+				ServiceName: testServiceName,
+				Port:        testPort,
+			}
 			// Call ensureNetworkEndpointGroup with the correct networkInfo (testNetwork/testSubnetwork)
 			_, err := ensureNetworkEndpointGroup(
 				testServiceNameSpace,
@@ -2374,8 +2401,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycleNetSubnetMismatch(t *testing.T
 				negName,
 				testZone,
 				testNamedPort,
-				testKubesystemUID,
-				testPort,
+				expectedNegDesc,
 				negtypes.VmIpPortEndpointType,
 				fakeCloud,
 				nil,

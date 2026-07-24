@@ -124,7 +124,7 @@ func getService(serviceLister cache.Indexer, namespace, name string, logger klog
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName, manageLifecycle bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (*composite.NetworkEndpointGroup, error) {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, expectedDesc utils.NEGDescription, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName, manageLifecycle bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics) (*composite.NetworkEndpointGroup, error) {
 	negLogger := logger.WithValues("negName", negName, "zone", zone)
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version, logger)
 	if err != nil {
@@ -140,12 +140,6 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	if neg == nil {
 		needToCreate = true
 	} else {
-		expectedDesc := utils.StandardNEGDescription{
-			ClusterUID:  kubeSystemUID,
-			Namespace:   svcNamespace,
-			ServiceName: svcName,
-			Port:        port,
-		}
 		if customName && neg.Description == "" {
 			negLogger.Error(nil, "Found Neg with custom name but empty description")
 			return nil, fmt.Errorf("found a custom named neg %s with an empty description", negName)
@@ -197,14 +191,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			subnetwork = networkInfo.SubnetworkURL
 		}
 		negLogger.Info("Creating NEG", "negServicePortName", negServicePortName, "network", networkInfo.NetworkURL, "subnetwork", subnetwork)
-		desc := ""
-		negDesc := utils.StandardNEGDescription{
-			ClusterUID:  kubeSystemUID,
-			Namespace:   svcNamespace,
-			ServiceName: svcName,
-			Port:        port,
-		}
-		desc = negDesc.String()
+		desc := expectedDesc.String()
 
 		err = cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             version,
