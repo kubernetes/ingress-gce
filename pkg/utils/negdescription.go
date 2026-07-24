@@ -26,6 +26,12 @@ import (
 
 var ErrNEGUsedByAnotherSyncer = errors.New("NEG is used by another syncer in the same cluster and namespace")
 
+// NEGDescription provides an interface for serializing and verifying NEG descriptions.
+type NEGDescription interface {
+	String() string
+	MatchesString(descString, negName, zone string) (bool, error)
+}
+
 // Description stores the description for a BackendService.
 type StandardNEGDescription struct {
 	ClusterUID  string `json:"cluster-uid,omitempty"`
@@ -44,23 +50,13 @@ func (desc StandardNEGDescription) String() string {
 	return string(descJson)
 }
 
-// DescriptionFromString gets a Description from string,
-func StandardNEGDescriptionFromString(descString string) (*StandardNEGDescription, error) {
-	var desc StandardNEGDescription
-	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
-		klog.Errorf("Failed to parse neg description: %s, falling back to empty list", descString)
-		return &StandardNEGDescription{}, err
-	}
-	return &desc, nil
-}
-
-// VerifyDescription returns whether the provided descString fields match Neg Description expectDesc.
-// If an empty string or malformed description is provided, VerifyDescription will return true.
+// MatchesString returns whether the provided descString fields match description's fields.
+// If an empty string or malformed description is provided, MatchesString will return true.
 // When returning false, a detailed error will also be returned
-func VerifyDescription(expectDesc StandardNEGDescription, descString, negName, zone string) (bool, error) {
+func (expectDesc StandardNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
 	// Return true if description string is empty
 	if descString != "" {
-		desc, err := StandardNEGDescriptionFromString(descString)
+		desc, err := NEGDescriptionFromString[StandardNEGDescription](descString)
 		if err != nil {
 			klog.Warningf("Error unmarshalling Neg Description %s err:%s", negName, err)
 		} else {
@@ -82,4 +78,14 @@ func VerifyDescription(expectDesc StandardNEGDescription, descString, negName, z
 		}
 	}
 	return true, nil
+}
+
+// NEGDescriptionFromString parses string into NEG description structs
+func NEGDescriptionFromString[T NEGDescription](descString string) (*T, error) {
+	var desc T
+	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
+		klog.Errorf("Failed to parse neg description: %s, falling back to empty %T", descString, desc)
+		return &desc, err
+	}
+	return &desc, nil
 }

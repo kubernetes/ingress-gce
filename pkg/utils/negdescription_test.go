@@ -24,7 +24,7 @@ import (
 func TestNegString(t *testing.T) {
 	testCases := []struct {
 		desc           string
-		description    StandardNEGDescription
+		description    NEGDescription
 		expectedString string
 	}{
 		{
@@ -52,7 +52,7 @@ func TestNegString(t *testing.T) {
 	}
 }
 
-func TestStandardNEGDescriptionFromString(t *testing.T) {
+func TestNEGDescriptionFromString(t *testing.T) {
 	testCases := []struct {
 		desc         string
 		negDesc      string
@@ -92,7 +92,7 @@ func TestStandardNEGDescriptionFromString(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		description, err := StandardNEGDescriptionFromString(tc.negDesc)
+		description, err := NEGDescriptionFromString[StandardNEGDescription](tc.negDesc)
 		if err != nil && !tc.expectError {
 			t.Errorf("%s: NegDescriptionFromString(%s) resulted in error: %s", tc.desc, tc.negDesc, err)
 		}
@@ -113,7 +113,7 @@ func TestVerifyDescription(t *testing.T) {
 	testCases := []struct {
 		desc          string
 		negDescString string
-		expectNegDesc StandardNEGDescription
+		expectNegDesc NEGDescription
 		shouldMatch   bool
 	}{
 		{
@@ -185,7 +185,7 @@ func TestVerifyDescription(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		matches, err := VerifyDescription(tc.expectNegDesc, tc.negDescString, "my-neg", "zone")
+		matches, err := tc.expectNegDesc.MatchesString(tc.negDescString, "my-neg", "zone")
 		if tc.shouldMatch && err != nil {
 			t.Errorf("%s: VerifyDescription(%+v, %s) had an unexpected error: %s", tc.desc, tc.expectNegDesc, tc.negDescString, err)
 		} else if !tc.shouldMatch && err == nil {

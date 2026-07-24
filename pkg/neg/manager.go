@@ -841,7 +841,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 			manager.logger.V(2).Info("Skipping deletion of Neg because name was not generated and empty description", "negName", name, "zone", zone)
 			return nil
 		}
-		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
+		if matches, err := expectedDesc.MatchesString(neg.Description, name, zone); !matches {
 			manager.logger.V(2).Info("Skipping deletion of Neg because of conflicting description", "negName", name, "zone", zone, "err", err)
 			return nil
 		}

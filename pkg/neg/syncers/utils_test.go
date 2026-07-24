@@ -501,7 +501,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				Port:        testPort,
 			}
 
-			actualNegDesc, err := utils.StandardNEGDescriptionFromString(neg.Description)
+			actualNegDesc, err := utils.NEGDescriptionFromString[utils.StandardNEGDescription](neg.Description)
 			if err != nil {
 				t.Errorf("Invalid neg description: %s", err)
 			}

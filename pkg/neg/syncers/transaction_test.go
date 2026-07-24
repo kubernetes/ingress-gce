@@ -4748,7 +4748,7 @@ func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
 		ServiceName: syncer.NegSyncerKey.Name,
 		Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
 	}
-	actualNegDesc, err := utils.StandardNEGDescriptionFromString(desc)
+	actualNegDesc, err := utils.NEGDescriptionFromString[utils.StandardNEGDescription](desc)
 	if err != nil {
 		t.Errorf("Invalid neg description: %s", err)
 	}
