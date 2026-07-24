@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"regexp"
 	"strings"
 
 	compute "google.golang.org/api/compute/v1"
@@ -185,37 +184,10 @@ func (m *Manager) removeAddress(name, reason string) error {
 	return nil
 }
 
-// DecompressAddr re-adds ommited hextets in IPv6 address.
-// For example, running the function with argument "2001:db8::ff00:42:8329"
-// returns "2001:db8:0:0:0:ff00:42:8329".
-func DecompressAddr(addr string) string {
-	const hextetsInIPv6 = 8
-	if !strings.Contains(addr, "::") {
-		// no compression
-		return addr
-	}
-	hextets := strings.Split(addr, ":")
-	numOfHextets := len(hextets)
-	if numOfHextets < 3 || numOfHextets > 9 {
-		// Address not in a valid compressed form (shortest: "::" (3), longest: one hextet skipped
-		// at beginning or end (9)), returning without any changes.
-		return addr
-	}
-	// To calculate number of missing hextets, we subtract the number of hextets from number of
-	// hextets in IPv6 (8) + 1, since compressed hextets will be represented by one empty item.
-	// Note that it will be decompressed using strings.Replace, so we don't have to worry about
-	// addresses without compression.
-	toAdd := hextetsInIPv6 + 1 - numOfHextets
-	expanded := strings.Repeat(":0", toAdd) + ":"
-	if strings.HasPrefix(addr, "::") {
-		expanded = "0" + expanded
-	}
-	if strings.HasSuffix(addr, "::") {
-		expanded += "0"
-	}
-	return strings.Replace(addr, "::", expanded, 1)
-}
-
+// IsAddressInForwardingRules evaluates whether the requested Address is already effectively
+// bound to an existing Forwarding Rule for this service. It ensures the IPs precisely match,
+// and that the pre-existing Forwarding Rule satisfies the intended Network Tier and LoadBalancing
+// scheme (Internal vs External).
 func (m *Manager) IsAddressInForwardingRules() bool {
 	// Check if the address is in forwarding rules. If it is, we don't need to reserve it.
 	if gceCloud, ok := m.svc.(*gce.Cloud); ok {
@@ -225,16 +197,48 @@ func (m *Manager) IsAddressInForwardingRules() bool {
 			m.frLogger.V(4).Info("failed to lookup forwarding rules, err: %v", err)
 			return false
 		}
-		// We might need to match de-compressed address with mask.
-		pattern := DecompressAddr(m.targetIP) + "(/\\d+)?"
-		ok, err := regexp.MatchString(pattern, fr.IPAddress)
-		if err != nil {
-			m.frLogger.V(4).Info("failed to regexp match %v in %v", pattern, fr.IPAddress)
+
+		targetIP := net.ParseIP(m.targetIP)
+		if targetIP == nil {
+			m.frLogger.V(4).Info("failed to parse requested IP", "ip", m.targetIP)
 			return false
 		}
-		if !ok {
-			m.frLogger.V(4).Info("forwarding rule IP %q doesn't match requested IP %q", fr.IPAddress, m.targetIP)
+
+		var frIP net.IP
+		if strings.Contains(fr.IPAddress, "/") {
+			ip, _, err := net.ParseCIDR(fr.IPAddress)
+			if err != nil {
+				m.frLogger.V(4).Info("failed to parse forwarding rule IP CIDR", "ip", fr.IPAddress)
+				return false
+			}
+			frIP = ip
+		} else {
+			frIP = net.ParseIP(fr.IPAddress)
+			if frIP == nil {
+				m.frLogger.V(4).Info("failed to parse forwarding rule IP", "ip", fr.IPAddress)
+				return false
+			}
+		}
+
+		if !targetIP.Equal(frIP) {
+			m.frLogger.V(4).Info("forwarding rule IP doesn't match requested IP", "forwardingRuleIP", fr.IPAddress, "requestedIP", m.targetIP)
 			return false
+		}
+
+		// Ensure the forwarding rule has the same Network Tier as the service demands.
+		if fr.NetworkTier != "" && fr.NetworkTier != m.networkTier.ToGCEValue() {
+			m.frLogger.V(4).Info("forwarding rule network tier doesn't match", "forwardingRuleNetworkTier", fr.NetworkTier, "requestedNetworkTier", m.networkTier.ToGCEValue())
+			return false
+		}
+
+		// Ensure the forwarding rule's load balancing scheme implies the correct address type.
+		if fr.LoadBalancingScheme != "" {
+			isFrExternal := strings.HasPrefix(fr.LoadBalancingScheme, "EXTERNAL")
+			isExpectedExternal := m.addressType == cloud.SchemeExternal
+			if isFrExternal != isExpectedExternal {
+				m.frLogger.V(4).Info("forwarding rule address type (implied by LoadBalancingScheme) doesn't match", "forwardingRuleScheme", fr.LoadBalancingScheme, "requestedAddressType", m.addressType)
+				return false
+			}
 		}
 
 		// If the forwarding rule service name matches.

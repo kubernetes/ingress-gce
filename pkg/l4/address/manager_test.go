@@ -323,6 +323,8 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 		ipVersion      address.IPVersion
 		forwardingRule *composite.ForwardingRule
 		serviceName    string
+		managerTier    cloud.NetworkTier
+		managerScheme  cloud.LbScheme
 		wantResult     bool
 	}{
 		{
@@ -335,7 +337,7 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 			wantResult: true,
 		},
 		{
-			desc:      "match IPv6",
+			desc:      "match IPv6 (standard compression)",
 			address:   "1111:2222:3333:4444:5555::",
 			ipVersion: address.IPv6Version,
 			forwardingRule: &composite.ForwardingRule{
@@ -344,7 +346,43 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 			wantResult: true,
 		},
 		{
-			desc:      "IP addres not matching",
+			desc:      "match IPv6 (no compression)",
+			address:   "2001:db8:1:2:3:ff00:42:8329",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "2001:db8:1:2:3:ff00:42:8329/96", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
+		},
+		{
+			desc:      "match IPv6 (compression in middle)",
+			address:   "2001:db8::ff00:42:8329",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "2001:db8:0:0:0:ff00:42:8329/96", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
+		},
+		{
+			desc:      "match IPv6 (loopback / match-all)",
+			address:   "::1",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "0:0:0:0:0:0:0:1/96", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
+		},
+		{
+			desc:      "match IPv6 (compression at beginning)",
+			address:   "::ff00:42:8329",
+			ipVersion: address.IPv6Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "0:0:0:0:0:ff00:42:8329/96", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: true,
+		},
+		{
+			desc:      "IP address not matching",
 			address:   "35.190.1.3",
 			ipVersion: address.IPv4Version,
 			forwardingRule: &composite.ForwardingRule{
@@ -352,7 +390,8 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 			},
 			wantResult: false,
 		},
-		{desc: "IP addres not matching IPv6",
+		{
+			desc:      "IP address not matching IPv6",
 			address:   "2222:2222:3333:4444:5555::",
 			ipVersion: address.IPv6Version,
 			forwardingRule: &composite.ForwardingRule{
@@ -386,6 +425,55 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 			},
 			wantResult: false,
 		},
+		{
+			desc:      "prefix bug (unanchored regex prevention)",
+			address:   "10.0.0.1",
+			ipVersion: address.IPv4Version,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "10.0.0.123", Name: testLBName, ServiceName: testSvcName,
+			},
+			wantResult: false,
+		},
+		{
+			desc:        "network tier mismatch",
+			address:     "35.190.1.1",
+			ipVersion:   address.IPv4Version,
+			managerTier: cloud.NetworkTierPremium,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", Name: testLBName, ServiceName: testSvcName, NetworkTier: "STANDARD",
+			},
+			wantResult: false,
+		},
+		{
+			desc:          "scheme mismatch (external vs internal)",
+			address:       "35.190.1.1",
+			ipVersion:     address.IPv4Version,
+			managerScheme: cloud.SchemeInternal,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", Name: testLBName, ServiceName: testSvcName, LoadBalancingScheme: "EXTERNAL",
+			},
+			wantResult: false,
+		},
+		{
+			desc:          "scheme match internal",
+			address:       "10.0.0.1",
+			ipVersion:     address.IPv4Version,
+			managerScheme: cloud.SchemeInternal,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "10.0.0.1", Name: testLBName, ServiceName: testSvcName, LoadBalancingScheme: "INTERNAL_MANAGED",
+			},
+			wantResult: true,
+		},
+		{
+			desc:          "scheme match external",
+			address:       "35.190.1.1",
+			ipVersion:     address.IPv4Version,
+			managerScheme: cloud.SchemeExternal,
+			forwardingRule: &composite.ForwardingRule{
+				IPAddress: "35.190.1.1", Name: testLBName, ServiceName: testSvcName, LoadBalancingScheme: "EXTERNAL",
+			},
+			wantResult: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -409,10 +497,19 @@ func TestIsAddressInForwardingRules(t *testing.T) {
 				mustCreateForwardingRules(t, svc, []*composite.ForwardingRule{tc.forwardingRule})
 			}
 
-			m := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", tc.address, cloud.SchemeInternal, cloud.NetworkTierPremium, tc.ipVersion, klog.TODO())
+			scheme := tc.managerScheme
+			if scheme == "" {
+				scheme = cloud.SchemeInternal
+			}
+			tier := tc.managerTier
+			if tier == "" {
+				tier = cloud.NetworkTierPremium
+			}
+
+			m := address.NewManager(svc, testSvcName, vals.Region, testSubnet, testLBName, "", tc.address, scheme, tier, tc.ipVersion, klog.TODO())
 			got := m.IsAddressInForwardingRules()
 			if got != tc.wantResult {
-				t.Errorf("IsAddressInForwardingRules() unexpectet result, want = %v, got=%v, svc=%+v", tc.wantResult, tc.address, svc)
+				t.Errorf("IsAddressInForwardingRules() unexpected result, want = %v, got=%v, svc=%+v", tc.wantResult, got, svc)
 			}
 		})
 	}
@@ -453,74 +550,6 @@ func fakeGCECloud(vals gce.TestClusterValues) (*gce.Cloud, error) {
 	mockGCE.MockAlphaAddresses.X = mock.AddressAttributes{}
 	mockGCE.MockAddresses.X = mock.AddressAttributes{}
 	return gce, nil
-}
-
-func TestDecompressIPv6(t *testing.T) {
-	testCases := []struct {
-		name     string
-		addr     string
-		expected string
-	}{
-		{
-			name:     "No compression",
-			addr:     "2001:db8:1:2:3:ff00:42:8329",
-			expected: "2001:db8:1:2:3:ff00:42:8329",
-		},
-		{
-			name:     "Compression in middle",
-			addr:     "2001:db8::ff00:42:8329",
-			expected: "2001:db8:0:0:0:ff00:42:8329",
-		},
-		{
-			name:     "Compression in middle (Short)",
-			addr:     "1:2::3",
-			expected: "1:2:0:0:0:0:0:3",
-		},
-		{
-			name:     "Compression in middle (single hextet)",
-			addr:     "1:2:3:4::6:7:8",
-			expected: "1:2:3:4:0:6:7:8",
-		},
-		{
-			name:     "Match-all",
-			addr:     "::",
-			expected: "0:0:0:0:0:0:0:0",
-		},
-		{
-			name:     "Loopback",
-			addr:     "::1",
-			expected: "0:0:0:0:0:0:0:1",
-		},
-		{
-			name:     "Compression at beginning",
-			addr:     "::ff00:42:8329",
-			expected: "0:0:0:0:0:ff00:42:8329",
-		},
-		{
-			name:     "Compression at end",
-			addr:     "2001:db8::",
-			expected: "2001:db8:0:0:0:0:0:0",
-		},
-		{
-			name:     "Compression at beginning (single hextet)",
-			addr:     "::db8:1:2:3:ff00:42:8329",
-			expected: "0:db8:1:2:3:ff00:42:8329",
-		},
-		{
-			name:     "Compression at end (single hextet)",
-			addr:     "2001:db8:1:2:3:ff00:42::",
-			expected: "2001:db8:1:2:3:ff00:42:0",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := address.DecompressAddr(tc.addr)
-			if actual != tc.expected {
-				t.Errorf("DecompressIPv6(%q) = %q; want %q", tc.addr, actual, tc.expected)
-			}
-		})
-	}
 }
 
 func mustCreateForwardingRules(t *testing.T, cloud *gce.Cloud, frs []*composite.ForwardingRule) {
