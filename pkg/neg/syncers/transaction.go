@@ -164,7 +164,12 @@ func NewTransactionSyncer(
 	negMetrics *metrics.NegMetrics,
 ) negtypes.NegSyncer {
 
-	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "primaryNEGName", negSyncerKey.NegName)
+	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name))
+	if negSyncerKey.IsBindingKey() {
+		logger = logger.WithValues("negBindingName", negSyncerKey.NEGBindingName)
+	} else {
+		logger = logger.WithValues("primaryNEGName", negSyncerKey.NegName)
+	}
 
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
@@ -492,22 +497,21 @@ func (s *transactionSyncer) generateSubnetToNegNameMap(subnetConfigs []nodetopol
 	// neg naming which differs from how multi subnet cluster non default NEG names are
 	// handled.
 	if !s.networkInfo.IsDefault {
-		subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
+		negName, err := s.getNEGName(defaultSubnet)
+		if err != nil {
+			return nil, err
+		}
+		subnetToNegMapping[defaultSubnet] = negName
 		return subnetToNegMapping, nil
 	}
 
 	for _, subnetConfig := range subnetConfigs {
-		// negs in default subnet have a different naming scheme from other subnets
-		if subnetConfig.Name == defaultSubnet {
-			subnetToNegMapping[defaultSubnet] = s.NegSyncerKey.NegName
-			continue
-		}
-		nonDefaultNegName, err := s.getNonDefaultSubnetNEGName(subnetConfig.Name)
+		negName, err := s.getNEGName(subnetConfig.Name)
 		if err != nil {
-			s.logger.Error(err, "Errored when getting NEG name from non-default subnets when retrieving existing endpoints")
+			s.logger.Error(err, "Errored when getting NEG name when retrieving existing endpoints", "subnet", subnetConfig.Name)
 			return nil, err
 		}
-		subnetToNegMapping[subnetConfig.Name] = nonDefaultNegName
+		subnetToNegMapping[subnetConfig.Name] = negName
 	}
 
 	return subnetToNegMapping, nil
@@ -563,6 +567,11 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 	zonesPerSubnet, err := s.topologyProvider.ListZonesPerSubnet(s.candidateNodeFilter(), s.networkInfo, s.logger)
 	if err != nil {
 		return nil, err
+	}
+
+	// All zones to manage should be set in NEGBinding CR directly
+	if s.NegSyncerKey.IsBindingKey() {
+		return zonesPerSubnet, nil
 	}
 
 	if !flags.F.EnableNEGPreprovisioning {
@@ -635,17 +644,15 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 			// Therefore this condition should be true only for multi-networking where we don't want NEGs in default subnet
 			continue
 		}
-		negName := s.NegSyncerKey.NegName
+		negName, err := s.getNEGName(subnetConfig.Name)
+		if err != nil {
+			s.logger.Error(err, "Unable to get the name of the NEG based on the subnet name", "subnetName", subnetConfig.Name)
+			errList = append(errList, err)
+			continue
+		}
 		networkInfo := s.networkInfo
 
 		if subnetConfig.Name != defaultSubnet {
-			// Determine the NEG name for the non-default subnet NEGs.
-			negName, err = s.getNonDefaultSubnetNEGName(subnetConfig.Name)
-			if err != nil {
-				s.logger.Error(err, "Unable to get the name of the additional NEG based on the subnet name", "subnetName", subnetConfig.Name)
-				errList = append(errList, err)
-				continue
-			}
 
 			// Determine the networkInfo for the non-default subnet NEGs.
 			resourceID, err := cloud.ParseResourceURL(subnetConfig.SubnetPath)
@@ -797,26 +804,10 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 		networkEndpoints = append(networkEndpoints, ne)
 	}
 	zone := negLocation.Zone
-	negName := s.NegSyncerKey.NegName
-	if flags.F.EnableMultiSubnetClusterPhase1 {
-		defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
-		if err != nil {
-			s.logger.Error(err, "Errored getting default subnet from NetworkInfo when updating NEG endpoints")
-			return err
-		}
-
-		// In the case where this is the default network of the cluster
-		// (s.networkInfo.IsDefault) but the subnet of the NEG
-		// (epGroupInfo.Subnet) is not the defaultSubnet, we are dealing with
-		// the Multi-Subnet Cluster use case, wherein the name of the NEG would
-		// need to be different.
-		if s.networkInfo.IsDefault && negLocation.Subnet != defaultSubnet {
-			negName, err = s.getNonDefaultSubnetNEGName(negLocation.Subnet)
-			if err != nil {
-				s.logger.Error(err, "Errored getting non-default subnet NEG name when updating NEG endpoints")
-				return err
-			}
-		}
+	negName, err := s.getNEGName(negLocation.Subnet)
+	if err != nil {
+		s.logger.Error(err, "Errored getting NEG name when updating NEG endpoints", "subnet", negLocation.Subnet)
+		return err
 	}
 	if operation == attachOp {
 		err = s.cloud.AttachNetworkEndpoints(negName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion(), logger)
@@ -948,25 +939,13 @@ func (s *transactionSyncer) commitPods(endpointMap map[negtypes.NEGLocation]negt
 			}
 			zoneEndpointMap[endpoint] = podName
 		}
-		negName := s.NegSyncerKey.NegName
-		syncerKey := s.NegSyncerKey
-		if flags.F.EnableMultiSubnetClusterPhase1 {
-			defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
-			if err != nil {
-				s.logger.Error(err, "Errored getting default subnet from NetworkInfo when committing pods")
-				continue
-			}
-
-			if negLocation.Subnet != defaultSubnet {
-				negName, err = s.getNonDefaultSubnetNEGName(negLocation.Subnet)
-				if err != nil {
-					s.logger.Error(err, "Errored getting non-default subnet NEG name when committing pods")
-					continue
-				}
-			}
-			// To ensure syncerKey has the same information as the passed in NEG name.
-			syncerKey.NegName = negName
+		negName, err := s.getNEGName(negLocation.Subnet)
+		if err != nil {
+			s.logger.Error(err, "Errored getting NEG name when committing pods", "subnet", negLocation.Subnet)
+			continue
 		}
+		syncerKey := s.NegSyncerKey
+		syncerKey.NegName = negName
 		s.reflector.CommitPods(syncerKey, negName, negLocation.Zone, zoneEndpointMap)
 	}
 }
@@ -1106,6 +1085,31 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 		s.negMetrics.PublishNegEPSStalenessMetrics(epsStaleness)
 		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
+}
+
+// getNEGName returns the name of the NEG for the given subnet.
+func (s *transactionSyncer) getNEGName(subnet string) (string, error) {
+	// NEG name for binding syncer should be get from namer only, as there might not be name for default network
+	// or it can be changed during the syncer lifecycle.
+	if s.NegSyncerKey.IsBindingKey() {
+		return s.getNonDefaultSubnetNEGName(subnet)
+	}
+
+	// For multi-net or in case multi-subnet is disabled - default NEG name used (as there is only single subnet then, therefore no need for multiple NEG names)
+	if !flags.F.EnableMultiSubnetClusterPhase1 || !s.networkInfo.IsDefault {
+		return s.NegSyncerKey.NegName, nil
+	}
+
+	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		return "", err
+	}
+
+	// For non-binding syncer namer used for non-default subnet only; NEG name for default is stored in syncer key
+	if subnet != defaultSubnet {
+		return s.getNonDefaultSubnetNEGName(subnet)
+	}
+	return s.NegSyncerKey.NegName, nil
 }
 
 // getNonDefaultSubnetNEGName returns the name of the NEG based on the subnet name.

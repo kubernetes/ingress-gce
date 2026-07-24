@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
@@ -20,6 +21,8 @@ import (
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
+	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
@@ -37,6 +40,7 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 	logger, _ := ktesting.NewTestContext(t)
 	kubeClient := k8sfake.NewSimpleClientset()
 	svcNegClient := svcnegfake.NewSimpleClientset()
+	negBindingClient := negbindingfake.NewSimpleClientset()
 
 	test.PrependBookmarkReactor(&kubeClient.Fake, kubeClient.Tracker(), "*", &providerconfig.ProviderConfig{
 		ObjectMeta: test.DefaultBookmarkObjectMeta,
@@ -44,8 +48,11 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 	test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "*", &svcnegv1.ServiceNetworkEndpointGroup{
 		ObjectMeta: test.DefaultBookmarkObjectMeta,
 	})
+	test.PrependBookmarkReactor(&negBindingClient.Fake, negBindingClient.Tracker(), "*", &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
 
-	informers := multiprojectinformers.NewInformerSet(kubeClient, svcNegClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
+	informers := multiprojectinformers.NewInformerSet(kubeClient, svcNegClient, negBindingClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
 
 	// Start base informers; they are not strictly required by our stubbed controller,
 	// but mirrors real startup flow and ensures CombinedHasSynced would be true if used.
@@ -84,16 +91,16 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 	// that can run without panics.
 	var capturedStopCh <-chan struct{}
 	orig := newNEGController
-	newNEGController = func(kc kubernetes.Interface, sc svcnegclient.Interface, ec kubernetes.Interface, uid types.UID,
+	newNEGController = func(kc kubernetes.Interface, sc svcnegclient.Interface, nbc negbindingclient.Interface, ec kubernetes.Interface, uid types.UID,
 		ing cache.SharedIndexInformer, svc cache.SharedIndexInformer, pod cache.SharedIndexInformer, node cache.SharedIndexInformer,
-		es cache.SharedIndexInformer, sn cache.SharedIndexInformer, netInf cache.SharedIndexInformer, gke cache.SharedIndexInformer, nt cache.SharedIndexInformer,
+		es cache.SharedIndexInformer, sn cache.SharedIndexInformer, nbi cache.SharedIndexInformer, netInf cache.SharedIndexInformer, gke cache.SharedIndexInformer, nt cache.SharedIndexInformer,
 		synced func() bool, l4 namer.L4ResourcesNamer, defSP utils.ServicePort, cloud negtypes.NetworkEndpointGroupCloud, zg *zonegetter.ZoneGetter, nm negtypes.NetworkEndpointGroupNamer,
 		resync time.Duration, gc time.Duration, workers int, enableRR bool, runL4 bool, nonGCP bool, dualStack bool, lp labels.PodLabelPropagationConfig,
-		multiNetworking bool, ingressRegional bool, runNetLB bool, readOnly bool, enableNEGsForIngress bool, includeDrainNodesL4Local bool,
+		multiNetworking bool, ingressRegional bool, runNetLB bool, readOnly bool, enableNEGsForIngress bool, enableNEGBinding bool, includeDrainNodesL4Local bool,
 		stopCh <-chan struct{}, l klog.Logger, negMetrics *metrics.NegMetrics, syncerMetrics *syncMetrics.SyncerMetrics) (*neg.Controller, error) {
 		capturedStopCh = stopCh
-		return neg.NewController(kc, sc, ec, uid, ing, svc, pod, node, es, sn, netInf, gke, nt, synced, l4, defSP, cloud, zg, nm,
-			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics)
+		return neg.NewController(kc, sc, nbc, ec, uid, ing, svc, pod, node, es, sn, nbi, netInf, gke, nt, synced, l4, defSP, cloud, zg, nm,
+			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, enableNEGBinding, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics)
 	}
 	t.Cleanup(func() { newNEGController = orig })
 
@@ -118,7 +125,7 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 				// Wire the join to the real globalStop for this subcase.
 				joinStop = globalStop
 				var err error
-				providerStop, err = StartNEGController(informers, kubeClient, kubeClient, svcnegfake.NewSimpleClientset(), networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, joinStop, logger, pc, syncMetrics.FakeSyncerMetrics())
+				providerStop, err = StartNEGController(informers, kubeClient, kubeClient, svcnegfake.NewSimpleClientset(), negBindingClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, joinStop, logger, pc, syncMetrics.FakeSyncerMetrics())
 				if err != nil {
 					t.Fatalf("StartNEGController: %v", err)
 				}
@@ -128,7 +135,7 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 				js := make(chan struct{})
 				joinStop = js
 				var err error
-				providerStop, err = StartNEGController(informers, kubeClient, kubeClient, svcnegfake.NewSimpleClientset(), networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, joinStop, logger, &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "pc-2"}}, syncMetrics.FakeSyncerMetrics())
+				providerStop, err = StartNEGController(informers, kubeClient, kubeClient, svcnegfake.NewSimpleClientset(), negBindingClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, joinStop, logger, &providerconfig.ProviderConfig{ObjectMeta: metav1.ObjectMeta{Name: "pc-2"}}, syncMetrics.FakeSyncerMetrics())
 				if err != nil {
 					t.Fatalf("StartNEGController (2): %v", err)
 				}
@@ -156,7 +163,11 @@ func TestStartNEGController_NilSvcNegClientErrors(t *testing.T) {
 
 	logger, _ := ktesting.NewTestContext(t)
 	kubeClient := k8sfake.NewSimpleClientset()
-	informers := multiprojectinformers.NewInformerSet(kubeClient, nil, networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
+	negBindingClient := negbindingfake.NewSimpleClientset()
+	test.PrependBookmarkReactor(&negBindingClient.Fake, negBindingClient.Tracker(), "*", &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+	informers := multiprojectinformers.NewInformerSet(kubeClient, nil, negBindingClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), metav1.Duration{})
 	globalStop := make(chan struct{})
 	t.Cleanup(func() { close(globalStop) })
 	if err := informers.Start(globalStop, logger); err != nil {
@@ -186,7 +197,7 @@ func TestStartNEGController_NilSvcNegClientErrors(t *testing.T) {
 	}
 
 	// newNEGController remains default (neg.NewController), which errors when svcNegClient is nil
-	ch, err := StartNEGController(informers, kubeClient, kubeClient, nil /* svcneg */, networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, globalStop, logger, pc, syncMetrics.FakeSyncerMetrics())
+	ch, err := StartNEGController(informers, kubeClient, kubeClient, nil /* svcneg */, negBindingClient, networkclient.Interface(nil), nodetopologyclient.Interface(nil), kubeSystemUID, rootNamer, l4Namer, lpCfg, cloud, globalStop, logger, pc, syncMetrics.FakeSyncerMetrics())
 	if err == nil {
 		t.Fatalf("expected error from StartNEGController when svcNegClient is nil, got nil and channel=%v", ch)
 	}

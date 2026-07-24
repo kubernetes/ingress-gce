@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -48,6 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/negannotation"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -61,14 +64,15 @@ import (
 // Controller is network endpoint group controller.
 // It determines whether NEG for a service port is needed, then signals NegSyncerManager to sync it.
 type Controller struct {
-	manager         negtypes.NegSyncerManager
-	gcPeriod        time.Duration
-	recorder        record.EventRecorder
-	namer           negtypes.NetworkEndpointGroupNamer
-	l4Namer         namer.L4ResourcesNamer
-	zoneGetter      *zonegetter.ZoneGetter
-	networkResolver network.Resolver
-	cloud           negtypes.NetworkEndpointGroupCloud
+	manager           negtypes.NegSyncerManager
+	negBindingManager *negBindingManager
+	gcPeriod          time.Duration
+	recorder          record.EventRecorder
+	namer             negtypes.NetworkEndpointGroupNamer
+	l4Namer           namer.L4ResourcesNamer
+	zoneGetter        *zonegetter.ZoneGetter
+	networkResolver   network.Resolver
+	cloud             negtypes.NetworkEndpointGroupCloud
 
 	hasSynced             func() bool
 	ingressLister         cache.Indexer
@@ -85,6 +89,7 @@ type Controller struct {
 	// nodeTopologyQueue acts as an intermeidate queue to trigger sync on all
 	// syncers on Node Topology resource updates.
 	nodeTopologyQueue workqueue.RateLimitingInterface
+	negBindingQueue   workqueue.RateLimitingInterface
 
 	// syncTracker tracks the latest time that service and endpoint changes are processed
 	syncTracker utils.TimeTracker
@@ -116,6 +121,9 @@ type Controller struct {
 
 	// enableNEGsForIngress indicates whether the NEG controller will create NEGs for Ingress services
 	enableNEGsForIngress bool
+
+	// enableNEGBinding indicates whether the controller should process NEGBinding CRs
+	enableNEGBinding bool
 
 	// includeDrainNodesL4Local indicates whether to include draining nodes for NEGs with L4Local mode
 	includeDrainNodesL4Local bool
@@ -171,6 +179,7 @@ func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) 
 func NewController(
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	eventRecorderClient kubernetes.Interface,
 	kubeSystemUID types.UID,
 	ingressInformer cache.SharedIndexInformer,
@@ -179,6 +188,7 @@ func NewController(
 	nodeInformer cache.SharedIndexInformer,
 	endpointSliceInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
+	negBindingInformer cache.SharedIndexInformer,
 	networkInformer cache.SharedIndexInformer,
 	gkeNetworkParamSetInformer cache.SharedIndexInformer,
 	nodeTopologyInformer cache.SharedIndexInformer,
@@ -201,6 +211,7 @@ func NewController(
 	runL4ForNetLB bool,
 	readOnlyMode bool,
 	enableNEGsForIngress bool,
+	enableNEGBinding bool,
 	includeDrainNodesL4Local bool,
 	stopCh <-chan struct{},
 	logger klog.Logger,
@@ -227,6 +238,13 @@ func NewController(
 	if err != nil {
 		logger.Error(err, "Errored adding NEG CRD scheme to event recorder")
 		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+	}
+	if enableNEGBinding {
+		err = negbindingv1beta1.AddToScheme(negScheme)
+		if err != nil {
+			logger.Error(err, "Errored adding NEGBinding CRD scheme to event recorder")
+			negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+		}
 	}
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
@@ -282,10 +300,34 @@ func NewController(
 		gkeNetworkParamSetIndexer = gkeNetworkParamSetInformer.GetIndexer()
 	}
 	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	netResolver := network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger)
+
+	var negBindingMgr *negBindingManager
+	if enableNEGBinding {
+		negBindingMgr = newNEGBindingManager(
+			negBindingClient,
+			negBindingInformer.GetIndexer(),
+			podInformer.GetIndexer(),
+			serviceInformer.GetIndexer(),
+			endpointSliceInformer.GetIndexer(),
+			nodeInformer.GetIndexer(),
+			zoneGetter,
+			netResolver,
+			cloud,
+			recorder,
+			namer,
+			negMetrics,
+			syncerMetrics,
+			reflector,
+			kubeSystemUID,
+			logger,
+		)
+	}
 
 	negController := &Controller{
 		client:                         kubeClient,
 		manager:                        manager,
+		negBindingManager:              negBindingMgr,
 		cloud:                          cloud,
 		gcPeriod:                       gcPeriod,
 		recorder:                       recorder,
@@ -296,7 +338,7 @@ func NewController(
 		hasSynced:                      hasSynced,
 		ingressLister:                  ingressInformer.GetIndexer(),
 		serviceLister:                  serviceInformer.GetIndexer(),
-		networkResolver:                network.NewNetworksResolver(networkIndexer, gkeNetworkParamSetIndexer, cloud, enableMultiNetworking, logger),
+		networkResolver:                netResolver,
 		serviceQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
 		endpointQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
 		nodeQueue:                      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
@@ -309,11 +351,15 @@ func NewController(
 		runL4ForNetLB:                  runL4ForNetLB,
 		readOnlyMode:                   readOnlyMode,
 		enableNEGsForIngress:           enableNEGsForIngress,
+		enableNEGBinding:               enableNEGBinding,
 		includeDrainNodesL4Local:       includeDrainNodesL4Local,
 		nodeMembershipFilters:          buildNodeMembershipFilters(includeDrainNodesL4Local),
 		stopCh:                         stopCh,
 		logger:                         logger,
 		negMetrics:                     negMetrics,
+	}
+	if enableNEGBinding {
+		negController.negBindingQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_binding_queue")
 	}
 	if enableMultiSubnetClusterPhase1 {
 		negController.nodeTopologyQueue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_topology_queue")
@@ -427,6 +473,15 @@ func NewController(
 			},
 		})
 	}
+	if enableNEGBinding {
+		negBindingInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    negController.enqueueNEGBinding,
+			DeleteFunc: negController.enqueueNEGBinding,
+			UpdateFunc: func(old, cur interface{}) {
+				negController.enqueueNEGBinding(cur)
+			},
+		})
+	}
 	return negController, nil
 }
 
@@ -448,6 +503,9 @@ func (c *Controller) Run() {
 	go wait.Until(c.serviceWorker, time.Second, c.stopCh)
 	go wait.Until(c.endpointWorker, time.Second, c.stopCh)
 	go wait.Until(c.nodeWorker, time.Second, c.stopCh)
+	if c.enableNEGBinding {
+		go wait.Until(c.negBindingWorker, time.Second, c.stopCh)
+	}
 	if c.enableMultiSubnetClusterPhase1 {
 		go wait.Until(c.nodeTopologyWorker, time.Second, c.stopCh)
 	}
@@ -479,10 +537,16 @@ func (c *Controller) stop() {
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.nodeQueue.ShutDown()
+	if c.enableNEGBinding {
+		c.negBindingQueue.ShutDown()
+	}
 	if c.enableMultiSubnetClusterPhase1 {
 		c.nodeTopologyQueue.ShutDown()
 	}
 	c.manager.ShutDown()
+	if c.enableNEGBinding {
+		c.negBindingManager.ShutDown()
+	}
 }
 
 func (c *Controller) endpointWorker() {
@@ -550,6 +614,9 @@ func (c *Controller) processEndpoint(key string) {
 		return
 	}
 	c.manager.Sync(namespace, name)
+	if c.enableNEGBinding {
+		_ = c.negBindingManager.EnsureSyncersForService(namespace, name)
+	}
 }
 
 func (c *Controller) serviceWorker() {
@@ -597,49 +664,58 @@ func (c *Controller) processService(key string) error {
 	if !exists {
 		c.syncerMetrics.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
+		if c.enableNEGBinding {
+			c.negBindingManager.ProcessServiceDeletion(namespace, name)
+		}
 		return nil
 	}
 	service := obj.(*apiv1.Service)
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
+
+	var bindingErr error
+	if c.enableNEGBinding {
+		bindingErr = c.negBindingManager.EnsureSyncersForService(namespace, name)
+	}
+
 	negUsage := metricscollector.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	networkInfo, err := c.networkResolver.ServiceNetwork(service)
 	if err != nil {
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap, networkInfo); err != nil {
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
 	if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, networkInfo); err != nil {
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
 	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
 
 	// Create L4 PortInfo if ILB subsetting is enabled or a NetLB service needs NEG backends.
 	if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage, networkInfo); err != nil {
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	if len(svcPortInfoMap) != 0 {
 		c.logger.V(2).Info("Syncing service", "service", key)
 		if !flags.F.EnableIPV6OnlyNEG {
 			if service.Spec.Type != apiv1.ServiceTypeLoadBalancer && isSingleStackIPv6Service(service) {
-				return fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service)
+				return utilerrors.NewAggregate([]error{fmt.Errorf("NEG is not supported for ipv6 only service (%T)", service), bindingErr})
 			}
 		}
 
 		if err = c.syncNegStatusAnnotation(namespace, name, svcPortInfoMap); err != nil {
-			return err
+			return utilerrors.NewAggregate([]error{err, bindingErr})
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
 		c.syncerMetrics.SetNegService(key, negUsage)
-		return err
+		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	// do not need Neg
 	c.logger.V(3).Info("Service does not need any NEG. Skipping", "service", key)
@@ -648,7 +724,10 @@ func (c *Controller) processService(key string) error {
 	c.manager.StopSyncer(namespace, name)
 
 	// delete the annotation
-	return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
+	if err := c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap)); err != nil {
+		return utilerrors.NewAggregate([]error{err, bindingErr})
+	}
+	return bindingErr
 }
 
 func (c *Controller) nodeTopologyWorker() {
@@ -682,6 +761,9 @@ func (c *Controller) processNodeTopology() {
 		return
 	}
 	c.manager.SyncAllSyncers()
+	if c.enableNEGBinding {
+		c.negBindingManager.SyncAllSyncers()
+	}
 }
 
 // mergeIngressPortInfo merges Ingress PortInfo into portInfoMap if the service has Enable Ingress annotation.
@@ -966,6 +1048,30 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	c.serviceQueue.AddRateLimited(key)
 }
 
+func (c *Controller) handleNEGBindingErr(err error, key interface{}) {
+	if !c.enableNEGBinding {
+		return
+	}
+	if err == nil {
+		c.negBindingQueue.Forget(key)
+		return
+	}
+
+	msg := fmt.Sprintf("error processing NEGBinding %q: %v", key, err)
+	c.logger.Error(err, "Error processing NEGBinding", "binding", key)
+	if c.negBindingManager != nil {
+		if obj, exists, getErr := c.negBindingManager.negBindingLister.GetByKey(key.(string)); getErr == nil && exists {
+			binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+			if !ok {
+				c.logger.Error(nil, "Unexpected object type in negBindingLister during error handling", "type", fmt.Sprintf("%T", obj))
+			} else {
+				c.recorder.Event(binding, apiv1.EventTypeWarning, "ProcessNEGBindingFailed", msg)
+			}
+		}
+	}
+	c.negBindingQueue.AddRateLimited(key)
+}
+
 func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 	endpointSlice, ok := obj.(*discovery.EndpointSlice)
 	if !ok {
@@ -1101,6 +1207,76 @@ func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []
 
 	}
 	return
+}
+
+func (c *Controller) negBindingWorker() {
+	for {
+		func() {
+			key, quit := c.negBindingQueue.Get()
+			if quit {
+				return
+			}
+			defer c.negBindingQueue.Done(key)
+			err := c.processNEGBinding(key.(string))
+			c.handleNEGBindingErr(err, key)
+			c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
+		}()
+	}
+}
+
+func (c *Controller) processNEGBinding(key string) error {
+	if !c.enableNEGBinding {
+		return nil
+	}
+	c.logger.V(3).Info("Processing NEGBinding", "binding", key)
+	defer func() {
+		now := c.syncTracker.Track()
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.logger.V(3).Info("Finished processing NEGBinding", "binding", key)
+	}()
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
+	}
+
+	if c.readOnlyMode {
+		c.negBindingManager.StopSyncer(namespace, name)
+		return nil
+	}
+
+	obj, exists, err := c.negBindingManager.negBindingLister.GetByKey(key)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		c.negBindingManager.StopSyncer(namespace, name)
+		return nil
+	}
+
+	binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+	if !ok {
+		return fmt.Errorf("cannot convert to NetworkEndpointGroupBinding (%T)", obj)
+	}
+
+	if binding.DeletionTimestamp != nil {
+		c.negBindingManager.StopSyncer(namespace, name)
+		return nil
+	}
+
+	return c.negBindingManager.EnsureSyncerForNEGBinding(binding)
+}
+
+func (c *Controller) enqueueNEGBinding(obj interface{}) {
+	if !c.enableNEGBinding {
+		return
+	}
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		c.logger.Error(err, "Failed to get key for NEGBinding object", "object", obj)
+		return
+	}
+	c.negBindingQueue.Add(key)
 }
 
 // isSingleStackIPv6Service returns true if the given service is a single stack ipv6 service

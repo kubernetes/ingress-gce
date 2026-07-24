@@ -5158,6 +5158,69 @@ func TestNEGPreprovisioningTransition(t *testing.T) {
 	}
 }
 
+func TestListTargetZonesPerSubnet(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
+	testNegType := negtypes.VmIpPortEndpointType
+
+	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	prevEnableNEGPreprovisioning := flags.F.EnableNEGPreprovisioning
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+		flags.F.EnableNEGPreprovisioning = prevEnableNEGPreprovisioning
+	}()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	flags.F.NodeTopologyCRName = "default"
+	flags.F.EnableNEGPreprovisioning = true
+
+	_, ts, err := newTestTransactionSyncer(fakeCloud, testNegType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	// Mock the zoneGetter to return only zone1 (TestZone1)
+	zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone2, ts.topologyProvider.(*zonegetter.ZoneGetter))
+	zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone4, ts.topologyProvider.(*zonegetter.ZoneGetter))
+
+	// Setup Service with preprovisioning annotation for zone2
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ts.Name,
+			Namespace: ts.Namespace,
+			Annotations: map[string]string{
+				negannotation.NEGAnnotationKey: `{"exposed_ports":{"80":{}},"zones":["zone2"]}`,
+			},
+		},
+	}
+	ts.serviceLister.Add(svc)
+
+	// Case 1: Standard NEG Syncer (IsBindingKey() == false).
+	// Pre-provisioning zones from the service annotation SHOULD be merged into zonesPerSubnet.
+	ts.NegSyncerKey.NEGBindingName = ""
+	zonesMap, err := ts.listTargetZonesPerSubnet()
+	if err != nil {
+		t.Fatalf("listTargetZonesPerSubnet failed for standard syncer: %v", err)
+	}
+	expectedStandardZones := sets.New("zone1", "zone2")
+	if !zonesMap[defaultTestSubnet].Equal(expectedStandardZones) {
+		t.Errorf("listTargetZonesPerSubnet() for standard syncer = %v, expected %v", zonesMap[defaultTestSubnet].UnsortedList(), expectedStandardZones.UnsortedList())
+	}
+
+	// Case 2: NEGBinding Syncer (IsBindingKey() == true).
+	// Pre-provisioning zones from the service annotation MUST NOT be merged, returning only zones from topologyProvider.
+	ts.NegSyncerKey.NEGBindingName = "test-neg-binding"
+	zonesMapBinding, err := ts.listTargetZonesPerSubnet()
+	if err != nil {
+		t.Fatalf("listTargetZonesPerSubnet failed for NEGBinding syncer: %v", err)
+	}
+	expectedBindingZones := sets.New("zone1")
+	if !zonesMapBinding[defaultTestSubnet].Equal(expectedBindingZones) {
+		t.Errorf("listTargetZonesPerSubnet() for NEGBinding syncer = %v, expected %v", zonesMapBinding[defaultTestSubnet].UnsortedList(), expectedBindingZones.UnsortedList())
+	}
+}
+
 func TestSyncNEGsPartialFailure(t *testing.T) {
 	testCases := []struct {
 		desc              string

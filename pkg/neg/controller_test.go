@@ -42,12 +42,15 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/negannotation"
+	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
+	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -133,6 +136,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 	return NewController(
 		kubeClient,
 		testContext.SvcNegClient,
+		nil,
 		kubeClient,
 		testContext.KubeSystemUID,
 		testContext.IngressInformer,
@@ -141,6 +145,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		testContext.NodeInformer,
 		testContext.EndpointSliceInformer,
 		testContext.SvcNegInformer,
+		nil,
 		testContext.NetworkInformer,
 		testContext.GKENetworkParamSetInformer,
 		testContext.NodeTopologyInformer,
@@ -164,6 +169,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		false,
 		readOnlyMode,
 		true,  // enableNEGsForIngress
+		false, // enableNEGBinding
 		false, // includeDrainNodesL4Local
 		make(<-chan struct{}),
 		klog.TODO(),
@@ -2532,6 +2538,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 	controller, err := NewController(
 		kubeClient,
 		testContext.SvcNegClient,
+		nil,
 		kubeClient,
 		testContext.KubeSystemUID,
 		testContext.IngressInformer,
@@ -2540,6 +2547,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 		testContext.NodeInformer, // use the testContext node informer
 		testContext.EndpointSliceInformer,
 		testContext.SvcNegInformer,
+		nil,
 		testContext.NetworkInformer,
 		testContext.GKENetworkParamSetInformer,
 		testContext.NodeTopologyInformer,
@@ -2562,6 +2570,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 		false,
 		false, // readOnlyMode
 		true,  // enableNEGsForIngress
+		false, // enableNEGBinding
 		true,  // includeDrainNodesL4Local = true
 		make(<-chan struct{}),
 		klog.TODO(),
@@ -2678,4 +2687,132 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 	// stays false→false (drain label still present). The enqueue must happen via the
 	// drain filter — if that filter were missing from the set the queue would stay empty.
 	ensureNodeEnqueue(t, "drain-excluded-node", controller)
+}
+
+func TestControllerNEGBinding(t *testing.T) {
+	oldFlag := flags.F.EnableMultiSubnetClusterPhase1
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() { flags.F.EnableMultiSubnetClusterPhase1 = oldFlag }()
+
+	kubeClient := fake.NewSimpleClientset()
+	fakeNBClient := negbindingfake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+
+	negBindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, utils.NewNamespaceIndexer())
+	_ = negBindingInformer.AddIndexers(cache.Indexers{ServiceKeyIndex: ServiceKeyIndexFunc})
+
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to create fake zone getter: %v", err)
+	}
+
+	controller, err := NewController(
+		kubeClient,
+		testContext.SvcNegClient,
+		fakeNBClient,
+		kubeClient,
+		testContext.KubeSystemUID,
+		testContext.IngressInformer,
+		testContext.ServiceInformer,
+		testContext.PodInformer,
+		testContext.NodeInformer,
+		testContext.EndpointSliceInformer,
+		testContext.SvcNegInformer,
+		negBindingInformer,
+		testContext.NetworkInformer,
+		testContext.GKENetworkParamSetInformer,
+		testContext.NodeTopologyInformer,
+		func() bool { return true },
+		testContext.L4Namer,
+		defaultBackend,
+		negtypes.NewAdapterWithNetwork(testContext.Cloud, "default-network", defaultTestSubnetURL, testContext.NegMetrics),
+		zoneGetter,
+		testContext.NegNamer,
+		testContext.ResyncPeriod,
+		testContext.ResyncPeriod,
+		testContext.NumGCWorkers,
+		false, false, false,
+		testContext.EnableDualStackNEG,
+		labels.PodLabelPropagationConfig{},
+		true, false, false, false, true, true, false,
+		make(<-chan struct{}),
+		klog.TODO(),
+		testContext.NegMetrics,
+		metricscollector.FakeSyncerMetrics(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create test controller: %v", err)
+	}
+
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "svc1"},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{{Port: 80, TargetPort: intstr.FromInt(8080)}},
+		},
+	}
+	_ = testContext.ServiceInformer.GetIndexer().Add(svc)
+	_, _ = kubeClient.CoreV1().Services("ns1").Create(context.Background(), svc, metav1.CreateOptions{})
+
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "binding1"},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: "svc1",
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{Name: "neg-1", Subnet: "default", Zones: []string{"us-central1-a"}},
+			},
+		},
+	}
+	_ = negBindingInformer.GetIndexer().Add(binding)
+	_, err = fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings("ns1").Create(context.Background(), binding, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create binding in fake client: %v", err)
+	}
+
+	err = controller.processNEGBinding("ns1/binding1")
+	if err != nil {
+		t.Fatalf("processNEGBinding failed: %v", err)
+	}
+
+	if controller.negBindingManager == nil {
+		t.Fatalf("expected negBindingManager to be initialized")
+	}
+
+	controller.negBindingManager.mu.Lock()
+	syncerCount := len(controller.negBindingManager.syncerMap)
+	controller.negBindingManager.mu.Unlock()
+
+	if syncerCount != 1 {
+		t.Errorf("expected 1 syncer in negBindingManager, got %d", syncerCount)
+	}
+
+	// Update service to have standalone NEG annotations and process service update
+	svcWithNEG := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   "ns1",
+			Name:        "svc1",
+			Annotations: map[string]string{negannotation.NEGAnnotationKey: `{"exposed_ports":{"80":{}}}`},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{{Port: 80, TargetPort: intstr.FromInt(8080)}},
+		},
+	}
+	_ = testContext.ServiceInformer.GetIndexer().Update(svcWithNEG)
+	_, _ = kubeClient.CoreV1().Services("ns1").Update(context.Background(), svcWithNEG, metav1.UpdateOptions{})
+
+	err = controller.processService("ns1/svc1")
+	if err != nil {
+		t.Fatalf("processService failed for service with standalone NEG: %v", err)
+	}
+
+	controller.negBindingManager.mu.Lock()
+	syncerCount = len(controller.negBindingManager.syncerMap)
+	controller.negBindingManager.mu.Unlock()
+
+	if syncerCount != 1 {
+		t.Errorf("expected 1 syncer in negBindingManager after processService on standalone NEG service, got %d", syncerCount)
+	}
 }

@@ -28,6 +28,7 @@ import (
 	providerconfiginformers "k8s.io/ingress-gce/pkg/providerconfig/client/informers/externalversions"
 	"k8s.io/ingress-gce/pkg/recorders"
 
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -43,6 +44,7 @@ func StartWithLeaderElection(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
@@ -57,7 +59,7 @@ func StartWithLeaderElection(
 
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, syncerMetrics)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, syncerMetrics)
 	if err != nil {
 		return err
 	}
@@ -82,6 +84,7 @@ func makeLeaderElectionConfig(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
@@ -118,7 +121,7 @@ func makeLeaderElectionConfig(
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				logger.Info("Became leader, starting multi-project controller")
-				Start(logger, kubeClient, svcNegClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, ctx.Done(), syncerMetrics)
+				Start(logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, ctx.Done(), syncerMetrics)
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -135,6 +138,7 @@ func Start(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
 	svcNegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
 	kubeSystemUID types.UID,
@@ -158,6 +162,7 @@ func Start(
 	informers := multiprojectinformers.NewInformerSet(
 		kubeClient,
 		svcNegClient,
+		negBindingClient,
 		networkClient,
 		nodeTopologyClient,
 		metav1.Duration{Duration: flags.F.ResyncPeriod},
@@ -174,6 +179,7 @@ func Start(
 		informers,
 		kubeClient,
 		svcNegClient,
+		negBindingClient,
 		networkClient,
 		nodeTopologyClient,
 		eventRecorderKubeClient,

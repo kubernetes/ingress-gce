@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	providerconfigv1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -35,6 +36,7 @@ import (
 	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/negannotation"
+	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	pcclientfake "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned/fake"
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
@@ -215,6 +217,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			pcClient := pcclientfake.NewSimpleClientset()
 			svcNegClient := svcnegfake.NewSimpleClientset()
+			negBindingClient := negbindingfake.NewSimpleClientset()
 			networkClient := networkfake.NewSimpleClientset()
 			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
@@ -237,6 +240,10 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 			})
 
 			test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&negBindingClient.Fake, negBindingClient.Tracker(), "networkendpointgroupbindings", &negbindingv1beta1.NetworkEndpointGroupBinding{
 				ObjectMeta: test.DefaultBookmarkObjectMeta,
 			})
 
@@ -276,6 +283,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					logger,
 					kubeClient,
 					svcNegClient,
+					negBindingClient,
 					networkClient,
 					nodeTopologyClient,
 					kubeSystemUID,
@@ -370,6 +378,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	pcClient := pcclientfake.NewSimpleClientset()
 	svcNegClient := svcnegfake.NewSimpleClientset()
+	negBindingClient := negbindingfake.NewSimpleClientset()
 	networkClient := networkfake.NewSimpleClientset()
 	nodeTopoClient := nodetopologyfake.NewSimpleClientset()
 
@@ -392,6 +401,10 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	})
 
 	test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+		ObjectMeta: test.DefaultBookmarkObjectMeta,
+	})
+
+	test.PrependBookmarkReactor(&negBindingClient.Fake, negBindingClient.Tracker(), "networkendpointgroupbindings", &negbindingv1beta1.NetworkEndpointGroupBinding{
 		ObjectMeta: test.DefaultBookmarkObjectMeta,
 	})
 
@@ -424,7 +437,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 
 	// Start multiproject manager (this starts shared factories once with globalStop).
 	go Start(
-		logger, kubeClient, svcNegClient, networkClient, nodeTopoClient,
+		logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopoClient,
 		kubeSystemUID, kubeClient, pcClient,
 		gceCreator, rootNamer, globalStop, syncMetrics.FakeSyncerMetrics(),
 	)
@@ -1036,6 +1049,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			pcClient := pcclientfake.NewSimpleClientset()
 			svcNegClient := svcnegfake.NewSimpleClientset()
+			negBindingClient := negbindingfake.NewSimpleClientset()
 			networkClient := networkfake.NewSimpleClientset()
 			nodeTopologyClient := nodetopologyfake.NewSimpleClientset()
 
@@ -1058,6 +1072,10 @@ func TestProviderConfigErrorCases(t *testing.T) {
 			})
 
 			test.PrependBookmarkReactor(&svcNegClient.Fake, svcNegClient.Tracker(), "servicenetworkendpointgroups", &svcnegv1.ServiceNetworkEndpointGroup{
+				ObjectMeta: test.DefaultBookmarkObjectMeta,
+			})
+
+			test.PrependBookmarkReactor(&negBindingClient.Fake, negBindingClient.Tracker(), "networkendpointgroupbindings", &negbindingv1beta1.NetworkEndpointGroupBinding{
 				ObjectMeta: test.DefaultBookmarkObjectMeta,
 			})
 
@@ -1094,6 +1112,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 					logger,
 					kubeClient,
 					svcNegClient,
+					negBindingClient,
 					networkClient,
 					nodeTopologyClient,
 					kubeSystemUID,

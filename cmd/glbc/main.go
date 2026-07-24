@@ -45,6 +45,8 @@ import (
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectstart "k8s.io/ingress-gce/pkg/multiproject/start"
+	"k8s.io/ingress-gce/pkg/negbinding"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/network"
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/psc"
@@ -170,10 +172,25 @@ func main() {
 		if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
 			klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
 		}
+
+		if flags.F.EnableNEGBinding {
+			negBindingCRDMeta := negbinding.CRDMeta()
+			if _, err := crdHandler.EnsureCRD(negBindingCRDMeta, true); err != nil {
+				klog.Fatalf("Failed to ensure NetworkEndpointGroupBinding CRD: %v", err)
+			}
+		}
 	}
 	svcNegClient, err := svcnegclient.NewForConfig(kubeConfig)
 	if err != nil {
 		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+	}
+
+	var negBindingClient negbindingclient.Interface
+	if flags.F.EnableNEGBinding {
+		negBindingClient, err = negbindingclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create NetworkEndpointGroupBinding client: %v", err)
+		}
 	}
 
 	var svcAttachmentClient serviceattachmentclient.Interface
@@ -278,6 +295,7 @@ func main() {
 					rootLogger,
 					kubeClient,
 					svcNegClient,
+					negBindingClient,
 					networkClient,
 					nodeTopologyClient,
 					kubeSystemUID,
@@ -297,6 +315,7 @@ func main() {
 					rootLogger,
 					kubeClient,
 					svcNegClient,
+					negBindingClient,
 					networkClient,
 					nodeTopologyClient,
 					kubeSystemUID,
@@ -360,7 +379,7 @@ func main() {
 		ReadOnlyMode:                         flags.F.ReadOnlyMode,
 		EnableL4NetLBRBSByDefault:            flags.F.EnableL4NetLBRBSByDefault,
 	}
-	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, svcAttachmentClient, networkClient, nodeTopologyClient, l4LBConfigClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
+	ctx, err := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, firewallCRClient, svcNegClient, negBindingClient, svcAttachmentClient, networkClient, nodeTopologyClient, l4LBConfigClient, eventRecorderKubeClient, cloud, namer, kubeSystemUID, ctxConfig, rootLogger)
 	if err != nil {
 		klog.Fatalf("unable to set up controller context: %v", err)
 	}
@@ -733,6 +752,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 	negController, err := neg.NewController(
 		ctx.KubeClient,
 		ctx.SvcNegClient,
+		ctx.NEGBindingClient,
 		ctx.EventRecorderClient,
 		ctx.KubeSystemUID,
 		ctx.IngressInformer,
@@ -741,6 +761,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		ctx.NodeInformer,
 		ctx.EndpointSliceInformer,
 		ctx.SvcNegInformer,
+		ctx.NEGBindingInformer,
 		ctx.NetworkInformer,
 		ctx.GKENetworkParamsInformer,
 		ctx.NodeTopologyInformer,
@@ -763,6 +784,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		flags.F.EnableL4NetLBNEG,
 		flags.F.ReadOnlyMode,
 		flags.F.EnableNEGsForIngress,
+		flags.F.EnableNEGBinding,
 		flags.F.EnableL4NEGLocalIncludeDrainNodes,
 		stopCh,
 		logger,

@@ -45,6 +45,9 @@ import (
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	informerl4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig/client/informers/externalversions/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/neg"
+	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
+	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/recorders"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
@@ -69,6 +72,7 @@ const (
 type ControllerContext struct {
 	KubeClient          kubernetes.Interface
 	SvcNegClient        svcnegclient.Interface
+	NEGBindingClient    negbindingclient.Interface
 	SAClient            serviceattachmentclient.Interface
 	FirewallClient      firewallclient.Interface
 	EventRecorderClient kubernetes.Interface
@@ -91,6 +95,7 @@ type ControllerContext struct {
 	NodeInformer             cache.SharedIndexInformer
 	EndpointSliceInformer    cache.SharedIndexInformer
 	SvcNegInformer           cache.SharedIndexInformer
+	NEGBindingInformer       cache.SharedIndexInformer
 	SAInformer               cache.SharedIndexInformer
 	FirewallInformer         cache.SharedIndexInformer
 	NetworkInformer          cache.SharedIndexInformer
@@ -154,6 +159,7 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	firewallClient firewallclient.Interface,
 	svcnegClient svcnegclient.Interface,
+	negBindingClient negbindingclient.Interface,
 	saClient serviceattachmentclient.Interface,
 	networkClient networkclient.Interface,
 	nodeTopologyClient nodetopologyclient.Interface,
@@ -182,6 +188,7 @@ func NewControllerContext(
 		KubeClient:              kubeClient,
 		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,
+		NEGBindingClient:        negBindingClient,
 		SAClient:                saClient,
 		EventRecorderClient:     eventRecorderClient,
 		NodeTopologyClient:      nodeTopologyClient,
@@ -216,6 +223,11 @@ func NewControllerContext(
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if negBindingClient != nil {
+		context.NEGBindingInformer = informernegbinding.NewNetworkEndpointGroupBindingInformer(negBindingClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		_ = context.NEGBindingInformer.AddIndexers(cache.Indexers{neg.ServiceKeyIndex: neg.ServiceKeyIndexFunc})
 	}
 
 	if networkClient != nil {
@@ -317,6 +329,9 @@ func (ctx *ControllerContext) HasSynced() bool {
 	if ctx.SAInformer != nil {
 		funcs = append(funcs, ctx.SAInformer.HasSynced)
 	}
+	if ctx.NEGBindingInformer != nil {
+		funcs = append(funcs, ctx.NEGBindingInformer.HasSynced)
+	}
 	if ctx.NetworkInformer != nil {
 		funcs = append(funcs, ctx.NetworkInformer.HasSynced)
 	}
@@ -362,6 +377,9 @@ func (ctx *ControllerContext) Start(stopCh <-chan struct{}) {
 	}
 	if ctx.SAInformer != nil {
 		go ctx.SAInformer.Run(stopCh)
+	}
+	if ctx.NEGBindingInformer != nil {
+		go ctx.NEGBindingInformer.Run(stopCh)
 	}
 	if ctx.NetworkInformer != nil {
 		go ctx.NetworkInformer.Run(stopCh)
