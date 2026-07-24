@@ -20,13 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
@@ -41,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -48,6 +52,9 @@ import (
 const (
 	// ServiceKeyIndex is the name of the index that maps service key (namespace/name) to NEGBinding.
 	ServiceKeyIndex = "serviceKey"
+
+	// NEGBindingFinalizer is the finalizer key used to block NEGBinding deletion until NEGs are drained.
+	NEGBindingFinalizer = "networking.gke.io/negbinding-cleaner"
 )
 
 var (
@@ -84,6 +91,65 @@ func (c syncerConfig) Equals(other syncerConfig) bool {
 		c.networkInfo.K8sNetwork == other.networkInfo.K8sNetwork
 }
 
+// negOwnershipRegistry allows to track which NEGBinding CR's syncer has rights to modify endpoints of the NEGs based on their name.
+type negOwnershipRegistry struct {
+	mu        sync.Mutex
+	owners    map[string]string // negName -> ownerKey
+	onRelease func(negName string)
+}
+
+// newNEGOwnershipRegistry constructs a new negOwnershipRegistry.
+func newNEGOwnershipRegistry(onRelease func(string)) *negOwnershipRegistry {
+	return &negOwnershipRegistry{
+		owners:    make(map[string]string),
+		onRelease: onRelease,
+	}
+}
+
+// Acquire tries to get exclusive ownership of NEGs with name negName for owner
+func (r *negOwnershipRegistry) Acquire(negName string, owner string) (bool, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	currentOwner, ok := r.owners[negName]
+	if !ok {
+		r.owners[negName] = owner
+		return true, ""
+	}
+	if currentOwner == owner {
+		return true, ""
+	}
+	return false, currentOwner
+}
+
+// ReleaseAllOwnedExcept releases all owned by owner NEG names, except ones in keep set
+func (r *negOwnershipRegistry) ReleaseAllOwnedExcept(owner string, keep sets.Set[string]) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if keep == nil {
+		keep = sets.New[string]()
+	}
+
+	for negName, currentOwner := range r.owners {
+		if currentOwner == owner {
+			if !keep.Has(negName) {
+				delete(r.owners, negName)
+				if r.onRelease != nil {
+					go r.onRelease(negName)
+				}
+			}
+		}
+	}
+}
+
+// GetOwner gets current owner of the NEG name
+func (r *negOwnershipRegistry) GetOwner(negName string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.owners[negName]
+}
+
 // negBindingManager manages the lifecycle of syncers associated with NEGBinding CRs.
 type negBindingManager struct {
 	negBindingClient negbindingclient.Interface
@@ -112,6 +178,8 @@ type negBindingManager struct {
 
 	reflector     readiness.Reflector
 	kubeSystemUID types.UID
+
+	ownershipRegistry *negOwnershipRegistry
 
 	logger klog.Logger
 }
@@ -155,6 +223,9 @@ func newNEGBindingManager(
 		kubeSystemUID:       kubeSystemUID,
 		logger:              logger.WithName("NEGBindingManager"),
 	}
+	m.ownershipRegistry = newNEGOwnershipRegistry(func(negName string) {
+		m.tryAssignNEGToBinding(negName)
+	})
 	return m
 }
 
@@ -170,7 +241,19 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	svcKey := fmt.Sprintf("%s/%s", binding.Namespace, svcName)
 	svc, err := m.getServiceFromCache(svcKey)
 	if err != nil {
-		_ = m.updateBackendRefCondition(binding, ErrServiceNotFound)
+		_ = m.updateBackendRefCondition(binding, err)
+		if errors.Is(err, ErrServiceNotFound) {
+			bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+			m.logger.Info("Service not found for NEGBinding, ensuring cleanup syncer", "binding", bindingKey, "serviceKey", svcKey)
+			syncer, err := m.ensureCleanupSyncer(binding)
+			if err != nil {
+				return err
+			}
+			if syncer != nil {
+				syncer.Sync()
+			}
+			return nil
+		}
 		return err
 	}
 
@@ -189,6 +272,73 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 		syncer.Sync()
 	}
 	return nil
+}
+
+func (m *negBindingManager) ensureCleanupSyncer(binding *negbindingv1beta1.NetworkEndpointGroupBinding) (negtypes.NegSyncer, error) {
+	svcName := binding.Spec.BackendRef.Name
+	svcPort := binding.Spec.BackendRef.Port
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+	syncer, ok := m.syncerMap[bindingKey]
+	if ok {
+		_, hasConfig := m.syncerConfigs[bindingKey]
+		if !hasConfig {
+			// No config - it's cleanup syncer, starting it instead of recreation
+			if syncer.IsStopped() {
+				if err := syncer.Start(); err != nil {
+					return nil, fmt.Errorf("failed to start existing cleanup syncer for binding %s: %w", bindingKey, err)
+				}
+			}
+			return syncer, nil
+		}
+
+		m.logger.Info("Service deleted, replacing transaction syncer with cleanup syncer", "binding", bindingKey)
+		syncer.Stop()
+		delete(m.syncerMap, bindingKey)
+		delete(m.syncerConfigs, bindingKey)
+	}
+
+	portTuple := negtypes.SvcPortTuple{
+		Port:       svcPort,
+		Name:       "",
+		TargetPort: fmt.Sprintf("%d", svcPort),
+	}
+	syncerKey := negtypes.NegSyncerKey{
+		Namespace:        binding.Namespace,
+		Name:             svcName,
+		NEGBindingName:   binding.Name,
+		PortTuple:        portTuple,
+		NegType:          negtypes.VmIpPortEndpointType,
+		EpCalculatorMode: negtypes.L7Mode,
+	}
+
+	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
+		binding.Name,
+		binding.Namespace,
+		m.negBindingClient,
+		m.negBindingLister,
+		m.negMetrics,
+		m.ownershipRegistry,
+		m.logger,
+	)
+
+	cleanupSyncer := negsyncer.NewCleanupSyncer(
+		syncerKey,
+		m.cloud,
+		statusHandler,
+		m.negBindingLister,
+		m.logger,
+	)
+
+	if err := cleanupSyncer.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start cleanup syncer for binding %s: %w", bindingKey, err)
+	}
+
+	m.syncerMap[bindingKey] = cleanupSyncer
+	return cleanupSyncer, nil
 }
 
 // EnsureSyncersForService ensures syncers for all bindings referencing the given service.
@@ -247,6 +397,10 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 	svc *apiv1.Service,
 	networkInfo *network.NetworkInfo,
 ) (negtypes.NegSyncer, error) {
+	if err := m.ensureFinalizer(binding); err != nil {
+		return nil, fmt.Errorf("failed to ensure finalizer: %w", err)
+	}
+
 	svcName := binding.Spec.BackendRef.Name
 	svcPort := binding.Spec.BackendRef.Port
 
@@ -278,6 +432,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		if !hasConfig || !oldConfig.Equals(newConfig) {
 			m.logger.Info("Configuration changed for NEGBinding syncer, recreating", "binding", bindingKey, "old", oldConfig, "new", newConfig)
 			syncer.Stop()
+			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 			delete(m.syncerMap, bindingKey)
 			delete(m.syncerConfigs, bindingKey)
 			// Proceed to create new syncer
@@ -302,7 +457,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		EpCalculatorMode: negtypes.L7Mode,
 	}
 
-	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL)
+	tp, err := negsyncer.NewNEGBindingTopologyProvider(binding.Namespace, binding.Name, m.negBindingLister, defaultSubnetURL, m.ownershipRegistry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create topology provider: %w", err)
 	}
@@ -313,6 +468,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		m.negBindingClient,
 		m.negBindingLister,
 		m.negMetrics,
+		m.ownershipRegistry,
 		m.logger,
 	)
 
@@ -366,7 +522,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 	return syncer, nil
 }
 
-// ProcessServiceDeletion handles service deletion by stopping syncers for referencing bindings.
+// ProcessServiceDeletion handles service deletion by ensuring cleanup syncer for referencing bindings.
 func (m *negBindingManager) ProcessServiceDeletion(svcNamespace, svcName string) {
 	svcKey := fmt.Sprintf("%s/%s", svcNamespace, svcName)
 	objs, err := m.negBindingLister.ByIndex(ServiceKeyIndex, svcKey)
@@ -381,9 +537,13 @@ func (m *negBindingManager) ProcessServiceDeletion(svcNamespace, svcName string)
 			continue
 		}
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
-		m.logger.Info("Service deleted, stopping syncer for binding", "binding", bindingKey, "service", svcKey)
-		m.StopSyncer(binding.Namespace, binding.Name)
+		m.logger.Info("Service deleted, ensuring cleanup syncer for binding", "binding", bindingKey, "service", svcKey)
 		_ = m.updateBackendRefCondition(binding, fmt.Errorf("%w: %s/%s", ErrServiceNotFound, svcNamespace, svcName))
+
+		// Will ensure cleanup syncer, as there is no service, which needed for normal syncer
+		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+			m.logger.Error(err, "Failed to ensure syncer for binding after service deletion", "binding", bindingKey)
+		}
 	}
 }
 
@@ -394,6 +554,7 @@ func (m *negBindingManager) StopSyncer(namespace, name string) {
 	bindingKey := fmt.Sprintf("%s/%s", namespace, name)
 	if syncer, ok := m.syncerMap[bindingKey]; ok {
 		syncer.Stop()
+		m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 		delete(m.syncerMap, bindingKey)
 		delete(m.syncerConfigs, bindingKey)
 	}
@@ -473,6 +634,119 @@ func (m *negBindingManager) getPortTuple(svc *apiv1.Service, port int32) (negtyp
 	return negtypes.SvcPortTuple{}, fmt.Errorf("port %d not found in service %s/%s spec", port, svc.Namespace, svc.Name)
 }
 
+// InitializeOwnershipRegistry reads NEG names from existing NEGBinding CRs' statuses and acquires them.
+// In case same NEG name found in multiple CRs, only one selected.
+func (m *negBindingManager) InitializeOwnershipRegistry() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	bindings := m.negBindingLister.List()
+	for _, obj := range bindings {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			m.logger.Error(nil, "Unexpected object type in negBindingLister during registry init", "type", fmt.Sprintf("%T", obj))
+			continue
+		}
+		ownerKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+
+		for _, ref := range binding.Status.NetworkEndpointGroups {
+			negID, err := cloud.ParseResourceURL(ref.ResourceURL)
+			if err != nil {
+				m.logger.Error(err, "Failed to parse NEG URL from status during registry init", "binding", ownerKey, "url", ref.ResourceURL)
+				continue
+			}
+			negName := negID.Key.Name
+			acquired, currentOwner := m.ownershipRegistry.Acquire(negName, ownerKey)
+			if acquired {
+				m.logger.Info("Restored NEG ownership from status", "negName", negName, "owner", ownerKey)
+			} else {
+				m.logger.Info("Conflict during registry initialization", "negName", negName, "attemptedOwner", ownerKey, "currentOwner", currentOwner)
+			}
+		}
+	}
+	return nil
+}
+
+// ReconcileDeletion ensures NEGBinding CR's NEGs are cleaned up before CR is removed
+func (m *negBindingManager) ReconcileDeletion(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
+	bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+
+	var syncer negtypes.NegSyncer
+	var ok bool
+	func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		syncer, ok = m.syncerMap[bindingKey]
+	}()
+
+	if !ok {
+		if len(binding.Status.NetworkEndpointGroups) == 0 {
+			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
+			return m.removeFinalizer(binding)
+		}
+		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+			return fmt.Errorf("failed to start syncer for draining: %w", err)
+		}
+		return nil
+	}
+
+	if len(binding.Status.NetworkEndpointGroups) == 0 {
+		m.logger.Info("Draining complete for NEGBinding, removing finalizer", "binding", bindingKey)
+		syncer.Stop()
+		m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
+
+		func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			delete(m.syncerMap, bindingKey)
+			delete(m.syncerConfigs, bindingKey)
+		}()
+
+		return m.removeFinalizer(binding)
+	}
+
+	syncer.Sync()
+	m.logger.Info("NEGBinding is still draining", "binding", bindingKey, "remainingNEGs", len(binding.Status.NetworkEndpointGroups))
+	return nil
+}
+
+func (m *negBindingManager) ensureFinalizer(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
+	if slices.Contains(binding.Finalizers, NEGBindingFinalizer) {
+		return nil
+	}
+	updated := binding.DeepCopy()
+	updated.Finalizers = append(updated.Finalizers, NEGBindingFinalizer)
+
+	m.logger.Info("Adding finalizer to NEGBinding", "binding", klog.KObj(binding))
+	return m.patchObjectMetadata(binding, updated.ObjectMeta)
+}
+
+func (m *negBindingManager) removeFinalizer(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
+	if !slices.Contains(binding.Finalizers, NEGBindingFinalizer) {
+		return nil
+	}
+	updated := binding.DeepCopy()
+	updated.Finalizers = slice.RemoveString(updated.Finalizers, NEGBindingFinalizer, nil)
+
+	m.logger.Info("Removing finalizer from NEGBinding", "binding", klog.KObj(binding))
+	return m.patchObjectMetadata(binding, updated.ObjectMeta)
+}
+
+func (m *negBindingManager) patchObjectMetadata(old *negbindingv1beta1.NetworkEndpointGroupBinding, newMeta metav1.ObjectMeta) error {
+	updated := old.DeepCopy()
+	updated.ObjectMeta = newMeta
+	patchBytes, err := patch.MergePatchBytes(old, updated)
+	if err != nil {
+		return err
+	}
+	if string(patchBytes) == "{}" {
+		return nil
+	}
+	_, err = m.negBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(old.Namespace).Patch(
+		context.Background(), old.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	return err
+}
+
 func (m *negBindingManager) validateBackendRef(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
 	if binding.Spec.BackendRef == nil {
 		return ErrInvalidBackendRef
@@ -545,4 +819,27 @@ func (m *negBindingManager) ensureCondition(binding *negbindingv1beta1.NetworkEn
 	}
 
 	binding.Status.Conditions[index] = expectedCondition
+}
+
+// tryAssignNEGToBinding is a callback for released NEGs. In case any other NEGBinding CR refers to the released NEG name, its syncer will be ensured and synced.
+func (m *negBindingManager) tryAssignNEGToBinding(negName string) {
+	objs := m.negBindingLister.List()
+	for _, obj := range objs {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			continue
+		}
+
+		for _, ref := range binding.Spec.NetworkEndpointGroups {
+			if ref.Name == negName {
+				bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+				// It's not guaranteed that this binding will have ownership if conflict with other binding still exists
+				m.logger.Info("Triggering ensure/sync for binding which refers to released NEG", "binding", bindingKey, "negName", negName)
+				if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+					m.logger.Error(err, "Failed to ensure syncer for binding after NEG release", "binding", bindingKey, "negName", negName)
+				}
+				break
+			}
+		}
+	}
 }

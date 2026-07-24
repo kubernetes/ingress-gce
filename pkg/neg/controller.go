@@ -491,6 +491,12 @@ func (c *Controller) Run() {
 		return c.hasSynced(), nil
 	}, c.stopCh)
 
+	if c.enableNEGBinding {
+		if err := c.negBindingManager.InitializeOwnershipRegistry(); err != nil {
+			c.logger.Error(err, "Failed to initialize NEG ownership registry")
+		}
+	}
+
 	c.logger.V(2).Info("Starting network endpoint group controller")
 	activecontrollermetrics.RecordRunningController(activecontrollermetrics.NEGControllerLabel)
 	defer func() {
@@ -1260,8 +1266,7 @@ func (c *Controller) processNEGBinding(key string) error {
 	}
 
 	if binding.DeletionTimestamp != nil {
-		c.negBindingManager.StopSyncer(namespace, name)
-		return nil
+		return c.negBindingManager.ReconcileDeletion(binding)
 	}
 
 	return c.negBindingManager.EnsureSyncerForNEGBinding(binding)
