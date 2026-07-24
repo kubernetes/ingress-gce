@@ -1791,7 +1791,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, cr has with populated status, with correct neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -1810,7 +1810,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, with correct neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -1822,7 +1822,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, with mismatched cluster id in neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  "cluster-2",
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -1834,7 +1834,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, with mismatched namespace in neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   "namespace-2",
 				ServiceName: testServiceName,
@@ -1846,7 +1846,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, with mismatched service in neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: "service-2",
@@ -1860,7 +1860,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		{
 			desc:      "Neg exists, with mismatched port in neg description",
 			negExists: true,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -1875,7 +1875,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			desc:      "Neg exists, cr has populated status, but error during initialization",
 			negExists: true,
 			// Cause error by having a conflicting neg description
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -2065,7 +2065,7 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 	flags.F.NodeTopologyCRName = "default"
 	flags.F.EnableMultiSubnetClusterPhase1 = true
 
-	negDesc := utils.NegDescription{
+	negDesc := utils.StandardNEGDescription{
 		ClusterUID:  kubeSystemUID,
 		Namespace:   testServiceNamespace,
 		ServiceName: testServiceName,
@@ -2118,7 +2118,7 @@ func TestEnsureNetworkEndpointGroupsMSC(t *testing.T) {
 		{
 			desc:           "NodeTopology CR contains additional subnets, conflicting NEG description",
 			nodeTopologyCr: &nodeTopologyCrWithAdditionalSubnets,
-			negDesc: utils.NegDescription{
+			negDesc: utils.StandardNEGDescription{
 				ClusterUID:  kubeSystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
@@ -4742,13 +4742,13 @@ func getNegObjectReferences(negs []*composite.NetworkEndpointGroup, negState neg
 // checks the NEG Description on the cloud NEG Object and verifies with expected
 // description from the syncer.
 func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
-	expectedNegDesc := utils.NegDescription{
+	expectedNegDesc := utils.StandardNEGDescription{
 		ClusterUID:  syncer.kubeSystemUID,
 		Namespace:   syncer.NegSyncerKey.Namespace,
 		ServiceName: syncer.NegSyncerKey.Name,
 		Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
 	}
-	actualNegDesc, err := utils.NegDescriptionFromString(desc)
+	actualNegDesc, err := utils.StandardNEGDescriptionFromString(desc)
 	if err != nil {
 		t.Errorf("Invalid neg description: %s", err)
 	}

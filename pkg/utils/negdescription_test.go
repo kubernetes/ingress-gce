@@ -24,12 +24,12 @@ import (
 func TestNegString(t *testing.T) {
 	testCases := []struct {
 		desc           string
-		description    NegDescription
+		description    StandardNEGDescription
 		expectedString string
 	}{
 		{
 			desc: "all fields",
-			description: NegDescription{
+			description: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -39,7 +39,7 @@ func TestNegString(t *testing.T) {
 		},
 		{
 			desc:           "empty",
-			description:    NegDescription{},
+			description:    StandardNEGDescription{},
 			expectedString: "{}",
 		},
 	}
@@ -52,11 +52,11 @@ func TestNegString(t *testing.T) {
 	}
 }
 
-func TestNegDescriptionFromString(t *testing.T) {
+func TestStandardNEGDescriptionFromString(t *testing.T) {
 	testCases := []struct {
 		desc         string
 		negDesc      string
-		expectedDesc NegDescription
+		expectedDesc StandardNEGDescription
 		expectError  bool
 	}{
 		{
@@ -71,7 +71,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 		{
 			desc:    "no feature",
 			negDesc: `{"cluster-uid":"00000000001", "namespace":"my-namespace", "service-name":"my-service", "port":"80"}`,
-			expectedDesc: NegDescription{
+			expectedDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -82,7 +82,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 		{
 			desc:    "missing a field",
 			negDesc: `{"cluster-uid":"00000000001","service-name":"my-service", "port":"80"}`,
-			expectedDesc: NegDescription{
+			expectedDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				ServiceName: "my-service",
 				Port:        "80",
@@ -92,7 +92,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		description, err := NegDescriptionFromString(tc.negDesc)
+		description, err := StandardNEGDescriptionFromString(tc.negDesc)
 		if err != nil && !tc.expectError {
 			t.Errorf("%s: NegDescriptionFromString(%s) resulted in error: %s", tc.desc, tc.negDesc, err)
 		}
@@ -103,7 +103,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 }
 
 func TestVerifyDescription(t *testing.T) {
-	negDesc := NegDescription{
+	negDesc := StandardNEGDescription{
 		ClusterUID:  "00000000001",
 		Namespace:   "my-namespace",
 		ServiceName: "my-service",
@@ -113,13 +113,13 @@ func TestVerifyDescription(t *testing.T) {
 	testCases := []struct {
 		desc          string
 		negDescString string
-		expectNegDesc NegDescription
+		expectNegDesc StandardNEGDescription
 		shouldMatch   bool
 	}{
 		{
 			desc:          "fields match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -130,7 +130,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "empty description",
 			negDescString: "",
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -141,7 +141,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "cluster uid doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -152,7 +152,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "namespace doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "not-my-namespace",
 				ServiceName: "my-service",
@@ -163,7 +163,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "service name doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "not-my-service",
@@ -174,7 +174,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "port doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",

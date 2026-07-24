@@ -140,7 +140,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	if neg == nil {
 		needToCreate = true
 	} else {
-		expectedDesc := utils.NegDescription{
+		expectedDesc := utils.StandardNEGDescription{
 			ClusterUID:  kubeSystemUID,
 			Namespace:   svcNamespace,
 			ServiceName: svcName,
@@ -198,7 +198,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 		negLogger.Info("Creating NEG", "negServicePortName", negServicePortName, "network", networkInfo.NetworkURL, "subnetwork", subnetwork)
 		desc := ""
-		negDesc := utils.NegDescription{
+		negDesc := utils.StandardNEGDescription{
 			ClusterUID:  kubeSystemUID,
 			Namespace:   svcNamespace,
 			ServiceName: svcName,

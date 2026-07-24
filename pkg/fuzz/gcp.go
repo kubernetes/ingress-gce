@@ -996,7 +996,7 @@ func CheckStandaloneNEGDeletion(ctx context.Context, c cloud.Cloud, negName, por
 		}
 
 		if neg.Description != "" {
-			desc, err := utils.NegDescriptionFromString(neg.Description)
+			desc, err := utils.StandardNEGDescriptionFromString(neg.Description)
 			if err == nil && desc.Port != port {
 				continue
 			}

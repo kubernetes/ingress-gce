@@ -1242,14 +1242,14 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 	port80 := int32(80)
 	zones := []string{negtypes.TestZone1, negtypes.TestZone2}
 
-	matchingDesc := utils.NegDescription{
+	matchingDesc := utils.StandardNEGDescription{
 		ClusterUID:  KubeSystemUID,
 		Namespace:   testServiceNamespace,
 		ServiceName: testServiceName,
 		Port:        fmt.Sprintf("%v", port80),
 	}
 
-	wrongDesc := utils.NegDescription{
+	wrongDesc := utils.StandardNEGDescription{
 		ClusterUID:  "another-cluster",
 		Namespace:   "another-namespace",
 		ServiceName: "another-svc",
@@ -1553,7 +1553,7 @@ func TestGarbageCollectTBDNegs(t *testing.T) {
 		},
 	}
 	port80 := int32(80)
-	matchingDesc := utils.NegDescription{
+	matchingDesc := utils.StandardNEGDescription{
 		ClusterUID:  KubeSystemUID,
 		Namespace:   testServiceNamespace,
 		ServiceName: testServiceName,

@@ -27,7 +27,7 @@ import (
 var ErrNEGUsedByAnotherSyncer = errors.New("NEG is used by another syncer in the same cluster and namespace")
 
 // Description stores the description for a BackendService.
-type NegDescription struct {
+type StandardNEGDescription struct {
 	ClusterUID  string `json:"cluster-uid,omitempty"`
 	Namespace   string `json:"namespace,omitempty"`
 	ServiceName string `json:"service-name,omitempty"`
@@ -35,7 +35,7 @@ type NegDescription struct {
 }
 
 // String returns the string representation of a Description.
-func (desc NegDescription) String() string {
+func (desc StandardNEGDescription) String() string {
 	descJson, err := json.Marshal(desc)
 	if err != nil {
 		klog.Errorf("Failed to generate neg description string: %v, falling back to empty string", err)
@@ -45,11 +45,11 @@ func (desc NegDescription) String() string {
 }
 
 // DescriptionFromString gets a Description from string,
-func NegDescriptionFromString(descString string) (*NegDescription, error) {
-	var desc NegDescription
+func StandardNEGDescriptionFromString(descString string) (*StandardNEGDescription, error) {
+	var desc StandardNEGDescription
 	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
 		klog.Errorf("Failed to parse neg description: %s, falling back to empty list", descString)
-		return &NegDescription{}, err
+		return &StandardNEGDescription{}, err
 	}
 	return &desc, nil
 }
@@ -57,10 +57,10 @@ func NegDescriptionFromString(descString string) (*NegDescription, error) {
 // VerifyDescription returns whether the provided descString fields match Neg Description expectDesc.
 // If an empty string or malformed description is provided, VerifyDescription will return true.
 // When returning false, a detailed error will also be returned
-func VerifyDescription(expectDesc NegDescription, descString, negName, zone string) (bool, error) {
+func VerifyDescription(expectDesc StandardNEGDescription, descString, negName, zone string) (bool, error) {
 	// Return true if description string is empty
 	if descString != "" {
-		desc, err := NegDescriptionFromString(descString)
+		desc, err := StandardNEGDescriptionFromString(descString)
 		if err != nil {
 			klog.Warningf("Error unmarshalling Neg Description %s err:%s", negName, err)
 		} else {

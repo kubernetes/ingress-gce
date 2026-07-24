@@ -494,14 +494,14 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				t.Errorf("Unexpected Network, expecting %q but got %q", tc.expectedNetwork, neg.Network)
 			}
 
-			expectedNegDesc := utils.NegDescription{
+			expectedNegDesc := utils.StandardNEGDescription{
 				ClusterUID:  testKubesystemUID,
 				Namespace:   testServiceNamespace,
 				ServiceName: testServiceName,
 				Port:        testPort,
 			}
 
-			actualNegDesc, err := utils.NegDescriptionFromString(neg.Description)
+			actualNegDesc, err := utils.StandardNEGDescriptionFromString(neg.Description)
 			if err != nil {
 				t.Errorf("Invalid neg description: %s", err)
 			}
@@ -2071,14 +2071,14 @@ func TestNEGRecreate(t *testing.T) {
 		}
 	)
 
-	matchingNegDesc := utils.NegDescription{
+	matchingNegDesc := utils.StandardNEGDescription{
 		ClusterUID:  testKubesystemUID,
 		Namespace:   testServiceNamespace,
 		ServiceName: testServiceName,
 		Port:        testPort,
 	}.String()
 
-	anotherNegDesc := utils.NegDescription{
+	anotherNegDesc := utils.StandardNEGDescription{
 		ClusterUID:  "another-cluster",
 		Namespace:   testServiceNamespace,
 		ServiceName: testServiceName,
@@ -2324,7 +2324,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycleNetSubnetMismatch(t *testing.T
 		}
 	)
 
-	matchingNegDesc := utils.NegDescription{
+	matchingNegDesc := utils.StandardNEGDescription{
 		ClusterUID:  testKubesystemUID,
 		Namespace:   testServiceNameSpace,
 		ServiceName: testServiceName,
