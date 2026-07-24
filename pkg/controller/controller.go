@@ -514,7 +514,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress, ingLogger kl
 	if len(toKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		ingLogger.Info("Deleting instance group", "instanceGroup", igName)
-		if err := lbc.instancePool.DeleteInstanceGroup(igName, ingLogger); err != err {
+		if err := lbc.instancePool.DeleteInstanceGroup(igName, ingLogger); err != nil {
 			return err
 		}
 	}
