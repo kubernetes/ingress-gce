@@ -103,10 +103,10 @@ func (c *Controller) Run() {
 	defer activecontrollermetrics.RecordStoppedController(activecontrollermetrics.IGControllerLabel)
 	start := time.Now()
 	for !c.hasSynced() {
-		c.logger.V(2).Info("Waiting for hasSynced", "elapsedTime", time.Now().Sub(start))
+		c.logger.V(2).Info("Waiting for hasSynced", "elapsedTime", time.Since(start))
 		time.Sleep(1 * time.Second)
 	}
-	c.logger.V(2).Info("Caches synced", "timeTaken", time.Now().Sub(start))
+	c.logger.V(2).Info("Caches synced", "timeTaken", time.Since(start))
 	go c.queue.Run()
 	<-c.stopCh
 	c.Shutdown()
