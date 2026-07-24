@@ -29,6 +29,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -286,6 +287,9 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 			fr.Subnetwork = fwSubnet
 		} else {
 			fr.Subnetwork = env.Subnetwork
+		}
+		if annotations.FromIngress(env.Ing).AllowGlobalAccess() {
+			fr.AllowGlobalAccess = true
 		}
 	} else if t.IsL7XLBRegional {
 		fr.LoadBalancingScheme = "EXTERNAL_MANAGED"
