@@ -2241,3 +2241,103 @@ func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureIPv6ExternalLoadBalancerOmittingSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	ipv6Address := &ga.Address{
+		Name:         "ipv6-address",
+		Address:      "2::2",
+		IpVersion:    "IPV6",
+		PrefixLength: 96,
+	}
+	err := l4NetLB.cloud.ReserveRegionAddress(ipv6Address, l4NetLB.cloud.Region())
+	if err != nil {
+		t.Fatalf("Failed to reserve IPv6 address: %v", err)
+	}
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = "ipv6-address"
+
+	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	// Because a static IP is configured, ipv6AddressName is not empty,
+	// so the ForwardingRule should have an empty Subnetwork field.
+	ipv6FRName := l4NetLB.ipv6FRName()
+	fr, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(ipv6FRName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get forwarding rule %s: %v", ipv6FRName, err)
+	}
+
+	if fr.Subnetwork != "" {
+		t.Errorf("Expected ForwardingRule Subnetwork to be empty when a static IPv6 address is specified, got: %q", fr.Subnetwork)
+	}
+}
+
+func TestEnsureIPv6ExternalLoadBalancerUpdatesForwardingRuleSubnet(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	ipv6Address := &ga.Address{
+		Name:         "ipv6-address",
+		Address:      "2::2",
+		IpVersion:    "IPV6",
+		PrefixLength: 96,
+	}
+	err := l4NetLB.cloud.ReserveRegionAddress(ipv6Address, l4NetLB.cloud.Region())
+	if err != nil {
+		t.Fatalf("Failed to reserve IPv6 address: %v", err)
+	}
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = "ipv6-address"
+
+	ipv6FRName := l4NetLB.ipv6FRName()
+
+	// Pre-create an IPv6 forwarding rule with both Subnetwork and IPAddress to simulate
+	// an older GKE version before the fix.
+	err = l4NetLB.cloud.Compute().(*cloud.MockGCE).ForwardingRules().Insert(context.TODO(), meta.RegionalKey(ipv6FRName, l4NetLB.cloud.Region()), &compute.ForwardingRule{
+		Name:                ipv6FRName,
+		IPAddress:           "2::2",
+		IPProtocol:          "TCP",
+		PortRange:           "8080-8080",
+		LoadBalancingScheme: string(cloud.SchemeExternal),
+		BackendService:      "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/backendServices/bs1",
+		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
+		IpVersion:           "IPV6",
+	})
+	if err != nil {
+		t.Fatalf("Failed to pre-create Forwarding Rule: %v", err)
+	}
+
+	oldFr, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(ipv6FRName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get forwarding rule %s: %v", ipv6FRName, err)
+	}
+	if oldFr.Subnetwork == "" {
+		t.Errorf("Expected existing ForwardingRule Subnetwork to be non-empty before update")
+	}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, l4NetLB.Service, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	fr, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(ipv6FRName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("Failed to get forwarding rule %s: %v", ipv6FRName, err)
+	}
+
+	if fr.Subnetwork != "" {
+		t.Errorf("Expected ForwardingRule Subnetwork to be cleared upon update, got: %q", fr.Subnetwork)
+	}
+}
