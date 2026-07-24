@@ -448,6 +448,24 @@ func TestEqualIPv6(t *testing.T) {
 		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
 	}
+	ipCollectionFwdRule1 := &composite.ForwardingRule{
+		Name:                "ip-collection-fwd-rule-1",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		IpCollection:        "my-collection",
+	}
+	ipCollectionFwdRule2 := &composite.ForwardingRule{
+		Name:                "ip-collection-fwd-rule-2",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		IpCollection:        "other-collection",
+	}
 
 	testCases := []struct {
 		desc        string
@@ -502,6 +520,24 @@ func TestEqualIPv6(t *testing.T) {
 			oldFwdRule:  bsLink2PremiumNetworkTierFwdRule,
 			newFwdRule:  bsLink2StandardNetworkTierFwdRule,
 			expectEqual: false,
+		},
+		{
+			desc:        "different ip collection",
+			oldFwdRule:  ipCollectionFwdRule1,
+			newFwdRule:  ipCollectionFwdRule2,
+			expectEqual: false,
+		},
+		{
+			desc:        "one has ip collection, one does not",
+			oldFwdRule:  ipCollectionFwdRule1,
+			newFwdRule:  tcpFwdRule,
+			expectEqual: false,
+		},
+		{
+			desc:        "same ip collection",
+			oldFwdRule:  ipCollectionFwdRule1,
+			newFwdRule:  ipCollectionFwdRule1,
+			expectEqual: true,
 		},
 	}
 

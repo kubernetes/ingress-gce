@@ -380,3 +380,35 @@ func TestWantsL4NetLB(t *testing.T) {
 		})
 	}
 }
+
+func TestGetIPCollection(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		svc  *v1.Service
+		want string
+	}{
+		{
+			desc: "ip-collection annotation not specified",
+			svc:  &v1.Service{},
+			want: "",
+		},
+		{
+			desc: "ip-collection annotation specified",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						IPCollectionV6AnnotationKey: "my-ip-collection",
+					},
+				},
+			},
+			want: "my-ip-collection",
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := FromService(tc.svc).GetIPCollectionV6()
+			if got != tc.want {
+				t.Errorf("FromService().GetIPCollection() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

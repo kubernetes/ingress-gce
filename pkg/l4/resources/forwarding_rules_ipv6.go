@@ -190,6 +190,14 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if err != nil {
 		return nil, l4utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
+
+	var ipCollection string
+	if flags.F.EnableBYOIPv6 {
+		ipCollection = annotations.FromService(l4netlb.Service).GetIPCollectionV6()
+	}
+	if ipCollection != "" {
+		subnetworkURL = ""
+	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
@@ -199,6 +207,12 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		frLogger.Error(err, "address.IPv6ToUse for service returned error")
 		return nil, l4utils.ResourceResync, err
 	}
+
+	// If the IP collection changed, we cannot reuse the old forwarding rule's IP.
+	if fwdRuleToDetermineIP != nil && fwdRuleToDetermineIP.IpCollection != ipCollection {
+		ipv6AddrToUse = ""
+	}
+
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
 	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
@@ -214,6 +228,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
 		addrMgr := address.NewManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddressName, ipv6AddrToUse, cloud.SchemeExternal, netTier, address.IPv6Version, frLogger)
+		addrMgr.SetIPCollection(ipCollection)
 
 		// If network tier annotation in Service Spec is present
 		// check if it matches network tiers from forwarding rule and external ip Address.
@@ -333,6 +348,11 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 		}
 	}
 
+	var ipCollection string
+	if flags.F.EnableBYOIPv6 {
+		ipCollection = annotations.FromService(l4netlb.Service).GetIPCollectionV6()
+	}
+
 	fr := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
@@ -346,6 +366,7 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 		Subnetwork:          subnetworkURL,
 		AllPorts:            allPorts,
 		Ports:               ports,
+		IpCollection:        ipCollection,
 	}
 
 	return fr, nil
