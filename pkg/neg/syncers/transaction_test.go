@@ -4742,19 +4742,24 @@ func getNegObjectReferences(negs []*composite.NetworkEndpointGroup, negState neg
 // checks the NEG Description on the cloud NEG Object and verifies with expected
 // description from the syncer.
 func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
-	expectedNegDesc := utils.StandardNEGDescription{
-		ClusterUID:  syncer.kubeSystemUID,
-		Namespace:   syncer.NegSyncerKey.Namespace,
-		ServiceName: syncer.NegSyncerKey.Name,
-		Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
+	var expectedNEGDesc utils.NEGDescription
+	if syncer.NegSyncerKey.IsBindingKey() {
+		expectedNEGDesc = utils.BoundNEGDescription{
+			ClusterName: flags.F.GKEClusterName,
+			Namespace:   syncer.NegSyncerKey.Namespace,
+			BackendRef:  syncer.NegSyncerKey.NEGBindingName,
+		}
+	} else {
+		expectedNEGDesc = utils.StandardNEGDescription{
+			ClusterUID:  syncer.kubeSystemUID,
+			Namespace:   syncer.NegSyncerKey.Namespace,
+			ServiceName: syncer.NegSyncerKey.Name,
+			Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
+		}
 	}
-	actualNegDesc, err := utils.NEGDescriptionFromString[utils.StandardNEGDescription](desc)
-	if err != nil {
-		t.Errorf("Invalid neg description: %s", err)
-	}
-
-	if !reflect.DeepEqual(*actualNegDesc, expectedNegDesc) {
-		t.Errorf("Unexpected neg description %s, expected %s", desc, expectedNegDesc.String())
+	matches, err := expectedNEGDesc.MatchesString(desc, syncer.NegSyncerKey.Name, "")
+	if err != nil || !matches {
+		t.Errorf("Unexpected neg description %s, expected %s, err: %v", desc, expectedNEGDesc.String(), err)
 	}
 }
 
@@ -5517,18 +5522,26 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 				klog.TODO(),
 			)
 
+			boundDesc := utils.BoundNEGDescription{
+				ClusterName: flags.F.GKEClusterName,
+				Namespace:   namespace,
+				BackendRef:  bindingName,
+			}.String()
+
 			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
-				Name:       negName,
-				Network:    testNetwork,
-				Subnetwork: testSubnetwork,
+				Name:        negName,
+				Network:     testNetwork,
+				Subnetwork:  testSubnetwork,
+				Description: boundDesc,
 			}, testZone1, klog.TODO())
 			if err != nil {
 				t.Fatalf("Failed to create desired NEG: %v", err)
 			}
 			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
-				Name:       negName,
-				Network:    testNetwork,
-				Subnetwork: testSubnetwork,
+				Name:        negName,
+				Network:     testNetwork,
+				Subnetwork:  testSubnetwork,
+				Description: boundDesc,
 			}, testZone2, klog.TODO())
 			if err != nil {
 				t.Fatalf("Failed to create old NEG: %v", err)

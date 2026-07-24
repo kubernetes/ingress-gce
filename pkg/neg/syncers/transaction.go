@@ -638,11 +638,20 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		subnetConfigs = []nodetopologyv1.SubnetConfig{subnetConfig}
 	}
 
-	expectedNEGDesc := utils.StandardNEGDescription{
-		ClusterUID:  s.kubeSystemUID,
-		Namespace:   s.Namespace,
-		ServiceName: s.Name,
-		Port:        fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+	var expectedNEGDesc utils.NEGDescription
+	if s.NegSyncerKey.IsBindingKey() {
+		expectedNEGDesc = utils.BoundNEGDescription{
+			ClusterName: flags.F.GKEClusterName,
+			Namespace:   s.Namespace,
+			BackendRef:  s.NegSyncerKey.NEGBindingName,
+		}
+	} else {
+		expectedNEGDesc = utils.StandardNEGDescription{
+			ClusterUID:  s.kubeSystemUID,
+			Namespace:   s.Namespace,
+			ServiceName: s.Name,
+			Port:        fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+		}
 	}
 
 	for _, subnetConfig := range subnetConfigs {
