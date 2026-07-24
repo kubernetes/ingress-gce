@@ -143,12 +143,12 @@ func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan
 			if !ok {
 				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 				if !ok {
-					logger.Error(nil, "unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
+					logger.Error(nil, "Unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
 					return
 				}
 				svc, ok = tombstone.Obj.(*v1.Service)
 				if !ok {
-					logger.Error(nil, "unexpected object type in tombstone in DeleteFunc", "type", fmt.Sprintf("%T", tombstone.Obj))
+					logger.Error(nil, "Unexpected object type in tombstone in DeleteFunc", "type", fmt.Sprintf("%T", tombstone.Obj))
 					return
 				}
 			}
@@ -259,7 +259,7 @@ func (lc *StandaloneNEGLBController) parseForwardingRuleKeys(frNamesStr string, 
 		if strings.Contains(frName, "/") {
 			resourceID, err := cloud.ParseResourceURL(frName)
 			if err != nil {
-				svcLogger.Error(err, "failed to parse forwarding rule reference URL", "frRef", frName)
+				svcLogger.Error(err, "Failed to parse forwarding rule reference URL", "frRef", frName)
 				errs = append(errs, fmt.Errorf("failed to parse forwarding rule reference URL %s: %w", frName, err))
 				continue
 			}
@@ -313,7 +313,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	frNamesStr, ok := svc.Annotations[annotations.CustomForwardingRuleKey]
 	if !ok || frNamesStr == "" {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
-		svcLogger.V(4).Info("Service has no forwarding rule reference, skipping")
+		svcLogger.V(4).Info("Service has no forwarding rule reference; skipping")
 		cond := NewConditionExternalIPProgrammedFalse(NoForwardingRuleRef)
 		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
@@ -330,23 +330,20 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 
 	if len(parsedRules) == 0 {
 		var reason lbConditionReason
-		var err error
 		if len(parseErrs) > 0 {
 			reason = InvalidForwardingRule
 		} else {
 			reason = NoForwardingRuleRef
 		}
 		cond := NewConditionExternalIPProgrammedFalse(reason)
-		err = updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
-		if err != nil {
-			errs = append(errs, err)
-		}
+		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if len(errs) > 0 {
-			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule %s", errors.Join(errs...).Error())
-			return nil, errors.Join(errs...)
+			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule: %v", errors.Join(errs...))
+			allErrs := append([]error{clearErr}, errs...)
+			return nil, errors.Join(allErrs...)
 		}
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
-		return nil, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation"))
+		return nil, errors.Join(clearErr, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation")))
 	}
 
 	if len(parsedRules) > ForwardingRulesLimit {
@@ -364,14 +361,13 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	for _, parsed := range parsedRules {
 		fr, err := composite.GetForwardingRule(lc.ctx.Cloud, parsed.key, meta.VersionBeta, svcLogger)
 		if err != nil {
-			svcLogger.Error(err, "failed to get forwarding rule", "frName", parsed.rawName)
 			if utils.IsNotFoundError(err) {
+				svcLogger.Error(err, "failed to get forwarding rule", "frName", parsed.rawName)
 				err = l4utils.NewUserError(err)
 			}
 			errs = append(errs, err)
 			continue
 		}
-
 		schemes = append(schemes, fr.LoadBalancingScheme)
 
 		if err := validateForwardingRule(fr, parsed.rawName); err != nil {
@@ -393,17 +389,15 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 
 	if len(errs) > 0 {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use all Forwarding Rules %s", errors.Join(errs...).Error())
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use all Forwarding Rules: %v", errors.Join(errs...))
 	}
 	// if at least one FR was ok then we use it
 	if len(lbIngresses) == 0 {
 		// if none of the FRs is usable remove any that is possibly there
 		cond := NewConditionExternalIPProgrammedFalse(classifyError(errs[0]))
-		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
-		if err != nil {
-			errs = append(errs, err)
-		}
-		return schemes, errors.Join(errs...)
+		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		allErrs := append([]error{clearErr}, errs...)
+		return schemes, errors.Join(allErrs...)
 	}
 
 	newStatus := &v1.LoadBalancerStatus{
@@ -427,6 +421,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	if len(errs) > 0 {
 		return schemes, errors.Join(errs...)
 	}
+	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "SyncLoadBalancerSuccessful", "Successfully ensured Standalone NEG LoadBalancer resources")
 	return schemes, nil
 }
 
@@ -436,10 +431,7 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 	}
 
 	conditionsToRemove := []string{ExternalIPProgrammed}
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger); err != nil {
-		return err
-	}
-	return nil
+	return updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger)
 }
 
 func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes []string, syncErr error, start time.Time) {
