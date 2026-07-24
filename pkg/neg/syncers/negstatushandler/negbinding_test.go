@@ -35,6 +35,37 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type mockRegistry struct {
+	owners map[string]string
+}
+
+func newMockRegistry() *mockRegistry {
+	return &mockRegistry{owners: make(map[string]string)}
+}
+
+func (r *mockRegistry) Acquire(negName string, owner string) (bool, string) {
+	if current, ok := r.owners[negName]; ok {
+		if current == owner {
+			return true, ""
+		}
+		return false, current
+	}
+	r.owners[negName] = owner
+	return true, ""
+}
+
+func (r *mockRegistry) ReleaseAllOwnedExcept(owner string, keep sets.Set[string]) {
+	for k, v := range r.owners {
+		if v == owner && !keep.Has(k) {
+			delete(r.owners, k)
+		}
+	}
+}
+
+func (r *mockRegistry) GetOwner(negName string) string {
+	return r.owners[negName]
+}
+
 func TestReportStatus(t *testing.T) {
 	namespace := "test-namespace"
 	name := "test-binding"
@@ -175,7 +206,8 @@ func TestReportStatus(t *testing.T) {
 			fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), defaultBinding.DeepCopy(), metav1.CreateOptions{})
 
 			negMetrics := metrics.NewNegMetrics()
-			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+			registry := newMockRegistry()
+			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 			err := h.ReportStatus(tc.negs, tc.errList)
 			if err != nil {
@@ -374,7 +406,8 @@ func TestReportSyncStatus(t *testing.T) {
 			fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding.DeepCopy(), metav1.CreateOptions{})
 
 			negMetrics := metrics.NewNegMetrics()
-			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+			registry := newMockRegistry()
+			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 			gotNeedInit, err := h.ReportSyncStatus(tc.syncErr)
 			if err != nil {
@@ -479,7 +512,8 @@ func TestSubnetToZonesMap(t *testing.T) {
 			indexer.Add(tc.binding.DeepCopy())
 
 			negMetrics := metrics.NewNegMetrics()
-			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+			registry := newMockRegistry()
+			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 			gotMap, err := h.SubnetToZonesMap()
 			if err != nil {
@@ -501,7 +535,8 @@ func TestSubnetToZonesMapInvalidTypeInCache(t *testing.T) {
 	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
 
 	negMetrics := metrics.NewNegMetrics()
-	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+	registry := newMockRegistry()
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 	invalidObj := &metav1.PartialObjectMetadata{
 		ObjectMeta: metav1.ObjectMeta{
@@ -530,7 +565,8 @@ func TestSubnetToZonesMapNotInStore(t *testing.T) {
 	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
 
 	negMetrics := metrics.NewNegMetrics()
-	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+	registry := newMockRegistry()
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 	_, err := h.SubnetToZonesMap()
 	if err == nil {
@@ -570,7 +606,8 @@ func TestPatchStatusNoChanges(t *testing.T) {
 	fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), defaultBinding.DeepCopy(), metav1.CreateOptions{})
 
 	negMetrics := metrics.NewNegMetrics()
-	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, klog.TODO())
+	registry := newMockRegistry()
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
 	negs := []*composite.NetworkEndpointGroup{
 		{
@@ -649,5 +686,118 @@ func TestPatchStatusNoChanges(t *testing.T) {
 	actions = fakeClient.Actions()
 	if len(actions) != 0 {
 		t.Errorf("Expected 0 actions on second ReportStatus with same data, got %d: %+v", len(actions), actions)
+	}
+}
+
+func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
+
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{Kind: negbindingv1beta1.ServiceKind, Name: "test-svc", Port: 80},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{Name: "neg-1", Subnet: "subnet-1"},
+				{Name: "neg-2", Subnet: "subnet-2"},
+			},
+		},
+	}
+	indexer.Add(binding)
+	fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding, metav1.CreateOptions{})
+
+	registry := newMockRegistry()
+	ownerKey := fmt.Sprintf("%s/%s", namespace, name)
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.NewNegMetrics(), registry, klog.TODO())
+
+	// Case 1: No conflicts. ReportStatus should succeed normally (Attached=True)
+	registry.Acquire("neg-1", ownerKey)
+	registry.Acquire("neg-2", ownerKey)
+
+	negs := []*composite.NetworkEndpointGroup{
+		{SelfLink: "url-1", Subnetwork: "subnet-url-1"},
+		{SelfLink: "url-2", Subnetwork: "subnet-url-2"},
+	}
+	err := h.ReportStatus(negs, nil)
+	if err != nil {
+		t.Fatalf("ReportStatus failed: %v", err)
+	}
+
+	updatedBinding, _ := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	cond, _, found := h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected NEGsAttached=True, got: %+v", cond)
+	}
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, ManagedCondition)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected Managed=True, got: %+v", cond)
+	}
+
+	// Case 2: "neg-1" is stolen by other owner
+	registry.ReleaseAllOwnedExcept(ownerKey, sets.New("neg-2"))
+	otherOwner := "test-namespace/other-binding"
+	registry.Acquire("neg-1", otherOwner)
+
+	err = h.ReportStatus(negs, nil)
+	if err != nil {
+		t.Fatalf("ReportStatus failed: %v", err)
+	}
+
+	updatedBinding, _ = fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, ManagedCondition)
+	if !found || cond.Status != metav1.ConditionFalse {
+		t.Errorf("Expected Managed=False, got: %+v", cond)
+	}
+	if cond.Reason != NEGOwnershipConflict {
+		t.Errorf("Expected Reason=NEGOwnershipConflict, got %q", cond.Reason)
+	}
+	expectedMessage := `NEG "neg-1" is owned by "test-namespace/other-binding"`
+	if cond.Message != expectedMessage {
+		t.Errorf("Expected Message %q, got %q", expectedMessage, cond.Message)
+	}
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected NEGsAttached=True on conflict (no sync error), got: %+v", cond)
+	}
+
+	// Case 3: ReportSyncStatus with conflict
+	_, err = h.ReportSyncStatus(nil)
+	if err != nil {
+		t.Fatalf("ReportSyncStatus failed: %v", err)
+	}
+	updatedBinding, _ = fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, ManagedCondition)
+	if !found || cond.Status != metav1.ConditionFalse || cond.Reason != NEGOwnershipConflict {
+		t.Errorf("Expected Managed=False due to conflict in ReportSyncStatus, got: %+v", cond)
+	}
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected NEGsAttached=True due to conflict in ReportSyncStatus (no sync error), got: %+v", cond)
+	}
+
+	// Case 4: Conflict resolved. ReportStatus should set Managed=True and NEGsAttached=True
+	registry.ReleaseAllOwnedExcept(otherOwner, sets.New[string]()) // release from otherOwner
+	registry.Acquire("neg-1", ownerKey)                            // acquire back
+	registry.Acquire("neg-2", ownerKey)
+
+	err = h.ReportStatus(negs, nil)
+	if err != nil {
+		t.Fatalf("ReportStatus failed: %v", err)
+	}
+
+	updatedBinding, _ = fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, ManagedCondition)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected Managed=True after conflict resolved, got: %+v", cond)
+	}
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	if !found || cond.Status != metav1.ConditionTrue {
+		t.Errorf("Expected NEGsAttached=True after conflict resolved, got: %+v", cond)
 	}
 }
