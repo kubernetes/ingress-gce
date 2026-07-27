@@ -1655,6 +1655,10 @@ func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []s
 func assertDualStackNetLBResourcesWithCustomIPv6Subnet(t *testing.T, l4NetLB *L4NetLB, nodeNames []string, expectedIPv6Subnet string) {
 	t.Helper()
 
+	if annotations.FromService(l4NetLB.Service).GetIPCollectionV6() != "" {
+		expectedIPv6Subnet = ""
+	}
+
 	// Check that HealthCheck is created
 	healthCheck, err := getAndVerifyNetLBHealthCheck(l4NetLB)
 	if err != nil {
@@ -1744,7 +1748,11 @@ func assertNetLBResourcesIPv6Only(t *testing.T, l4NetLB *L4NetLB, nodeNames []st
 		t.Errorf("getAndVerifyNetLBBackendService(_, %v) = %v, want nil", healthcheck, err)
 	}
 
-	if err := verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink, l4NetLB.cloud.SubnetworkURL()); err != nil {
+	expectedIPv6Subnet := l4NetLB.cloud.SubnetworkURL()
+	if annotations.FromService(l4NetLB.Service).GetIPCollectionV6() != "" {
+		expectedIPv6Subnet = ""
+	}
+	if err := verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink, expectedIPv6Subnet); err != nil {
 		t.Errorf("verifyNetLBIPv6ForwardingRule() = %v, want nil", err)
 	}
 
@@ -2006,6 +2014,12 @@ func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
 	if val, ok := l4netlb.Service.Annotations[annotations.NetworkTierAnnotationKey]; ok {
 		expectedAnnotations[annotations.NetworkTierAnnotationKey] = val
 	}
+	if val, ok := l4netlb.Service.Annotations[annotations.RBSAnnotationKey]; ok {
+		expectedAnnotations[annotations.RBSAnnotationKey] = val
+	}
+	if val, ok := l4netlb.Service.Annotations[annotations.IPCollectionV6AnnotationKey]; ok {
+		expectedAnnotations[annotations.IPCollectionV6AnnotationKey] = val
+	}
 	return expectedAnnotations
 }
 
@@ -2229,5 +2243,230 @@ func TestEnsureL4NetLB_L4LBConfigLogging(t *testing.T) {
 				t.Errorf("LogConfig mismatch following reconciliation (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestIPv6OnlyNetLBIPCollectionAnnotation(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	for k, v := range result.Annotations {
+		svc.Annotations[k] = v
+	}
+	assertNetLBResourcesIPv6Only(t, l4NetLB, nodeNames)
+
+	// Check IpCollection and Subnetwork on IPv6 Forwarding Rule
+	frName := l4NetLB.ipv6FRName()
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "my-collection" {
+		t.Errorf("fwdRule.IpCollection = %v, want my-collection", fwdRule.IpCollection)
+	}
+	if fwdRule.Subnetwork != "" {
+		t.Errorf("fwdRule.Subnetwork = %v, want empty string", fwdRule.Subnetwork)
+	}
+}
+
+func TestEnsureFrontendConflictingAnnotations(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "my-subnet"
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams, klog.TODO())
+	l4netlb.healthChecks = healthchecks.Fake(fakeGCE, l4netlb.recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error == nil {
+		t.Errorf("Expected error for conflicting annotations, but got nil")
+	} else if !IsUserError(result.Error) {
+		t.Errorf("Expected UserError for conflicting annotations, but got %v", result.Error)
+	}
+}
+
+func TestEnsureFrontendConflictingIPAnnotations(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.LoadBalancerIP = "1.2.3.4"
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams, klog.TODO())
+	l4netlb.healthChecks = healthchecks.Fake(fakeGCE, l4netlb.recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error == nil {
+		t.Errorf("Expected error for conflicting annotations, but got nil")
+	} else if !IsUserError(result.Error) {
+		t.Errorf("Expected UserError for conflicting annotations, but got %v", result.Error)
+	}
+}
+
+func TestEnsureFrontendConflictingIPAddressesAnnotation(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = "1.2.3.4"
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams, klog.TODO())
+	l4netlb.healthChecks = healthchecks.Fake(fakeGCE, l4netlb.recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error == nil {
+		t.Errorf("Expected error for conflicting annotations, but got nil")
+	} else if !IsUserError(result.Error) {
+		t.Errorf("Expected UserError for conflicting annotations, but got %v", result.Error)
+	}
+}
+
+func TestEnsureFrontendIPv4OnlyIPCollectionError(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	svc := test.NewL4NetLBRBSService(8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol}
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams, klog.TODO())
+	l4netlb.healthChecks = healthchecks.Fake(fakeGCE, l4netlb.recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error == nil {
+		t.Errorf("Expected error for ip-collection on IPv4 service, but got nil")
+	} else if !IsUserError(result.Error) {
+		t.Errorf("Expected UserError for ip-collection on IPv4 service, but got %v", result.Error)
+	}
+}
+
+func TestEnsureFrontendDualStackIPCollectionError(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	svc := test.NewL4NetLBRBSService(8080)
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:         svc,
+		Cloud:           fakeGCE,
+		Namer:           namer,
+		Recorder:        record.NewFakeRecorder(100),
+		NetworkResolver: network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams, klog.TODO())
+	l4netlb.healthChecks = healthchecks.Fake(fakeGCE, l4netlb.recorder)
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+
+	result := l4netlb.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error == nil {
+		t.Errorf("Expected error for ip-collection on dualstack service, but got nil")
+	} else if !IsUserError(result.Error) {
+		t.Errorf("Expected UserError for ip-collection on dualstack service, but got %v", result.Error)
 	}
 }
