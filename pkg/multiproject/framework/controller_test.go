@@ -30,6 +30,7 @@ type fakePCManager struct {
 	mu             sync.Mutex
 	startedConfigs map[string]*providerconfigv1.ProviderConfig
 	stoppedConfigs map[string]*providerconfigv1.ProviderConfig
+	cleanedConfigs map[string]bool
 
 	startErr error // optional injected error
 	stopErr  error // optional injected error
@@ -43,6 +44,7 @@ func newFakeProviderConfigControllersManager(pcClient *fakeproviderconfigclient.
 	return &fakePCManager{
 		startedConfigs: make(map[string]*providerconfigv1.ProviderConfig),
 		stoppedConfigs: make(map[string]*providerconfigv1.ProviderConfig),
+		cleanedConfigs: make(map[string]bool),
 		pcClient:       pcClient,
 		finalizerName:  finalizerName,
 		logger:         logger,
@@ -77,6 +79,19 @@ func (f *fakePCManager) StopControllersForProviderConfig(pc *providerconfigv1.Pr
 		return err
 	}
 	return finalizer.DeleteProviderConfigFinalizer(latestPC, f.finalizerName, f.pcClient, f.logger)
+}
+
+func (f *fakePCManager) ForceCleanupTenant(pcKey string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cleanedConfigs[pcKey] = true
+}
+
+func (f *fakePCManager) HasCleaned(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.cleanedConfigs[name]
+	return ok
 }
 
 func (f *fakePCManager) HasStarted(name string) bool {
@@ -304,6 +319,8 @@ func (f *fakePanickingManager) StopControllersForProviderConfig(pc *providerconf
 	return nil
 }
 
+func (f *fakePanickingManager) ForceCleanupTenant(pcKey string) {}
+
 func (f *fakePanickingManager) getPanicCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -380,4 +397,49 @@ func TestPanicRecovery(t *testing.T) {
 	}
 
 	t.Log("Controller survived panic and continued processing")
+}
+
+func TestDeleteProviderConfigTriggersCleanup(t *testing.T) {
+	tc := newTestProviderConfigController(t)
+	go tc.pcController.Run()
+	defer close(tc.stopCh)
+
+	pc := &providerconfigv1.ProviderConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pc-cleanup-test",
+		},
+	}
+	addProviderConfig(t, tc, pc)
+
+	// Poll for manager to start the controller
+	err := wait.PollImmediate(10*time.Millisecond, 1*time.Second, func() (bool, error) {
+		return tc.manager.HasStarted("pc-cleanup-test"), nil
+	})
+	if err != nil {
+		t.Fatalf("expected manager to have started 'pc-cleanup-test' within timeout: %v", err)
+	}
+
+	// Delete from client
+	err = tc.pcClient.CloudV1().ProviderConfigs().Delete(context.TODO(), "pc-cleanup-test", metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("failed to delete ProviderConfig: %v", err)
+	}
+	// Delete from indexer
+	err = tc.pcInformer.GetIndexer().Delete(pc)
+	if err != nil {
+		t.Fatalf("failed to delete ProviderConfig from indexer: %v", err)
+	}
+	// Trigger Delete handler/queue
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pc)
+	if err == nil {
+		tc.pcController.providerConfigQueue.Enqueue(key)
+	}
+
+	// Poll for manager to cleanup the controller
+	err = wait.PollImmediate(10*time.Millisecond, 1*time.Second, func() (bool, error) {
+		return tc.manager.HasCleaned("pc-cleanup-test"), nil
+	})
+	if err != nil {
+		t.Errorf("expected manager to have cleaned 'pc-cleanup-test' within timeout: %v", err)
+	}
 }

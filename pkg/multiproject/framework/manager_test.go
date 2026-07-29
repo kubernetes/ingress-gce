@@ -438,3 +438,122 @@ func TestManagerMultipleProviderConfigs(t *testing.T) {
 		t.Errorf("Expected 4 start calls after restart, got %d", mockStarter.getStartCallCount())
 	}
 }
+
+func TestManagerForceCleanup(t *testing.T) {
+	ctx := context.TODO()
+	logger, _ := ktesting.NewTestContext(t)
+	client := providerconfigclient.NewSimpleClientset()
+	mockStarter := newMockControllerStarter()
+
+	manager := newManager(
+		client,
+		"test-finalizer",
+		mockStarter,
+		logger,
+	)
+
+	pc := createTestProviderConfig("test-pc")
+	pc.Spec.PrincipalInfo = &providerconfig.PrincipalInfo{
+		ID: "test-tenant-uid",
+	}
+
+	_, err := client.CloudV1().ProviderConfigs().Create(ctx, pc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create test ProviderConfig: %v", err)
+	}
+
+	// Start the controller
+	err = manager.StartControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Stop the controller -> should start timer and add to deleting map
+	err = manager.StopControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	manager.deletingMu.Lock()
+	state, exists := manager.deleting["test-pc"]
+	manager.deletingMu.Unlock()
+
+	if !exists {
+		t.Fatal("Expected tenant to be in deleting map")
+	}
+	if state.tenantUID != "test-tenant-uid" {
+		t.Errorf("Expected tenantUID to be test-tenant-uid, got %s", state.tenantUID)
+	}
+	if state.cancel == nil {
+		t.Error("Expected cancel function to be set")
+	}
+
+	// Call ForceCleanupTenant
+	manager.ForceCleanupTenant("test-pc")
+
+	manager.deletingMu.Lock()
+	_, exists = manager.deleting["test-pc"]
+	manager.deletingMu.Unlock()
+
+	if exists {
+		t.Error("Expected tenant to be removed from deleting map after ForceCleanupTenant")
+	}
+}
+
+func TestManagerStartClearsDeletingMap(t *testing.T) {
+	ctx := context.TODO()
+	logger, _ := ktesting.NewTestContext(t)
+	client := providerconfigclient.NewSimpleClientset()
+	mockStarter := newMockControllerStarter()
+
+	manager := newManager(
+		client,
+		"test-finalizer",
+		mockStarter,
+		logger,
+	)
+
+	pc := createTestProviderConfig("test-pc")
+	pc.Spec.PrincipalInfo = &providerconfig.PrincipalInfo{
+		ID: "test-tenant-uid",
+	}
+
+	_, err := client.CloudV1().ProviderConfigs().Create(ctx, pc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create test ProviderConfig: %v", err)
+	}
+
+	// Start the controller
+	err = manager.StartControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Stop the controller -> should start timer and add to deleting map
+	err = manager.StopControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	manager.deletingMu.Lock()
+	_, exists := manager.deleting["test-pc"]
+	manager.deletingMu.Unlock()
+
+	if !exists {
+		t.Fatal("Expected tenant to be in deleting map")
+	}
+
+	// Start the controller again (simulating recreation/revival)
+	err = manager.StartControllersForProviderConfig(pc)
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	manager.deletingMu.Lock()
+	_, exists = manager.deleting["test-pc"]
+	manager.deletingMu.Unlock()
+
+	if exists {
+		t.Error("Expected tenant to be removed from deleting map after starting controllers again")
+	}
+}

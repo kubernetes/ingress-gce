@@ -35,6 +35,7 @@ const (
 type controllerManager interface {
 	StartControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
 	StopControllersForProviderConfig(pc *providerconfig.ProviderConfig) error
+	ForceCleanupTenant(pcKey string)
 }
 
 // Controller manages the ProviderConfig resource lifecycle.
@@ -93,6 +94,10 @@ func newController(manager controllerManager, providerConfigInformer cache.Share
 				c.logger.V(4).Info("Enqueue update event", "old", old, "new", cur)
 				c.providerConfigQueue.Enqueue(cur)
 			},
+			DeleteFunc: func(obj interface{}) {
+				c.logger.V(4).Info("Enqueue delete event", "object", obj)
+				c.providerConfigQueue.Enqueue(obj)
+			},
 		})
 
 	c.logger.Info("ProviderConfig controller created")
@@ -150,6 +155,7 @@ func (c *Controller) sync(key string, logger klog.Logger) error {
 	}
 	if !exists || providerConfig == nil {
 		logger.V(3).Info("ProviderConfig does not exist anymore")
+		c.manager.ForceCleanupTenant(key)
 		return nil
 	}
 	pc, ok := providerConfig.(*providerconfig.ProviderConfig)
