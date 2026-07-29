@@ -236,12 +236,18 @@ func (g *Cloud) NodeAddressesByProviderID(ctx context.Context, providerID string
 	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Hour)
 	defer cancel()
 
-	_, zone, name, err := splitProviderID(providerID)
+	project, zone, name, err := splitProviderID(providerID)
 	if err != nil {
 		return []v1.NodeAddress{}, err
 	}
 
-	instance, err := g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	var instance *compute.Instance
+	if g.projectFromNodeProviderID {
+		instance, err = g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone), cloud.ForceProjectID(project))
+	} else {
+		instance, err = g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	}
+
 	if err != nil {
 		return []v1.NodeAddress{}, fmt.Errorf("error while querying for providerID %q: %v", providerID, err)
 	}
@@ -280,7 +286,7 @@ func (g *Cloud) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, erro
 
 func (g *Cloud) nodeAddressesFromInstance(instance *compute.Instance) ([]v1.NodeAddress, error) {
 	if len(instance.NetworkInterfaces) < 1 {
-		return nil, fmt.Errorf("could not find network interfaces for instanceID %q", instance.Id)
+		return nil, fmt.Errorf("could not find network interfaces for instanceID %d", instance.Id)
 	}
 	nodeAddresses := []v1.NodeAddress{}
 	for _, nic := range instance.NetworkInterfaces {
@@ -365,7 +371,7 @@ func (g *Cloud) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprov
 		}
 	}
 
-	_, zone, name, err := splitProviderID(providerID)
+	project, zone, name, err := splitProviderID(providerID)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +383,12 @@ func (g *Cloud) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprov
 
 	var addresses []v1.NodeAddress
 	var instanceType string
-	instance, err := g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	var instance *compute.Instance
+	if g.projectFromNodeProviderID {
+		instance, err = g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone), cloud.ForceProjectID(project))
+	} else {
+		instance, err = g.c.Instances().Get(timeoutCtx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error while querying for providerID %q: %v", providerID, err)
 	}
@@ -518,7 +529,7 @@ func (g *Cloud) GetAllZonesFromCloudProvider() (sets.String, error) {
 	defer cancel()
 
 	zones := sets.NewString()
-	for _, zone := range g.managedZones {
+	for _, zone := range g.getManagedZones() {
 		instances, err := g.c.Instances().List(ctx, zone, filter.None)
 		if err != nil {
 			return sets.NewString(), err
@@ -578,13 +589,17 @@ func (g *Cloud) AliasRangesByProviderID(providerID string) (cidrs []string, err 
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	_, zone, name, err := splitProviderID(providerID)
+	project, zone, name, err := splitProviderID(providerID)
 	if err != nil {
 		return nil, err
 	}
 
 	var res *compute.Instance
-	res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	if g.projectFromNodeProviderID {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone), cloud.ForceProjectID(project))
+	} else {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	}
 	if err != nil {
 		return
 	}
@@ -623,12 +638,17 @@ func (g *Cloud) AddAliasToInstanceByProviderID(providerID string, alias *net.IPN
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	_, zone, name, err := splitProviderID(providerID)
+	project, zone, name, err := splitProviderID(providerID)
 	if err != nil {
 		return err
 	}
 
-	instance, err := g.c.BetaInstances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	var instance *computebeta.Instance
+	if g.projectFromNodeProviderID {
+		instance, err = g.c.BetaInstances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone), cloud.ForceProjectID(project))
+	} else {
+		instance, err = g.c.BetaInstances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	}
 	if err != nil {
 		return err
 	}
@@ -651,7 +671,11 @@ func (g *Cloud) AddAliasToInstanceByProviderID(providerID string, alias *net.IPN
 	})
 
 	mc := newInstancesMetricContext("add_alias", zone)
-	err = g.c.BetaInstances().UpdateNetworkInterface(ctx, meta.ZonalKey(instance.Name, lastComponent(instance.Zone)), iface.Name, iface)
+	if g.projectFromNodeProviderID {
+		err = g.c.BetaInstances().UpdateNetworkInterface(ctx, meta.ZonalKey(instance.Name, lastComponent(instance.Zone)), iface.Name, iface, cloud.ForceProjectID(project))
+	} else {
+		err = g.c.BetaInstances().UpdateNetworkInterface(ctx, meta.ZonalKey(instance.Name, lastComponent(instance.Zone)), iface.Name, iface)
+	}
 	return mc.Observe(err)
 }
 
@@ -691,7 +715,7 @@ func (g *Cloud) getFoundInstanceByNames(names []string) ([]*gceInstance, error) 
 		found[name] = nil
 	}
 
-	for _, zone := range g.managedZones {
+	for _, zone := range g.getManagedZones() {
 		if remaining == 0 {
 			break
 		}
@@ -739,10 +763,10 @@ func (g *Cloud) getFoundInstanceByNames(names []string) ([]*gceInstance, error) 
 
 // Gets the named instance, returning cloudprovider.InstanceNotFound if the instance is not found
 func (g *Cloud) getInstanceByName(name string) (*gceInstance, error) {
-	klog.Infof("Searching node %s in managed zones %v", name, g.managedZones)
+	klog.Infof("Searching node %s in managed zones %v", name, g.getManagedZones())
 
 	// Avoid changing behaviour when not managing multiple zones
-	for _, zone := range g.managedZones {
+	for _, zone := range g.getManagedZones() {
 		instance, err := g.getInstanceFromProjectInZoneByName(g.projectID, zone, name)
 		if err != nil {
 			if isHTTPErrorCode(err, http.StatusNotFound) {
@@ -758,12 +782,18 @@ func (g *Cloud) getInstanceByName(name string) (*gceInstance, error) {
 }
 
 func (g *Cloud) getInstanceFromProjectInZoneByName(project, zone, name string) (*gceInstance, error) {
-	ctx, cancel := cloud.ContextWithCallTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 
 	name = canonicalizeInstanceName(name)
 	mc := newInstancesMetricContext("get", zone)
-	res, err := g.c.Instances().Get(ctx, meta.ZonalKey(name, zone))
+	var res *compute.Instance
+	var err error
+	if g.projectFromNodeProviderID {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(name, zone), cloud.ForceProjectID(project))
+	} else {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(name, zone))
+	}
 	mc.Observe(err)
 	if err != nil {
 		return nil, err
@@ -917,12 +947,16 @@ func (g *Cloud) InstanceByProviderID(providerID string) (res *compute.Instance, 
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	_, zone, name, err := splitProviderID(providerID)
+	project, zone, name, err := splitProviderID(providerID)
 	if err != nil {
 		return nil, err
 	}
+	if g.projectFromNodeProviderID {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone), cloud.ForceProjectID(project))
+	} else {
+		res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
+	}
 
-	res, err = g.c.Instances().Get(ctx, meta.ZonalKey(canonicalizeInstanceName(name), zone))
 	if err != nil {
 		return nil, err
 	}

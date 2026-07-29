@@ -48,8 +48,18 @@ import (
 )
 
 const (
+	// RegionalExternalLoadBalancerClass is the loadBalancerClass name used to select the
+	// RBS LB implementation.
+	RegionalExternalLoadBalancerClass = "networking.gke.io/l4-regional-external"
+
+	// NetLBFinalizerV1 is the finalizer used by cloud-controller-manager that manage L4 External LoadBalancer services.
+	NetLBFinalizerV1 = "gke.networking.io/l4-netlb-v1"
+
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+
+	// NetLBFinalizerV3 is the finalizer used by newer controllers that manage L4 External LoadBalancer services (similar to V2 but this one is for NEG based LBs).
+	NetLBFinalizerV3 = "gke.networking.io/l4-netlb-v3"
 )
 
 func fakeGCECloud(vals TestClusterValues) (*Cloud, error) {
@@ -433,6 +443,15 @@ func hasFinalizer(service *v1.Service, key string) bool {
 	return false
 }
 
+func hasLoadBalancerClass(service *v1.Service, key string) bool {
+	if service.Spec.LoadBalancerClass != nil {
+		if *service.Spec.LoadBalancerClass == key {
+			return true
+		}
+	}
+	return false
+}
+
 // removeString returns a newly created []string that contains all items from slice that
 // are not equal to s.
 func removeString(slice []string, s string) []string {
@@ -445,16 +464,38 @@ func removeString(slice []string, s string) []string {
 	return newSlice
 }
 
+// shouldProcessNetLB checks if service uses CCM as controller.
+// It should be handled by Service Controller.
+func shouldProcessNetLB(service *v1.Service, forwardingRule *compute.ForwardingRule, isRbsDefault bool) bool {
+	// Detect by load balancer class
+	if service.Spec.LoadBalancerClass != nil {
+		return hasLoadBalancerClass(service, LegacyRegionalExternalLoadBalancerClass)
+	}
+	// Detect CCM by finalizer
+	if hasFinalizer(service, NetLBFinalizerV1) {
+		return true
+	}
+	// Detect not CCM by RBS
+	if usesL4RBS(service, forwardingRule) {
+		return false
+	}
+	return !isRbsDefault
+}
+
 // usesL4RBS checks if service uses Regional Backend Service as a Backend.
 // Such services implemented in other controllers and
 // should not be handled by Service Controller.
 func usesL4RBS(service *v1.Service, forwardingRule *compute.ForwardingRule) bool {
+	// Detect RBS by loadBalancerClass
+	if hasLoadBalancerClass(service, RegionalExternalLoadBalancerClass) {
+		return true
+	}
 	// Detect RBS by annotation
 	if val, ok := service.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
 		return true
 	}
 	// Detect RBS by finalizer
-	if hasFinalizer(service, NetLBFinalizerV2) {
+	if hasFinalizer(service, NetLBFinalizerV2) || hasFinalizer(service, NetLBFinalizerV3) {
 		return true
 	}
 	// Detect RBS by existing forwarding rule with Backend Service attached

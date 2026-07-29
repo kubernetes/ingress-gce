@@ -21,13 +21,17 @@ package gce
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	corev1apply "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1apply "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/klog/v2"
@@ -40,6 +44,23 @@ import (
 type cidrs struct {
 	ipn   netutils.IPNetSet
 	isSet bool
+}
+
+type lbSyncResult struct {
+	status      *v1.LoadBalancerStatus
+	annotations map[string]string
+}
+
+func newLBSyncResult() *lbSyncResult {
+	annotations := make(map[string]string, len(l4ResourceAnnotationKeys))
+
+	for _, key := range l4ResourceAnnotationKeys {
+		annotations[key] = "" // Initialize to empty string to indicate deletion by default if not set later
+	}
+
+	return &lbSyncResult{
+		annotations: annotations,
+	}
 }
 
 var (
@@ -116,7 +137,7 @@ func (g *Cloud) GetLoadBalancer(ctx context.Context, clusterName string, svc *v1
 	}
 	// Checking for finalizer is more accurate because controller restart could happen in the middle of resource
 	// deletion. So even though forwarding rule was deleted, cleanup might not have been complete.
-	if hasFinalizer(svc, ILBFinalizerV1) {
+	if hasFinalizer(svc, ILBFinalizerV1) || hasFinalizer(svc, NetLBFinalizerV1) {
 		return &v1.LoadBalancerStatus{}, true, nil
 	}
 	return nil, false, ignoreNotFound(err)
@@ -130,10 +151,11 @@ func (g *Cloud) GetLoadBalancerName(ctx context.Context, clusterName string, svc
 
 // EnsureLoadBalancer is an implementation of LoadBalancer.EnsureLoadBalancer.
 func (g *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, svc *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
-	// GCE load balancers do not support services with LoadBalancerClass set. LoadBalancerClass can't be updated for an existing load balancer, so here we don't need to clean any resources.
-	// Check API documentation for .Spec.LoadBalancerClass for details on when this field is allowed to be changed.
-	if svc.Spec.LoadBalancerClass != nil {
-		klog.Infof("Ignoring service %s/%s using load balancer class %s, it is not supported by this controller.", svc.Namespace, svc.Name, svc.Spec.LoadBalancerClass)
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external-legacy" or
+	// "networking.gke.io/l4-regional-internal-legacy" used for these controllers.
+	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to clean any resources.
+	if svc.Spec.LoadBalancerClass != nil && !hasLoadBalancerClass(svc, LegacyRegionalInternalLoadBalancerClass) && !hasLoadBalancerClass(svc, LegacyRegionalExternalLoadBalancerClass) {
+		klog.Infof("Ignoring service %s/%s using load balancer class %q, it is not supported by this controller.", svc.Namespace, svc.Name, *svc.Spec.LoadBalancerClass)
 		return nil, cloudprovider.ImplementedElsewhere
 	}
 
@@ -141,28 +163,6 @@ func (g *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, svc 
 	desiredScheme := getSvcScheme(svc)
 	clusterID, err := g.ClusterID.GetID()
 	if err != nil {
-		return nil, err
-	}
-
-	// Services with multiples protocols are not supported by this controller, warn the users and sets
-	// the corresponding Service Status Condition.
-	// https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/1435-mixed-protocol-lb
-	if err := checkMixedProtocol(svc.Spec.Ports); err != nil {
-		if hasLoadBalancerPortsError(svc) {
-			return nil, err
-		}
-		klog.Warningf("Ignoring service %s/%s using different ports protocols", svc.Namespace, svc.Name)
-		g.eventRecorder.Event(svc, v1.EventTypeWarning, v1.LoadBalancerPortsErrorReason, "LoadBalancers with multiple protocols are not supported.")
-		svcApplyStatus := corev1apply.ServiceStatus().WithConditions(
-			metav1apply.Condition().
-				WithType(v1.LoadBalancerPortsError).
-				WithStatus(metav1.ConditionTrue).
-				WithReason(v1.LoadBalancerPortsErrorReason).
-				WithMessage("LoadBalancer with multiple protocols are not supported"))
-		svcApply := corev1apply.Service(svc.Name, svc.Namespace).WithStatus(svcApplyStatus)
-		if _, errApply := g.client.CoreV1().Services(svc.Namespace).ApplyStatus(ctx, svcApply, metav1.ApplyOptions{FieldManager: "gce-cloud-controller", Force: true}); errApply != nil {
-			return nil, errApply
-		}
 		return nil, err
 	}
 
@@ -195,27 +195,79 @@ func (g *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, svc 
 		}
 	}
 
-	var status *v1.LoadBalancerStatus
+	var syncResult *lbSyncResult
 	switch desiredScheme {
 	case cloud.SchemeInternal:
-		status, err = g.ensureInternalLoadBalancer(clusterName, clusterID, svc, existingFwdRule, nodes)
+		syncResult, err = g.ensureInternalLoadBalancer(clusterName, clusterID, svc, existingFwdRule, nodes)
 	default:
-		status, err = g.ensureExternalLoadBalancer(clusterName, clusterID, svc, existingFwdRule, nodes)
+		syncResult, err = g.ensureExternalLoadBalancer(clusterName, clusterID, svc, existingFwdRule, nodes)
 	}
 	if err != nil {
 		klog.Errorf("Failed to EnsureLoadBalancer(%s, %s, %s, %s, %s), err: %v", clusterName, svc.Namespace, svc.Name, loadBalancerName, g.region, err)
-		return status, err
+		return nil, err
 	}
+
+	var status *v1.LoadBalancerStatus
+	var annotations map[string]string
+
+	if syncResult != nil {
+		status = syncResult.status
+		annotations = syncResult.annotations
+	}
+
+	if g.enableL4LBAnnotations {
+		if err = g.updateL4ResourcesAnnotations(ctx, svc, annotations); err != nil {
+			return status, fmt.Errorf("failed to set resource annotations, err: %w", err)
+		}
+	}
+
 	klog.V(4).Infof("EnsureLoadBalancer(%s, %s, %s, %s, %s): done ensuring loadbalancer.", clusterName, svc.Namespace, svc.Name, loadBalancerName, g.region)
 	return status, err
 }
 
+func (g *Cloud) updateL4ResourcesAnnotations(ctx context.Context, svc *v1.Service, newL4LBAnnotations map[string]string) error {
+	newObjectMetadata, shouldUpdate := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations)
+	if !shouldUpdate {
+		return nil
+	}
+	newSvc := svc.DeepCopy()
+	newSvc.ObjectMeta = *newObjectMetadata
+
+	patchBytes, err := servicePatchBytes(svc, newSvc)
+	if err != nil {
+		return err
+	}
+
+	_, err = g.client.CoreV1().Services(svc.Namespace).Patch(ctx, svc.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
+
+	return err
+}
+
+func servicePatchBytes(oldSvc, newSvc *v1.Service) ([]byte, error) {
+	oldData, err := json.Marshal(oldSvc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to Marshal oldData for svc %s/%s: %v", oldSvc.Namespace, oldSvc.Name, err)
+	}
+
+	newData, err := json.Marshal(newSvc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to Marshal newData for svc %s/%s: %v", newSvc.Namespace, newSvc.Name, err)
+	}
+
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1.Service{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to CreateTwoWayMergePatch for svc %s/%s: %v", oldSvc.Namespace, oldSvc.Name, err)
+	}
+	return patchBytes, nil
+}
+
 // UpdateLoadBalancer is an implementation of LoadBalancer.UpdateLoadBalancer.
 func (g *Cloud) UpdateLoadBalancer(ctx context.Context, clusterName string, svc *v1.Service, nodes []*v1.Node) error {
-	// GCE load balancers do not support services with LoadBalancerClass set. LoadBalancerClass can't be updated for an existing load balancer, so here we don't need to clean any resources.
-	// Check API documentation for .Spec.LoadBalancerClass for details on when this field is allowed to be changed.
-	if svc.Spec.LoadBalancerClass != nil {
-		klog.Infof("Ignoring service %s/%s using load balancer class %s, it is not supported by this controller.", svc.Namespace, svc.Name, svc.Spec.LoadBalancerClass)
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external-legacy" or
+	// "networking.gke.io/l4-regional-internal-legacy" used for these controllers.
+	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to clean any resources.
+	if svc.Spec.LoadBalancerClass != nil && !hasLoadBalancerClass(svc, LegacyRegionalInternalLoadBalancerClass) && !hasLoadBalancerClass(svc, LegacyRegionalExternalLoadBalancerClass) {
+		klog.Infof("Ignoring service %s/%s using load balancer class %q, it is not supported by this controller.", svc.Namespace, svc.Name, *svc.Spec.LoadBalancerClass)
 		return cloudprovider.ImplementedElsewhere
 	}
 
@@ -224,25 +276,6 @@ func (g *Cloud) UpdateLoadBalancer(ctx context.Context, clusterName string, svc 
 	clusterID, err := g.ClusterID.GetID()
 	if err != nil {
 		return err
-	}
-
-	// Services with multiples protocols are not supported by this controller, warn the users and sets
-	// the corresponding Service Status Condition, but keep processing the Update to not break upgrades.
-	// https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/1435-mixed-protocol-lb
-	if err := checkMixedProtocol(svc.Spec.Ports); err != nil && !hasLoadBalancerPortsError(svc) {
-		klog.Warningf("Ignoring update for service %s/%s using different ports protocols", svc.Namespace, svc.Name)
-		g.eventRecorder.Event(svc, v1.EventTypeWarning, v1.LoadBalancerPortsErrorReason, "LoadBalancer with multiple protocols are not supported.")
-		svcApplyStatus := corev1apply.ServiceStatus().WithConditions(
-			metav1apply.Condition().
-				WithType(v1.LoadBalancerPortsError).
-				WithStatus(metav1.ConditionTrue).
-				WithReason(v1.LoadBalancerPortsErrorReason).
-				WithMessage("LoadBalancer with multiple protocols are not supported"))
-		svcApply := corev1apply.Service(svc.Name, svc.Namespace).WithStatus(svcApplyStatus)
-		if _, errApply := g.client.CoreV1().Services(svc.Namespace).ApplyStatus(ctx, svcApply, metav1.ApplyOptions{FieldManager: "gce-cloud-controller", Force: true}); errApply != nil {
-			// the error is retried by the controller loop
-			return errApply
-		}
 	}
 
 	klog.V(4).Infof("UpdateLoadBalancer(%v, %v, %v, %v, %v): updating with %v nodes [node names limited, total number of nodes: %d]", clusterName, svc.Namespace, svc.Name, loadBalancerName, g.region, loggableNodeNames(nodes), len(nodes))
@@ -259,6 +292,14 @@ func (g *Cloud) UpdateLoadBalancer(ctx context.Context, clusterName string, svc 
 
 // EnsureLoadBalancerDeleted is an implementation of LoadBalancer.EnsureLoadBalancerDeleted.
 func (g *Cloud) EnsureLoadBalancerDeleted(ctx context.Context, clusterName string, svc *v1.Service) error {
+	// Ignore services with LoadBalancerClass different than "networking.gke.io/l4-regional-external-legacy" or
+	// "networking.gke.io/l4-regional-internal-legacy" used for these controllers.
+	// LoadBalancerClass can't be updated (see the field API doc) so we don't need to clean any resources.
+	if svc.Spec.LoadBalancerClass != nil && !hasLoadBalancerClass(svc, LegacyRegionalInternalLoadBalancerClass) && !hasLoadBalancerClass(svc, LegacyRegionalExternalLoadBalancerClass) {
+		klog.Infof("Ignoring service %s/%s using load balancer class %q, it is not supported by this controller.", svc.Namespace, svc.Name, *svc.Spec.LoadBalancerClass)
+		return cloudprovider.ImplementedElsewhere
+	}
+
 	loadBalancerName := g.GetLoadBalancerName(ctx, clusterName, svc)
 	scheme := getSvcScheme(svc)
 	clusterID, err := g.ClusterID.GetID()
@@ -313,4 +354,63 @@ func hasLoadBalancerPortsError(service *v1.Service) bool {
 		}
 	}
 	return false
+}
+
+// computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
+// If needed creates new service meta object.
+// This function is used by L4 LB controllers.
+func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]string) (*metav1.ObjectMeta, bool) {
+	newObjectMeta := svc.ObjectMeta.DeepCopy()
+	newObjectMeta.Annotations = mergeMap(newObjectMeta.Annotations, newAnnotations)
+	if reflect.DeepEqual(svc.Annotations, newObjectMeta.Annotations) {
+		return nil, false
+	}
+	return newObjectMeta, true
+}
+
+// processMixedProtocolCheck checks if the Service Ports use different protocols and updates
+// the corresponding Service Status Condition.
+//
+// Services with multiples protocols are not supported by this controller, warn the users and sets
+// the corresponding Service Status Condition.
+// https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/1435-mixed-protocol-lb
+//
+// For updates we want to keep processing to not break them.
+//
+// Originally introduced in https://github.com/kubernetes/cloud-provider-gcp/pull/475
+func (g *Cloud) processMixedProtocolCheck(ctx context.Context, svc *v1.Service, isUpdate bool) error {
+	err := checkMixedProtocol(svc.Spec.Ports)
+	if err == nil {
+		return nil
+	}
+	if hasLoadBalancerPortsError(svc) {
+		if isUpdate {
+			return nil
+		}
+		return err
+	}
+
+	klog.Warningf("Ignoring %s/%s using different ports protocols, isUpdate: %t", svc.Namespace, svc.Name, isUpdate)
+
+	if g.eventRecorder != nil {
+		g.eventRecorder.Event(svc, v1.EventTypeWarning, v1.LoadBalancerPortsErrorReason, "LoadBalancer with multiple protocols are not supported.")
+	}
+
+	svcApplyStatus := corev1apply.ServiceStatus().WithConditions(
+		metav1apply.Condition().
+			WithType(v1.LoadBalancerPortsError).
+			WithStatus(metav1.ConditionTrue).
+			WithReason(v1.LoadBalancerPortsErrorReason).
+			WithLastTransitionTime(metav1.Now()).
+			WithMessage("LoadBalancer with multiple protocols are not supported"))
+	svcApply := corev1apply.Service(svc.Name, svc.Namespace).WithStatus(svcApplyStatus)
+
+	if _, errApply := g.client.CoreV1().Services(svc.Namespace).ApplyStatus(ctx, svcApply, metav1.ApplyOptions{FieldManager: "gce-cloud-controller", Force: true}); errApply != nil {
+		return errApply
+	}
+
+	if isUpdate {
+		return nil
+	}
+	return err
 }

@@ -448,7 +448,7 @@ type AgentGateway struct {
 	// Registries: Optional. A list of Agent registries containing the agents, MCP
 	// servers and tools governed by the Agent Gateway. Note: Currently limited to
 	// project-scoped registries Must be of format
-	// `//agentregistry.googleapis.com/projects/{project}/locations/{location}/
+	// `//agentregistry.googleapis.com/projects/{project}/locations/{location}/`
 	Registries []string `json:"registries,omitempty"`
 	// SelfManaged: Optional. Attach to existing Application Load Balancers or
 	// Secure Web Proxies.
@@ -597,9 +597,6 @@ func (s AgentGatewayNetworkConfigDnsPeeringConfig) MarshalJSON() ([]byte, error)
 type AgentGatewayNetworkConfigEgress struct {
 	// NetworkAttachment: Optional. The URI of the Network Attachment resource.
 	NetworkAttachment string `json:"networkAttachment,omitempty"`
-	// TrustConfig: Optional. TrustConfig defines the trust configuration for
-	// egress.
-	TrustConfig *AgentGatewayNetworkConfigEgressTrustConfig `json:"trustConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "NetworkAttachment") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -618,36 +615,16 @@ func (s AgentGatewayNetworkConfigEgress) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
-// AgentGatewayNetworkConfigEgressTrustConfig: TrustConfig defines the trust
-// configuration for egress.
-type AgentGatewayNetworkConfigEgressTrustConfig struct {
-	// PemCertificates: Required. PEM encoded root certificates used to validate
-	// the identity of the upstream servers/destinations during egress connections.
-	PemCertificates []string `json:"pemCertificates,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "PemCertificates") to
-	// unconditionally include in API requests. By default, fields with empty or
-	// default values are omitted from API requests. See
-	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
-	// details.
-	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "PemCertificates") to include in
-	// API requests with the JSON null value. By default, fields with empty values
-	// are omitted from API requests. See
-	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
-	NullFields []string `json:"-"`
-}
-
-func (s AgentGatewayNetworkConfigEgressTrustConfig) MarshalJSON() ([]byte, error) {
-	type NoMethod AgentGatewayNetworkConfigEgressTrustConfig
-	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
-}
-
 // AgentGatewaySelfManaged: Configuration for Self Managed deployment mode.
 // Attach to existing Application Load Balancers or Secure Web Proxies.
 type AgentGatewaySelfManaged struct {
 	// ResourceUri: Optional. A supported Google Cloud networking proxy in the
 	// Project and Location
 	ResourceUri string `json:"resourceUri,omitempty"`
+	// ResourceUris: Optional. List of supported Google Cloud networking proxies in
+	// the Project and Location. resource_uris is mutually exclusive with
+	// resource_uri.
+	ResourceUris []string `json:"resourceUris,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "ResourceUri") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -671,7 +648,7 @@ func (s AgentGatewaySelfManaged) MarshalJSON() ([]byte, error) {
 type AuthzExtension struct {
 	// Authority: Optional. The `:authority` header in the gRPC request sent from
 	// Envoy to the extension service. It is required when the `service` field
-	// points to a backend service or a wasm plugin.
+	// points to a backend service.
 	Authority string `json:"authority,omitempty"`
 	// CreateTime: Output only. The timestamp when the resource was created.
 	CreateTime string `json:"createTime,omitempty"`
@@ -705,10 +682,10 @@ type AuthzExtension struct {
 	// (/compute/docs/labeling-resources#requirements) for Google Cloud resources.
 	Labels map[string]string `json:"labels,omitempty"`
 	// LoadBalancingScheme: Optional. All backend services and forwarding rules
-	// referenced by this extension must share the same load balancing scheme.
-	// Supported values: `INTERNAL_MANAGED`, `EXTERNAL_MANAGED`. Can be omitted for
-	// AuthzExtensions that do not reference a backend service. For more
-	// information, refer to Backend services overview
+	// referenced by this extension must share the same load balancing scheme. The
+	// supported values are `INTERNAL_MANAGED` and `EXTERNAL_MANAGED`. You can omit
+	// this field for `AuthzExtensions` resources that don't reference a backend
+	// service. For more information, see Backend services overview
 	// (https://cloud.google.com/load-balancing/docs/backend-service).
 	//
 	// Possible values:
@@ -730,14 +707,21 @@ type AuthzExtension struct {
 	// `projects/{project}/locations/{location}/authzExtensions/{authz_extension}`.
 	Name string `json:"name,omitempty"`
 	// Service: Required. The reference to the service that runs the extension. To
-	// configure a callout extension, `service` must be a fully-qualified reference
-	// to a backend service
+	// configure a callout extension: For global AuthzExtension, `service` must be
+	// a fully-qualified reference to a backend service
+	// (https://cloud.google.com/compute/docs/reference/rest/v1/backendServices) in
+	// the format:
+	// `https://www.googleapis.com/compute/v1/projects/{project}/global/backendServi
+	// ces/{backendService}`. For regional AuthzExtension, `service` must be a
+	// fully-qualified reference to one of the following: * a backend service
 	// (https://cloud.google.com/compute/docs/reference/rest/v1/backendServices) in
 	// the format:
 	// `https://www.googleapis.com/compute/v1/projects/{project}/regions/{region}/ba
-	// ckendServices/{backendService}` or
-	// `https://www.googleapis.com/compute/v1/projects/{project}/global/backendServi
-	// ces/{backendService}`.
+	// ckendServices/{backendService}`. * a fully qualified domain name that can be
+	// resolved by the Google Cloud DNS. * `iap.googleapis.com` and it can only be
+	// referenced by an AuthzPolicy with the policyProfile set to REQUEST_AUTHZ. *
+	// `modelarmor..rep.googleapis.com` and it can only be referenced by an
+	// AuthzPolicy with the policyProfile set to CONTENT_AUTHZ.
 	Service string `json:"service,omitempty"`
 	// Timeout: Required. Specifies the timeout for each individual message on the
 	// stream. The timeout must be between 10-10000 milliseconds.
@@ -830,14 +814,15 @@ type EndpointPolicy struct {
 	// field is not specified, authorization is disabled(no authz checks) for this
 	// endpoint.
 	AuthorizationPolicy string `json:"authorizationPolicy,omitempty"`
-	// ClientTlsPolicy: Optional. A URL referring to a ClientTlsPolicy resource.
-	// ClientTlsPolicy can be set to specify the authentication for traffic from
-	// the proxy to the actual endpoints. More specifically, it is applied to the
-	// outgoing traffic from the proxy to the endpoint. This is typically used for
-	// sidecar model where the proxy identifies itself as endpoint to the control
-	// plane, with the connection between sidecar and endpoint requiring
-	// authentication. If this field is not set, authentication is disabled(open).
-	// Applicable only when EndpointPolicyType is SIDECAR_PROXY.
+	// ClientTlsPolicy: Optional. Deprecated: This field is not used and is a
+	// no-op. A URL referring to a ClientTlsPolicy resource. ClientTlsPolicy can be
+	// set to specify the authentication for traffic from the proxy to the actual
+	// endpoints. More specifically, it is applied to the outgoing traffic from the
+	// proxy to the endpoint. This is typically used for sidecar model where the
+	// proxy identifies itself as endpoint to the control plane, with the
+	// connection between sidecar and endpoint requiring authentication. If this
+	// field is not set, authentication is disabled(open). Applicable only when
+	// EndpointPolicyType is SIDECAR_PROXY.
 	ClientTlsPolicy string `json:"clientTlsPolicy,omitempty"`
 	// CreateTime: Output only. The timestamp when the resource was created.
 	CreateTime string `json:"createTime,omitempty"`

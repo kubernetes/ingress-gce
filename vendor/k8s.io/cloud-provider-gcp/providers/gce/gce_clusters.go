@@ -35,7 +35,7 @@ func newClustersMetricContext(request, zone string) *metricContext {
 func (g *Cloud) ListClusters(ctx context.Context) ([]string, error) {
 	allClusters := []string{}
 
-	for _, zone := range g.managedZones {
+	for _, zone := range g.getManagedZones() {
 		clusters, err := g.listClustersInZone(zone)
 		if err != nil {
 			return nil, err
@@ -57,8 +57,8 @@ func (g *Cloud) GetManagedClusters(ctx context.Context) ([]*container.Cluster, e
 		if err != nil {
 			return nil, err
 		}
-	} else if len(g.managedZones) >= 1 {
-		for _, zone := range g.managedZones {
+	} else if len(g.getManagedZones()) >= 1 {
+		for _, zone := range g.getManagedZones() {
 			clusters, err := g.getClustersInLocation(zone)
 			if err != nil {
 				return nil, err
