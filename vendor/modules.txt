@@ -64,6 +64,9 @@ github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/comment
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/pattern
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/structure
+# github.com/GoogleCloudPlatform/gke-enterprise-mt v1.0.2
+## explicit; go 1.26.0
+github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics
 # github.com/GoogleCloudPlatform/gke-networking-api v0.2.4
 ## explicit; go 1.25.0
 github.com/GoogleCloudPlatform/gke-networking-api/apis/gcpfirewall/v1

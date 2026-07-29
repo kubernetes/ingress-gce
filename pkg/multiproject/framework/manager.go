@@ -3,7 +3,10 @@ package framework
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
@@ -11,6 +14,11 @@ import (
 	providerconfigclient "k8s.io/ingress-gce/pkg/providerconfig/client/clientset/versioned"
 	"k8s.io/klog/v2"
 )
+
+type deletingTenantState struct {
+	tenantUID string
+	cancel    context.CancelFunc
+}
 
 // manager coordinates lifecycle of controllers scoped to individual ProviderConfigs.
 // It ensures per-ProviderConfig controller startup is idempotent, adds/removes
@@ -25,6 +33,9 @@ type manager struct {
 	providerConfigClient providerconfigclient.Interface
 	finalizerName        string
 	controllerStarter    ControllerStarter
+
+	deletingMu sync.Mutex
+	deleting   map[string]*deletingTenantState
 }
 
 // newManager constructs a new generic ProviderConfig controller manager.
@@ -41,6 +52,7 @@ func newManager(
 		providerConfigClient: providerConfigClient,
 		finalizerName:        finalizerName,
 		controllerStarter:    controllerStarter,
+		deleting:             make(map[string]*deletingTenantState),
 	}
 }
 
@@ -75,6 +87,13 @@ func (m *manager) StartControllersForProviderConfig(pc *providerconfig.ProviderC
 	}
 
 	pcKey := providerConfigKey(pc)
+
+	m.deletingMu.Lock()
+	if state, exists := m.deleting[pcKey]; exists {
+		state.cancel()
+		delete(m.deleting, pcKey)
+	}
+	m.deletingMu.Unlock()
 
 	cs, existed := m.controllers.GetOrCreate(pcKey)
 	if existed && cs.stopCh != nil {
@@ -120,6 +139,34 @@ func (m *manager) StopControllersForProviderConfig(pc *providerconfig.ProviderCo
 
 	pcKey := providerConfigKey(pc)
 
+	tenantUID := ""
+	if pc.Spec.PrincipalInfo != nil {
+		tenantUID = pc.Spec.PrincipalInfo.ID
+	}
+	if tenantUID == "" {
+		logger.Info("tenant UID from Spec.PrincipalInfo.ID is empty, fallback to pc.Name")
+		tenantUID = pc.Name
+	}
+
+	m.deletingMu.Lock()
+	if _, exists := m.deleting[pcKey]; !exists {
+		tCtx, cancel := context.WithCancel(context.Background())
+		m.deleting[pcKey] = &deletingTenantState{
+			tenantUID: tenantUID,
+			cancel:    cancel,
+		}
+		go func(key string, c context.Context) {
+			select {
+			case <-time.After(24 * time.Hour):
+				logger.Info("forcing cleanup for tenant after 24 hours of inactivity", "key", key)
+				m.ForceCleanupTenant(key)
+			case <-c.Done():
+				// Cancelled when finalizer is successfully removed or cleanup forced.
+			}
+		}(pcKey, tCtx)
+	}
+	m.deletingMu.Unlock()
+
 	if cs, exists := m.controllers.Get(pcKey); exists {
 		m.controllers.Delete(pcKey)
 		if cs.stopCh != nil {
@@ -148,4 +195,21 @@ func (m *manager) StopControllersForProviderConfig(pc *providerconfig.ProviderCo
 	}
 	logger.Info("Stopped controllers for provider config")
 	return nil
+}
+
+// ForceCleanupTenant cancels the deletion timer and forces metrics unregistration.
+func (m *manager) ForceCleanupTenant(pcKey string) {
+	m.deletingMu.Lock()
+	var tenantUID string
+	if state, exists := m.deleting[pcKey]; exists {
+		state.cancel()
+		tenantUID = state.tenantUID
+		delete(m.deleting, pcKey)
+	}
+	m.deletingMu.Unlock()
+
+	if tenantUID != "" {
+		mtmetrics.DefaultMultiGatherer.Unregister(tenantUID)
+		mtmetrics.DefaultGlobalTracker.ResetTenant(tenantUID)
+	}
 }
