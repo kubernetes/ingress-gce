@@ -87,25 +87,40 @@ type Address struct {
 	// This identifier is
 	// defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
-	// Reference to the source of external IPv4 addresses,
-	// like a PublicDelegatedPrefix (PDP) for BYOIP.
-	// The PDP must support enhanced IPv4 allocations.
+	// Reference to the source of IP addresses.
 	//
-	// Use one of the following formats to specify a PDP when reserving
-	// an
-	// external IPv4 address using BYOIP.
+	// It supports the following cases:
 	//
 	//    -
-	//    Full resource URL, as
-	// inhttps://www.googleapis.com/compute/v1/projects/projectId/regions/reg
-	// ion/publicDelegatedPrefixes/pdp-name
+	//      Case 1: PublicDelegatedPrefix (PDP) for BYOIP external IPv4
+	//      addresses. The PDP must support enhanced IPv4 allocations.
 	//    -
-	//    Partial URL, as in
+	//      Case 2: Internal Range for global internal addresses.
 	//
 	//
-	//           -
+	//
+	// Use one of the following formats to specify the resource:
+	//
+	// For a Public Delegated Prefix:
+	//
+	//    -
+	//    Full resource
+	// URL:https://www.googleapis.com/compute/v1/projects/projectId/regions/r
+	// egion/publicDelegatedPrefixes/pdp
+	//    - Partial URL:
+	//       -
 	// projects/projectId/regions/region/publicDelegatedPrefixes/pdp-name
-	//           - regions/region/publicDelegatedPrefixes/pdp-name
+	//       - regions/region/publicDelegatedPrefixes/pdp-name
+	//
+	//
+	//
+	// For an Internal Range:
+	//
+	//    - Full
+	// URL:https://networkconnectivity.googleapis.com/v1/projects/project/loc
+	// ations/global/internalRanges/internal-range
+	//    - Partial
+	// URL:projects/project/locations/global/internalRanges/internal-range
 	IpCollection string `json:"ipCollection,omitempty"`
 	// The IP version that will be used by this address. Valid options
 	// areIPV4 or IPV6.
