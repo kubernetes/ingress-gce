@@ -7,7 +7,7 @@ import (
 )
 
 // isObjectInProviderConfig checks if an object belongs to a specific provider config.
-func isObjectInProviderConfig(obj interface{}, providerConfigName string) bool {
+func isObjectInProviderConfig(obj interface{}, providerConfigName string, allowMissing bool) bool {
 	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 		obj = tombstone.Obj
 	}
@@ -15,14 +15,19 @@ func isObjectInProviderConfig(obj interface{}, providerConfigName string) bool {
 	if err != nil {
 		return false
 	}
-	return metaObj.GetLabels()[flags.F.ProviderConfigNameLabelKey] == providerConfigName
+	labels := metaObj.GetLabels()
+	val, ok := labels[flags.F.ProviderConfigNameLabelKey]
+	if !ok {
+		return allowMissing
+	}
+	return val == providerConfigName
 }
 
 // providerConfigFilteredList filters a list of objects by provider config name.
-func providerConfigFilteredList(items []interface{}, providerConfigName string) []interface{} {
+func providerConfigFilteredList(items []interface{}, providerConfigName string, allowMissing bool) []interface{} {
 	var filtered []interface{}
 	for _, item := range items {
-		if isObjectInProviderConfig(item, providerConfigName) {
+		if isObjectInProviderConfig(item, providerConfigName, allowMissing) {
 			filtered = append(filtered, item)
 		}
 	}

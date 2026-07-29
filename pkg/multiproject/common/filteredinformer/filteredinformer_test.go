@@ -15,7 +15,7 @@ func TestFilteredInformer_AddEventHandler(t *testing.T) {
 	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
 
 	sharedInformer := cache.NewSharedIndexInformer(nil, &corev1.Pod{}, 0, nil)
-	filteredinformer := NewProviderConfigFilteredInformer(sharedInformer, "test-provider-config")
+	filteredinformer := NewProviderConfigFilteredInformer(sharedInformer, "test-provider-config", false)
 
 	handler := cache.ResourceEventHandlerFuncs{}
 
@@ -54,7 +54,7 @@ func TestFilteredInformer_AddEventHandlerWithResyncPeriod(t *testing.T) {
 			t.Parallel()
 
 			sharedInformer := cache.NewSharedIndexInformer(nil, &corev1.Pod{}, 0, nil)
-			filteredinformer := NewProviderConfigFilteredInformer(sharedInformer, tc.providerConfigName)
+			filteredinformer := NewProviderConfigFilteredInformer(sharedInformer, tc.providerConfigName, false)
 
 			handler := cache.ResourceEventHandlerFuncs{}
 			_, err := filteredinformer.AddEventHandlerWithResyncPeriod(handler, tc.resyncPeriod)

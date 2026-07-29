@@ -8,6 +8,7 @@ import (
 type providerConfigFilteredCache struct {
 	cache.Indexer
 	providerConfigName string
+	allowMissing       bool
 }
 
 func (pc *providerConfigFilteredCache) ByIndex(indexName, indexedValue string) ([]interface{}, error) {
@@ -15,7 +16,7 @@ func (pc *providerConfigFilteredCache) ByIndex(indexName, indexedValue string) (
 	if err != nil {
 		return nil, err
 	}
-	return providerConfigFilteredList(items, pc.providerConfigName), nil
+	return providerConfigFilteredList(items, pc.providerConfigName, pc.allowMissing), nil
 }
 
 func (pc *providerConfigFilteredCache) Index(indexName string, obj interface{}) ([]interface{}, error) {
@@ -23,11 +24,11 @@ func (pc *providerConfigFilteredCache) Index(indexName string, obj interface{}) 
 	if err != nil {
 		return nil, err
 	}
-	return providerConfigFilteredList(items, pc.providerConfigName), nil
+	return providerConfigFilteredList(items, pc.providerConfigName, pc.allowMissing), nil
 }
 
 func (pc *providerConfigFilteredCache) List() []interface{} {
-	return providerConfigFilteredList(pc.Indexer.List(), pc.providerConfigName)
+	return providerConfigFilteredList(pc.Indexer.List(), pc.providerConfigName, pc.allowMissing)
 }
 
 func (pc *providerConfigFilteredCache) ListKeys() []string {
@@ -54,7 +55,7 @@ func (pc *providerConfigFilteredCache) GetByKey(key string) (item interface{}, e
 	if !exists || err != nil {
 		return nil, exists, err
 	}
-	if isObjectInProviderConfig(item, pc.providerConfigName) {
+	if isObjectInProviderConfig(item, pc.providerConfigName, pc.allowMissing) {
 		return item, true, nil
 	}
 	return nil, false, nil
