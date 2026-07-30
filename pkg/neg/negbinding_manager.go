@@ -308,11 +308,13 @@ func (m *negBindingManager) EnsureSyncersForService(svcNamespace, svcName string
 			errs = append(errs, fmt.Errorf("unexpected object type %T in binding index for service %s", obj, svcKey))
 			continue
 		}
+		binding = binding.DeepCopy()
 
 		err := m.validateBackendRef(binding)
 		if err != nil {
 			_ = m.updateBackendRefCondition(binding, err)
-			return err
+			errs = append(errs, err)
+			continue
 		}
 
 		if networkInfoErr != nil {
@@ -635,10 +637,10 @@ func (m *negBindingManager) updateBackendRefCondition(binding *negbindingv1beta1
 		}
 	}
 
-	origBinding := binding.DeepCopy()
-	m.ensureCondition(binding, cond)
+	newBinding := binding.DeepCopy()
+	m.ensureCondition(newBinding, cond)
 
-	patchBytes, err := patch.MergePatchBytes(negbindingv1beta1.NetworkEndpointGroupBinding{Status: origBinding.Status}, negbindingv1beta1.NetworkEndpointGroupBinding{Status: binding.Status})
+	patchBytes, err := patch.MergePatchBytes(negbindingv1beta1.NetworkEndpointGroupBinding{Status: binding.Status}, negbindingv1beta1.NetworkEndpointGroupBinding{Status: newBinding.Status})
 	if err != nil {
 		return fmt.Errorf("failed to prepare patch bytes for status update: %w", err)
 	}
