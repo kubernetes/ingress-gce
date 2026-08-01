@@ -176,36 +176,36 @@ func (i *InformerSet) FilterByProviderConfig(providerConfigName string) *Informe
 
 	// Wrap core informers
 	if i.Ingress != nil {
-		filteredInformers.Ingress = newProviderConfigFilteredInformer(i.Ingress, providerConfigName)
+		filteredInformers.Ingress = newProviderConfigFilteredInformer(i.Ingress, providerConfigName, false)
 	}
 	if i.Service != nil {
-		filteredInformers.Service = newProviderConfigFilteredInformer(i.Service, providerConfigName)
+		filteredInformers.Service = newProviderConfigFilteredInformer(i.Service, providerConfigName, false)
 	}
 	if i.Pod != nil {
-		filteredInformers.Pod = newProviderConfigFilteredInformer(i.Pod, providerConfigName)
+		filteredInformers.Pod = newProviderConfigFilteredInformer(i.Pod, providerConfigName, false)
 	}
 	if i.Node != nil {
-		filteredInformers.Node = newProviderConfigFilteredInformer(i.Node, providerConfigName)
+		filteredInformers.Node = newProviderConfigFilteredInformer(i.Node, providerConfigName, true)
 	}
 	if i.EndpointSlice != nil {
-		filteredInformers.EndpointSlice = newProviderConfigFilteredInformer(i.EndpointSlice, providerConfigName)
+		filteredInformers.EndpointSlice = newProviderConfigFilteredInformer(i.EndpointSlice, providerConfigName, false)
 	}
 
 	// Wrap optional informers
 	if i.SvcNeg != nil {
-		filteredInformers.SvcNeg = newProviderConfigFilteredInformer(i.SvcNeg, providerConfigName)
+		filteredInformers.SvcNeg = newProviderConfigFilteredInformer(i.SvcNeg, providerConfigName, false)
 	}
 	if i.Network != nil {
-		filteredInformers.Network = newProviderConfigFilteredInformer(i.Network, providerConfigName)
+		filteredInformers.Network = newProviderConfigFilteredInformer(i.Network, providerConfigName, false)
 	}
 	if i.GkeNetworkParams != nil {
-		filteredInformers.GkeNetworkParams = newProviderConfigFilteredInformer(i.GkeNetworkParams, providerConfigName)
+		filteredInformers.GkeNetworkParams = newProviderConfigFilteredInformer(i.GkeNetworkParams, providerConfigName, false)
 	}
 	if i.NodeTopology != nil {
-		filteredInformers.NodeTopology = newProviderConfigFilteredInformer(i.NodeTopology, providerConfigName)
+		filteredInformers.NodeTopology = newProviderConfigFilteredInformer(i.NodeTopology, providerConfigName, false)
 	}
 	if i.NEGBinding != nil {
-		filteredInformers.NEGBinding = newProviderConfigFilteredInformer(i.NEGBinding, providerConfigName)
+		filteredInformers.NEGBinding = newProviderConfigFilteredInformer(i.NEGBinding, providerConfigName, false)
 	}
 
 	return filteredInformers
@@ -213,8 +213,8 @@ func (i *InformerSet) FilterByProviderConfig(providerConfigName string) *Informe
 
 // newProviderConfigFilteredInformer wraps an informer with a provider config filter.
 // The filtered informer shares the same underlying cache and indexers.
-func newProviderConfigFilteredInformer(informer cache.SharedIndexInformer, providerConfigName string) cache.SharedIndexInformer {
-	return filteredinformer.NewProviderConfigFilteredInformer(informer, providerConfigName)
+func newProviderConfigFilteredInformer(informer cache.SharedIndexInformer, providerConfigName string, allowMissing bool) cache.SharedIndexInformer {
+	return filteredinformer.NewProviderConfigFilteredInformer(informer, providerConfigName, allowMissing)
 }
 
 // CombinedHasSynced returns a function that checks if all informers have synced.

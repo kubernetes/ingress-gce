@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -353,5 +354,92 @@ func TestFilterByProviderConfig_PreservesIndexers(t *testing.T) {
 
 	if len(filtered) != len(original) {
 		t.Errorf("filtered indexers count mismatch: got=%d want=%d", len(filtered), len(original))
+	}
+}
+
+func TestFilterByProviderConfig_AllowMissingOnNodes(t *testing.T) {
+	t.Parallel()
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
+
+	kubeClient := k8sfake.NewSimpleClientset()
+	inf := NewInformerSet(kubeClient, nil, nil, nil, nil, metav1.Duration{Duration: 0})
+
+	// Add nodes to the underlying indexer.
+	nodeIndexer := inf.Node.GetIndexer()
+	node1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-with-matching-pc",
+			Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "pc-1"},
+		},
+	}
+	node2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-without-pc",
+		},
+	}
+	node3 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-with-different-pc",
+			Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "pc-2"},
+		},
+	}
+	nodeIndexer.Add(node1)
+	nodeIndexer.Add(node2)
+	nodeIndexer.Add(node3)
+
+	// Add pods to the underlying indexer.
+	podIndexer := inf.Pod.GetIndexer()
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "pod-with-matching-pc",
+			Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "pc-1"},
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-without-pc",
+		},
+	}
+	pod3 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "pod-with-different-pc",
+			Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "pc-2"},
+		},
+	}
+	podIndexer.Add(pod1)
+	podIndexer.Add(pod2)
+	podIndexer.Add(pod3)
+
+	filtered := inf.FilterByProviderConfig("pc-1")
+
+	// Verify Node informer (allowMissing=true)
+	filteredNodes := filtered.Node.GetStore().List()
+	expectedNodeNames := map[string]bool{
+		"node-with-matching-pc": true,
+		"node-without-pc":       true,
+	}
+	if len(filteredNodes) != 2 {
+		t.Errorf("Expected 2 filtered nodes, got %d", len(filteredNodes))
+	}
+	for _, n := range filteredNodes {
+		node := n.(*corev1.Node)
+		if !expectedNodeNames[node.Name] {
+			t.Errorf("Unexpected node in filtered list: %s", node.Name)
+		}
+	}
+
+	// Verify Pod informer (allowMissing=false)
+	filteredPods := filtered.Pod.GetStore().List()
+	expectedPodNames := map[string]bool{
+		"pod-with-matching-pc": true,
+	}
+	if len(filteredPods) != 1 {
+		t.Errorf("Expected 1 filtered pod, got %d", len(filteredPods))
+	}
+	for _, p := range filteredPods {
+		pod := p.(*corev1.Pod)
+		if !expectedPodNames[pod.Name] {
+			t.Errorf("Unexpected pod in filtered list: %s", pod.Name)
+		}
 	}
 }

@@ -12,42 +12,67 @@ import (
 )
 
 func TestIsObjectInProviderConfig(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
+
 	testCases := []struct {
 		desc               string
 		providerConfigName string
+		allowMissing       bool
 		object             interface{}
 		expectedToMatch    bool
 	}{
 		{
 			desc:               "Object in provider config should return true",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			object:             &metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
 			expectedToMatch:    true,
 		},
 		{
 			desc:               "Object in different provider config should return false",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			object:             &metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-def"}},
 			expectedToMatch:    false,
 		},
 		{
-			desc:               "Object with no provider config should return false",
+			desc:               "Object with no provider config should return false when allowMissing is false",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			object:             &metav1.ObjectMeta{Name: "obj3"},
 			expectedToMatch:    false,
 		},
 		{
+			desc:               "Object with no provider config should return true when allowMissing is true",
+			providerConfigName: "p123456-abc",
+			allowMissing:       true,
+			object:             &metav1.ObjectMeta{Name: "obj3"},
+			expectedToMatch:    true,
+		},
+		{
 			desc:               "Invalid object should return false",
 			providerConfigName: "p123456-abc",
+			allowMissing:       true, // shouldn't matter
 			object:             "invalid-object",
 			expectedToMatch:    false,
 		},
 		{
 			desc:               "Tombstone object in provider config should return true",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			object: cache.DeletedFinalStateUnknown{
 				Key: "some-key",
 				Obj: &metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
+			},
+			expectedToMatch: true,
+		},
+		{
+			desc:               "Tombstone object missing provider config should return true when allowMissing is true",
+			providerConfigName: "p123456-abc",
+			allowMissing:       true,
+			object: cache.DeletedFinalStateUnknown{
+				Key: "some-key",
+				Obj: &metav1.ObjectMeta{Name: "obj3"},
 			},
 			expectedToMatch: true,
 		},
@@ -58,7 +83,7 @@ func TestIsObjectInProviderConfig(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			result := isObjectInProviderConfig(tc.object, tc.providerConfigName)
+			result := isObjectInProviderConfig(tc.object, tc.providerConfigName, tc.allowMissing)
 			if result != tc.expectedToMatch {
 				t.Errorf("Expected isObjectInProviderConfig to return %v, got %v", tc.expectedToMatch, result)
 			}
@@ -67,15 +92,19 @@ func TestIsObjectInProviderConfig(t *testing.T) {
 }
 
 func TestProviderConfigFilteredList(t *testing.T) {
+	flags.F.ProviderConfigNameLabelKey = "provider-config-name-label"
+
 	testCases := []struct {
 		desc               string
 		providerConfigName string
+		allowMissing       bool
 		objects            []interface{}
 		expectedObjects    []interface{}
 	}{
 		{
 			desc:               "All objects in the provider config",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			objects: []interface{}{
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
@@ -88,6 +117,7 @@ func TestProviderConfigFilteredList(t *testing.T) {
 		{
 			desc:               "Some objects in the provider config",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			objects: []interface{}{
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-def"}},
@@ -101,6 +131,7 @@ func TestProviderConfigFilteredList(t *testing.T) {
 		{
 			desc:               "No objects in the provider config",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			objects: []interface{}{
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-def"}},
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-def"}},
@@ -108,8 +139,23 @@ func TestProviderConfigFilteredList(t *testing.T) {
 			expectedObjects: []interface{}{},
 		},
 		{
+			desc:               "Allow missing objects",
+			providerConfigName: "p123456-abc",
+			allowMissing:       true,
+			objects: []interface{}{
+				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}, Name: "obj1"},
+				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p654321-def"}, Name: "obj2"},
+				&metav1.ObjectMeta{Name: "obj3"}, // missing label
+			},
+			expectedObjects: []interface{}{
+				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}, Name: "obj1"},
+				&metav1.ObjectMeta{Name: "obj3"},
+			},
+		},
+		{
 			desc:               "Invalid objects in the list",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			objects: []interface{}{
 				"invalid-object",
 				&metav1.ObjectMeta{Labels: map[string]string{flags.F.ProviderConfigNameLabelKey: "p123456-abc"}},
@@ -122,6 +168,7 @@ func TestProviderConfigFilteredList(t *testing.T) {
 		{
 			desc:               "Empty object list",
 			providerConfigName: "p123456-abc",
+			allowMissing:       false,
 			objects:            []interface{}{},
 			expectedObjects:    []interface{}{},
 		},
@@ -132,7 +179,7 @@ func TestProviderConfigFilteredList(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			result := providerConfigFilteredList(tc.objects, tc.providerConfigName)
+			result := providerConfigFilteredList(tc.objects, tc.providerConfigName, tc.allowMissing)
 
 			if len(result) != len(tc.expectedObjects) {
 				t.Errorf("Expected %d objects, got %d", len(tc.expectedObjects), len(result))

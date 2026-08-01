@@ -10,13 +10,15 @@ import (
 type ProviderConfigFilteredInformer struct {
 	cache.SharedIndexInformer
 	providerConfigName string
+	allowMissing       bool
 }
 
 // NewProviderConfigFilteredInformer creates a new ProviderConfigFilteredInformer.
-func NewProviderConfigFilteredInformer(informer cache.SharedIndexInformer, providerConfigName string) cache.SharedIndexInformer {
+func NewProviderConfigFilteredInformer(informer cache.SharedIndexInformer, providerConfigName string, allowMissing bool) cache.SharedIndexInformer {
 	return &ProviderConfigFilteredInformer{
 		SharedIndexInformer: informer,
 		providerConfigName:  providerConfigName,
+		allowMissing:        allowMissing,
 	}
 }
 
@@ -43,13 +45,14 @@ func (i *ProviderConfigFilteredInformer) AddEventHandlerWithResyncPeriod(handler
 
 // providerConfigFilter filters objects based on the provider config.
 func (i *ProviderConfigFilteredInformer) providerConfigFilter(obj interface{}) bool {
-	return isObjectInProviderConfig(obj, i.providerConfigName)
+	return isObjectInProviderConfig(obj, i.providerConfigName, i.allowMissing)
 }
 
 func (i *ProviderConfigFilteredInformer) GetStore() cache.Store {
 	return &providerConfigFilteredCache{
 		Indexer:            i.SharedIndexInformer.GetIndexer(),
 		providerConfigName: i.providerConfigName,
+		allowMissing:       i.allowMissing,
 	}
 }
 
@@ -57,5 +60,6 @@ func (i *ProviderConfigFilteredInformer) GetIndexer() cache.Indexer {
 	return &providerConfigFilteredCache{
 		Indexer:            i.SharedIndexInformer.GetIndexer(),
 		providerConfigName: i.providerConfigName,
+		allowMissing:       i.allowMissing,
 	}
 }
