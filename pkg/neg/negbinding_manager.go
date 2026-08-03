@@ -698,8 +698,20 @@ func (m *negBindingManager) tryAssignReleasedNEGs(negNames []string) {
 		}
 
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+		subnetsInStatus := sets.New[string]()
+		for _, statusRef := range binding.Status.NetworkEndpointGroups {
+			subnetID, err := cloud.ParseResourceURL(statusRef.SubnetURL)
+			if err != nil {
+				continue
+			}
+			subnetsInStatus.Insert(subnetID.Key.Name)
+		}
+
 		acquiredNEGs := []string{}
 		for _, ref := range binding.Spec.NetworkEndpointGroups {
+			if subnetsInStatus.Has(ref.Subnet) {
+				continue
+			}
 			if releasedSet.Has(ref.Name) {
 				acquired, _ := m.ownershipRegistry.Acquire(ref.Name, bindingKey)
 				if acquired {
@@ -718,11 +730,40 @@ func (m *negBindingManager) tryAssignReleasedNEGs(negNames []string) {
 	}
 }
 
-// acquireNEGsForBinding tries to acquire ownership for NEGBinding based on its Spec.
+// acquireNEGsForBinding tries to acquire ownership for NEGBinding based on its Status and Spec.
 func (m *negBindingManager) acquireNEGsForBinding(binding *negbindingv1beta1.NetworkEndpointGroupBinding) {
 	bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 	acquiredNEGs := sets.New[string]()
+
+	subnetsInStatus := sets.New[string]()
+	for _, statusRef := range binding.Status.NetworkEndpointGroups {
+		negID, err := cloud.ParseResourceURL(statusRef.ResourceURL)
+		if err != nil {
+			m.logger.Error(err, "Failed to parse NEG URL from status", "binding", bindingKey, "url", statusRef.ResourceURL)
+			continue
+		}
+		subnetID, err := cloud.ParseResourceURL(statusRef.SubnetURL)
+		if err != nil {
+			m.logger.Error(err, "Failed to parse NEG's subnet URL from status", "binding", bindingKey, "url", statusRef.SubnetURL)
+			continue
+		}
+
+		negName := negID.Key.Name
+		acquired, currentOwner := m.ownershipRegistry.Acquire(negName, bindingKey)
+		if acquired {
+			acquiredNEGs.Insert(negName)
+			m.logger.Info("Acquired NEG ownership from status", "negName", negName, "owner", bindingKey)
+		} else {
+			m.logger.Info("Conflict acquiring NEG ownership from status", "negName", negName, "attemptedOwner", bindingKey, "currentOwner", currentOwner)
+		}
+		subnetsInStatus.Insert(subnetID.Key.Name)
+	}
+
 	for _, specRef := range binding.Spec.NetworkEndpointGroups {
+		if subnetsInStatus.Has(specRef.Subnet) {
+			continue
+		}
+
 		acquired, currentOwner := m.ownershipRegistry.Acquire(specRef.Name, bindingKey)
 		if acquired {
 			acquiredNEGs.Insert(specRef.Name)

@@ -699,3 +699,89 @@ func TestNEGBindingManagerConflictResolution(t *testing.T) {
 		t.Errorf("Timed out waiting for B2 to acquire neg-1, current owner: %s", owner)
 	}
 }
+
+func TestNEGBindingManagerStatusPriorityOverSpec(t *testing.T) {
+	negBindingClient := fakenegbinding.NewSimpleClientset()
+	informer := informernegbinding.NewNetworkEndpointGroupBindingInformer(negBindingClient, "", time.Second, utils.NewNamespaceIndexer())
+	negBindingLister := informer.GetIndexer()
+
+	podLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	endpointSliceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	nodeLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      "test-svc",
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Port: 80, TargetPort: intstr.FromInt(8080)},
+			},
+		},
+	}
+	_ = serviceLister.Add(svc)
+
+	b1 := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      "b1",
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{Kind: negbindingv1beta1.ServiceKind, Name: "test-svc", Port: 80},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{Name: "neg-status-existing", Subnet: "default-subnet", Zones: []string{"us-central1-a"}},
+				{Name: "neg-spec-candidate", Subnet: "default-subnet", Zones: []string{"us-central1-a"}},
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-a/networkEndpointGroups/neg-status-existing",
+					SubnetURL:   "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet",
+				},
+			},
+		},
+	}
+	_ = negBindingLister.Add(b1)
+
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet"
+	fakeNetworkResolver := network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL})
+	clusterNamer := namer.NewNamer("cluster-id", "fw-name", klog.TODO())
+	negMetrics := metrics.NewNegMetrics()
+	syncerMetrics := metricscollector.FakeSyncerMetrics()
+
+	m := newNEGBindingManager(
+		negBindingClient,
+		negBindingLister,
+		podLister,
+		serviceLister,
+		endpointSliceLister,
+		nodeLister,
+		nil,
+		fakeNetworkResolver,
+		nil,
+		record.NewFakeRecorder(100),
+		clusterNamer,
+		negMetrics,
+		syncerMetrics,
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		klog.TODO(),
+	)
+
+	m.acquireNEGsForBinding(b1)
+
+	// Verify that neg-status-existing is owned by b1
+	owner := m.ownershipRegistry.GetOwner("neg-status-existing")
+	if owner != "test-ns/b1" {
+		t.Errorf("Expected neg-status-existing to be owned by test-ns/b1, got %q", owner)
+	}
+
+	// Verify that neg-spec-candidate was NOT acquired because status already covered default-subnet
+	ownerSpec := m.ownershipRegistry.GetOwner("neg-spec-candidate")
+	if ownerSpec != "" {
+		t.Errorf("Expected neg-spec-candidate to not be owned (status priority over spec), got %q", ownerSpec)
+	}
+}

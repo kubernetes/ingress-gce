@@ -93,6 +93,35 @@ func (p *NEGBindingTopologyProvider) getOwnedSpecNEGRefs(binding *negbindingv1be
 	return acquiredRefs
 }
 
+// getOwnedStatusNEGTopology returns subnet to zone mappings for owned NEGs in Status.
+func (p *NEGBindingTopologyProvider) getOwnedStatusNEGTopology(binding *negbindingv1beta1.NetworkEndpointGroupBinding, logger klog.Logger) shared.ZonesPerSubnetMap {
+	ownerKey := fmt.Sprintf("%s/%s", p.namespace, p.negBindingName)
+	zonesBySubnet := make(shared.ZonesPerSubnetMap)
+
+	for _, statusRef := range binding.Status.NetworkEndpointGroups {
+		negID, err := cloud.ParseResourceURL(statusRef.ResourceURL)
+		if err != nil {
+			logger.Error(err, "Failed to parse NEG URL from status", "url", statusRef.ResourceURL)
+			continue
+		}
+		subnetID, err := cloud.ParseResourceURL(statusRef.SubnetURL)
+		if err != nil {
+			logger.Error(err, "Failed to parse subnet URL from status", "url", statusRef.SubnetURL)
+			continue
+		}
+
+		if p.registry.GetOwner(negID.Key.Name) == ownerKey {
+			subnetName := subnetID.Key.Name
+			if existing, ok := zonesBySubnet[subnetName]; ok {
+				existing.Insert(negID.Key.Zone)
+			} else {
+				zonesBySubnet[subnetName] = sets.New(negID.Key.Zone)
+			}
+		}
+	}
+	return zonesBySubnet
+}
+
 // ListSubnetsInDefaultNetwork returns the list of subnets declared inside the NegBinding CR Spec.
 func (p *NEGBindingTopologyProvider) ListSubnetsInDefaultNetwork(logger klog.Logger) []nodetopologyv1.SubnetConfig {
 	binding, err := p.getBinding()
@@ -101,11 +130,16 @@ func (p *NEGBindingTopologyProvider) ListSubnetsInDefaultNetwork(logger klog.Log
 		return nil
 	}
 
-	// Return only subnets where NEGs are owned
+	// Return subnets where NEGs are owned
 	subnets := sets.New[string]()
 	ownedSpecRefs := p.getOwnedSpecNEGRefs(binding, logger)
 	for _, ref := range ownedSpecRefs {
 		subnets.Insert(ref.Subnet)
+	}
+
+	ownedStatusTopology := p.getOwnedStatusNEGTopology(binding, logger)
+	for subnet := range ownedStatusTopology {
+		subnets.Insert(subnet)
 	}
 
 	configs := []nodetopologyv1.SubnetConfig{}
@@ -136,11 +170,11 @@ func (p *NEGBindingTopologyProvider) ListZonesPerSubnet(_ zonegetter.Filter, net
 		return nil, fmt.Errorf("failed to get NegBinding from store: %w", err)
 	}
 
-	// Return only zones of subnets, where NEGs are owned
-	ownedSpecRefs := p.getOwnedSpecNEGRefs(binding, logger)
 	zonesPerSubnet := make(shared.ZonesPerSubnetMap)
+	ownedSpecRefs := p.getOwnedSpecNEGRefs(binding, logger)
 	for _, ref := range ownedSpecRefs {
 		zonesPerSubnet[ref.Subnet] = sets.New(ref.Zones...)
 	}
+
 	return zonesPerSubnet, nil
 }

@@ -465,3 +465,67 @@ func sortSubnetConfigs(configs []nodetopologyv1.SubnetConfig) {
 		return configs[i].Name < configs[j].Name
 	})
 }
+
+func TestNEGBindingTopologyProviderStatusCoverage(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+	defaultSubnetURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet"
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	informer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer())
+	negBindingLister := informer.GetIndexer()
+
+	registry := newMockRegistry()
+	ownerKey := fmt.Sprintf("%s/%s", namespace, name)
+	p, err := NewNEGBindingTopologyProvider(namespace, name, negBindingLister, defaultSubnetURL, registry)
+	if err != nil {
+		t.Fatalf("NewNEGBindingTopologyProvider() failed unexpectedly: %v", err)
+	}
+
+	// 1. Pre-acquire "neg-old" for this binding
+	acquired, _ := registry.Acquire("neg-old", ownerKey)
+	if !acquired {
+		t.Fatalf("Failed to pre-acquire lock")
+	}
+
+	// 2. Create binding with "neg-old" in status and "neg-new" in spec
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-new",
+					Subnet: "default-subnet",
+					Zones:  []string{"us-central1-a"},
+				},
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-b/networkEndpointGroups/neg-old",
+					SubnetURL:   defaultSubnetURL,
+				},
+			},
+		},
+	}
+	negBindingLister.Add(binding)
+
+	// 3. Verify ListSubnetsInDefaultNetwork returns default-subnet from status even when neg-new is not acquired
+	subnets := p.ListSubnetsInDefaultNetwork(klog.TODO())
+	if len(subnets) != 1 || subnets[0].Name != "default-subnet" {
+		t.Errorf("ListSubnetsInDefaultNetwork() returned %+v, expected default-subnet from status", subnets)
+	}
+
+	// 4. Verify ListZonesPerSubnet returns empty map when Spec NEG is not acquired (so Status NEG is drained)
+	zones, err := p.ListZonesPerSubnet(zonegetter.AllNodesFilter, network.NetworkInfo{IsDefault: true}, klog.TODO())
+	if err != nil {
+		t.Errorf("ListZonesPerSubnet() returned unexpected error: %v", err)
+	}
+	if len(zones) != 0 {
+		t.Errorf("ListZonesPerSubnet() returned %+v, expected empty map when Spec NEG is unacquired", zones)
+	}
+}
