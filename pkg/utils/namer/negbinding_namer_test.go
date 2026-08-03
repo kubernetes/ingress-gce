@@ -154,3 +154,128 @@ func TestNegBindingNamer(t *testing.T) {
 		t.Errorf("Expected error for unexpected object type in cache, got nil")
 	}
 }
+
+func TestNegBindingNamerStatusLookup(t *testing.T) {
+	namespace := "test-ns"
+	name := "test-name"
+	svcName := "svc-name"
+	svcPort := int32(80)
+
+	subnetName := "subnet-name"
+	negName := "neg-name"
+
+	testCases := []struct {
+		desc        string
+		binding     *negbindingv1beta1.NetworkEndpointGroupBinding
+		subnet      string
+		expectedNEG string
+	}{
+		{
+			desc: "Matches both Spec and Status",
+			binding: &negbindingv1beta1.NetworkEndpointGroupBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+				},
+				Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+					BackendRef: &negbindingv1beta1.BackendRefConfig{
+						Name: svcName,
+						Port: svcPort,
+					},
+					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+						{
+							Subnet: subnetName,
+							Name:   negName,
+						},
+					},
+				},
+				Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+					NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+						{
+							ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/" + negName,
+							SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/" + subnetName,
+						},
+					},
+				},
+			},
+			subnet:      subnetName,
+			expectedNEG: negName,
+		},
+		{
+			desc: "Conflicts between Spec and Status (Status priority)",
+			binding: &negbindingv1beta1.NetworkEndpointGroupBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+				},
+				Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+					BackendRef: &negbindingv1beta1.BackendRefConfig{
+						Name: svcName,
+						Port: svcPort,
+					},
+					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+						{
+							Subnet: subnetName,
+							Name:   "new-neg-name",
+						},
+					},
+				},
+				Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+					NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+						{
+							ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/" + negName,
+							SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/" + subnetName,
+						},
+					},
+				},
+			},
+			subnet:      subnetName,
+			expectedNEG: negName,
+		},
+		{
+			desc: "Removed from Spec (only exists in Status)",
+			binding: &negbindingv1beta1.NetworkEndpointGroupBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+				},
+				Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+					BackendRef: &negbindingv1beta1.BackendRefConfig{
+						Name: svcName,
+						Port: svcPort,
+					},
+					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{},
+				},
+				Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+					NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+						{
+							ResourceURL: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/" + negName,
+							SubnetURL:   "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/" + subnetName,
+						},
+					},
+				},
+			},
+			subnet:      subnetName,
+			expectedNEG: negName,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			negBindingLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			if err := negBindingLister.Add(tc.binding); err != nil {
+				t.Fatalf("Failed to add NEGBinding in store: %v", err)
+			}
+			namer := NewNegBindingNamer(namespace, name, negBindingLister)
+
+			gotNegName, err := namer.NonDefaultSubnetNEG(namespace, svcName, tc.subnet, svcPort)
+			if err != nil {
+				t.Fatalf("NonDefaultSubnetNEG(%s) returned unexpected error: %v", tc.subnet, err)
+			}
+			if gotNegName != tc.expectedNEG {
+				t.Errorf("NonDefaultSubnetNEG(%s) = %s, expected %s", tc.subnet, gotNegName, tc.expectedNEG)
+			}
+		})
+	}
+}
