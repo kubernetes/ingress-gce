@@ -1266,8 +1266,7 @@ func (c *Controller) processNEGBinding(key string) error {
 	}
 
 	if binding.DeletionTimestamp != nil {
-		c.negBindingManager.StopSyncer(namespace, name)
-		return nil
+		return c.negBindingManager.ReconcileDeletion(binding)
 	}
 
 	return c.negBindingManager.EnsureSyncerForNEGBinding(binding)

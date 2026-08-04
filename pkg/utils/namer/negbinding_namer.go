@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/client-go/tools/cache"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 )
@@ -80,6 +81,21 @@ func (n *NegBindingNamer) negNameForSubnet(subnet, namespace, svcName string, po
 		return "", fmt.Errorf("%w: backendRef %s, negBinding.Spec.BackendRef %s", ErrNBNamerInvalidBackendRef, gotRef, expectedRef)
 	}
 
+	// Find NEG name in Status first to handle conflicts/cleanup
+	for _, ref := range binding.Status.NetworkEndpointGroups {
+		subnetID, err := cloud.ParseResourceURL(ref.SubnetURL)
+		if err != nil {
+			continue
+		}
+		if subnetID.Key.Name == subnet {
+			negID, err := cloud.ParseResourceURL(ref.ResourceURL)
+			if err == nil {
+				return negID.Key.Name, nil
+			}
+		}
+	}
+
+	// Find NEG name in Spec
 	for _, ref := range binding.Spec.NetworkEndpointGroups {
 		if ref.Subnet == subnet {
 			return ref.Name, nil

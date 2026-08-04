@@ -699,7 +699,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, statusHandler negtypes.NEGStatusHandler, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
@@ -709,6 +709,17 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 	allZonesPerSubnet, err := topologyProvider.ListZonesPerSubnet(zonegetter.AllNodesFilter, networkInfo, logger)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+
+	statusZonesPerSubnet, err := statusHandler.SubnetToZonesMap()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get status zones: %w", err)
+	}
+	for subnet, zones := range statusZonesPerSubnet {
+		if _, ok := allZonesPerSubnet[subnet]; !ok {
+			allZonesPerSubnet[subnet] = sets.New[string]()
+		}
+		allZonesPerSubnet[subnet] = allZonesPerSubnet[subnet].Union(zones)
 	}
 
 	for subnet, negName := range subnetToNegMapping {
