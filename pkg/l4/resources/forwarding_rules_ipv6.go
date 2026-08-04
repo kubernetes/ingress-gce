@@ -208,11 +208,6 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		return nil, l4utils.ResourceResync, err
 	}
 
-	// If the IP collection changed, we cannot reuse the old forwarding rule's IP.
-	if fwdRuleToDetermineIP != nil && fwdRuleToDetermineIP.IpCollection != ipCollection {
-		ipv6AddrToUse = ""
-	}
-
 	frLogger.V(2).Info("ipv6AddressToUse for service", "ipv6AddressToUse", ipv6AddrToUse)
 
 	netTier, isFromAnnotation := annotations.NetworkTier(l4netlb.Service)
@@ -237,6 +232,16 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(fwdRuleToDetermineIP, netTier, addrMgr, frLogger); err != nil {
 				return nil, l4utils.ResourceResync, err
 			}
+		}
+
+		if flags.F.EnableBYOIPv6 && existingIPv6FwdRule != nil && existingIPv6FwdRule.IpCollection != ipCollection {
+			frLogger.V(2).Info("deleting forwarding rule for service due to ip collection mismatch", "existingIpCollection", existingIPv6FwdRule.IpCollection, "expectedIpCollection", ipCollection)
+			if err := l4netlb.forwardingRules.Delete(existingIPv6FwdRule.Name); err != nil {
+				frLogger.Error(err, "l4netlb.forwardingRules.Delete returned error, want nil")
+				return nil, l4utils.ResourceResync, err
+			}
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted due to ip-collection-v6 change", existingIPv6FwdRule.Name)
+			existingIPv6FwdRule = nil
 		}
 
 		ipv6AddrToUse, _, err = addrMgr.HoldAddress()

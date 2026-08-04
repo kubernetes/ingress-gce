@@ -18,6 +18,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -2478,5 +2480,176 @@ func TestEnsureFrontendDualStackIPCollectionError(t *testing.T) {
 		t.Errorf("Expected error for ip-collection on dualstack service, but got nil")
 	} else if !IsUserError(result.Error) {
 		t.Errorf("Expected UserError for ip-collection on dualstack service, but got %v", result.Error)
+	}
+}
+
+func TestIPv6NetLBIPCollectionAnnotationUpdate(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection-a"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	frName := l4NetLB.ipv6FRName()
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "my-collection-a" {
+		t.Errorf("fwdRule.IpCollection = %v, want my-collection-a", fwdRule.IpCollection)
+	}
+
+	// Update the annotation to a new collection
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection-b"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer after annotation update, err %v", result.Error)
+	}
+
+	fwdRule, err = composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s after update - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "my-collection-b" {
+		t.Errorf("fwdRule.IpCollection = %v, want my-collection-b", fwdRule.IpCollection)
+	}
+}
+
+func TestIPv6NetLBIPCollectionUpdateResourceInUseLoop(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection-a"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	// Hook MockAddresses.DeleteHook to reproduce the RESOURCE_IN_USE error when trying to delete an address still in use by a forwarding rule.
+	l4NetLB.cloud.Compute().(*cloud.MockGCE).MockAddresses.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+		if key.Name != l4NetLB.ipv6FRName() {
+			return false, nil
+		}
+		// In GCE, an address cannot be deleted if a forwarding rule is currently referencing it.
+		// If the forwarding rule has already been deleted, GCE allows deleting the address.
+		frKey := meta.RegionalKey(l4NetLB.ipv6FRName(), l4NetLB.cloud.Region())
+		if _, err := composite.GetForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO()); err == nil {
+			return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "The resource is already being used by another resource"}
+		}
+		return false, nil
+	}
+	defer func() {
+		l4NetLB.cloud.Compute().(*cloud.MockGCE).MockAddresses.DeleteHook = nil
+	}()
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection-b"
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	// In the empirical baseline before modifying production code, we assert that the update succeeds without falling into a RESOURCE_IN_USE error loop.
+	if result.Error != nil {
+		t.Fatalf("Expected successful update without RESOURCE_IN_USE error loop, got err %v", result.Error)
+	}
+}
+
+func TestIPv6NetLBIPCollectionAnnotationRemoval(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	frName := l4NetLB.ipv6FRName()
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "my-collection" {
+		t.Errorf("fwdRule.IpCollection = %v, want my-collection", fwdRule.IpCollection)
+	}
+	if fwdRule.Subnetwork != "" {
+		t.Errorf("fwdRule.Subnetwork = %v, want empty string", fwdRule.Subnetwork)
+	}
+
+	// Remove the IP collection annotation
+	delete(svc.Annotations, annotations.IPCollectionV6AnnotationKey)
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer after annotation removal, err %v", result.Error)
+	}
+
+	fwdRule, err = composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s after removal - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "" {
+		t.Errorf("fwdRule.IpCollection = %v, want empty string after removal", fwdRule.IpCollection)
+	}
+	if fwdRule.Subnetwork == "" {
+		t.Errorf("fwdRule.Subnetwork should not be empty after removing IP collection annotation")
+	}
+}
+
+func TestIPv6NetLBIPCollectionSubnetworkIndependence(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+
+	frName := l4NetLB.ipv6FRName()
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
+	}
+	if fwdRule.IpCollection != "my-collection" {
+		t.Errorf("fwdRule.IpCollection = %v, want my-collection", fwdRule.IpCollection)
+	}
+	if fwdRule.Subnetwork != "" {
+		t.Errorf("fwdRule.Subnetwork = %v, want empty string when IP collection is specified", fwdRule.Subnetwork)
+	}
+
+	// Verify idempotency and subnetwork independence on resync
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("Failed to ensure loadBalancer on resync, err %v", result.Error)
+	}
+	fwdRule, err = composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to fetch forwarding rule %s on resync - err %v", frName, err)
+	}
+	if fwdRule.Subnetwork != "" {
+		t.Errorf("fwdRule.Subnetwork = %v, want empty string on resync", fwdRule.Subnetwork)
 	}
 }

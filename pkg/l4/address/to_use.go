@@ -6,6 +6,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/klog/v2"
 
@@ -70,6 +71,10 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 	}
 	if requestedSubnet != ipv6FwdRule.Subnetwork {
 		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
+		return "", "", nil
+	}
+	if flags.F.EnableBYOIPv6 && annotations.FromService(svc).GetIPCollectionV6() != ipv6FwdRule.IpCollection {
+		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed IP collection")
 		return "", "", nil
 	}
 
