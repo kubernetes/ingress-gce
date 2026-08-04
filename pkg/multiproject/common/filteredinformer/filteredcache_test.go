@@ -1,6 +1,7 @@
 package filteredinformer
 
 import (
+	"reflect"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -82,15 +83,17 @@ func TestProviderConfigFilteredCache_ByIndex(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			if len(items) != len(tc.expectedItemNames) {
-				t.Errorf("Expected %d items, got %d", len(tc.expectedItemNames), len(items))
+			expectedCounts := make(map[string]int)
+			for _, name := range tc.expectedItemNames {
+				expectedCounts[name]++
 			}
-
-			for i, item := range items {
+			actualCounts := make(map[string]int)
+			for _, item := range items {
 				metaObj, _ := meta.Accessor(item)
-				if metaObj.GetName() != tc.expectedItemNames[i] {
-					t.Errorf("Expected item name %s, got %s", tc.expectedItemNames[i], metaObj.GetName())
-				}
+				actualCounts[metaObj.GetName()]++
+			}
+			if !reflect.DeepEqual(expectedCounts, actualCounts) {
+				t.Errorf("Expected item counts %v, got %v", expectedCounts, actualCounts)
 			}
 		})
 	}
@@ -153,15 +156,17 @@ func TestProviderConfigFilteredCache_List(t *testing.T) {
 			}
 
 			items := nsCache.List()
-			if len(items) != len(tc.expectedItemNames) {
-				t.Errorf("Expected %d items, got %d", len(tc.expectedItemNames), len(items))
+			expectedCounts := make(map[string]int)
+			for _, name := range tc.expectedItemNames {
+				expectedCounts[name]++
 			}
-
-			for i, item := range items {
+			actualCounts := make(map[string]int)
+			for _, item := range items {
 				metaObj, _ := meta.Accessor(item)
-				if metaObj.GetName() != tc.expectedItemNames[i] {
-					t.Errorf("Expected item name %s, got %s", tc.expectedItemNames[i], metaObj.GetName())
-				}
+				actualCounts[metaObj.GetName()]++
+			}
+			if !reflect.DeepEqual(expectedCounts, actualCounts) {
+				t.Errorf("Expected item counts %v, got %v", expectedCounts, actualCounts)
 			}
 		})
 	}
