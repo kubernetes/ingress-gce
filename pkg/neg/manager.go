@@ -786,7 +786,7 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 // would return `false`. In addition, if the deletion failed, the error will be
 // reported as an event on the given CR and added to the passed `errList`.
 func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, errList *[]error) bool {
-	expectedDesc := &utils.NegDescription{
+	expectedDesc := &utils.StandardNEGDescription{
 		ClusterUID:  string(manager.kubeSystemUID),
 		Namespace:   svcNegCR.Namespace,
 		ServiceName: svcNegCR.GetLabels()[negtypes.NegCRServiceNameKey],
@@ -823,7 +823,7 @@ func ensureExistingNegRef(neg *negv1beta1.ServiceNetworkEndpointGroup, deletedNe
 }
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
-func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.NegDescription) error {
+func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.StandardNEGDescription) error {
 	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA, manager.logger)
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
@@ -841,7 +841,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 			manager.logger.V(2).Info("Skipping deletion of Neg because name was not generated and empty description", "negName", name, "zone", zone)
 			return nil
 		}
-		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
+		if matches, err := expectedDesc.MatchesString(neg.Description, name, zone); !matches {
 			manager.logger.V(2).Info("Skipping deletion of Neg because of conflicting description", "negName", name, "zone", zone, "err", err)
 			return nil
 		}

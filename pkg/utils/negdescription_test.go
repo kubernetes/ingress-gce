@@ -24,12 +24,12 @@ import (
 func TestNegString(t *testing.T) {
 	testCases := []struct {
 		desc           string
-		description    NegDescription
+		description    NEGDescription
 		expectedString string
 	}{
 		{
-			desc: "all fields",
-			description: NegDescription{
+			desc: "StandardNEGDescription all fields",
+			description: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -38,8 +38,22 @@ func TestNegString(t *testing.T) {
 			expectedString: `{"cluster-uid":"00000000001","namespace":"my-namespace","service-name":"my-service","port":"80"}`,
 		},
 		{
-			desc:           "empty",
-			description:    NegDescription{},
+			desc:           "StandardNEGDescription empty",
+			description:    StandardNEGDescription{},
+			expectedString: "{}",
+		},
+		{
+			desc: "BoundNEGDescription all fields",
+			description: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			expectedString: `{"cluster-name":"cluster-1","namespace":"my-namespace","backend-ref":"my-backend"}`,
+		},
+		{
+			desc:           "BoundNEGDescription empty",
+			description:    BoundNEGDescription{},
 			expectedString: "{}",
 		},
 	}
@@ -52,11 +66,59 @@ func TestNegString(t *testing.T) {
 	}
 }
 
-func TestNegDescriptionFromString(t *testing.T) {
+func TestBoundNEGDescriptionFromString(t *testing.T) {
 	testCases := []struct {
 		desc         string
 		negDesc      string
-		expectedDesc NegDescription
+		expectedDesc BoundNEGDescription
+		expectError  bool
+	}{
+		{
+			desc:        "empty string",
+			expectError: true,
+		},
+		{
+			desc:        "invalid format",
+			negDesc:     "invalid",
+			expectError: true,
+		},
+		{
+			desc:    "all fields",
+			negDesc: `{"cluster-name":"cluster-1", "namespace":"my-namespace", "backend-ref":"my-backend"}`,
+			expectedDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			expectError: false,
+		},
+		{
+			desc:    "missing a field",
+			negDesc: `{"cluster-name":"cluster-1", "backend-ref":"my-backend"}`,
+			expectedDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				BackendRef:  "my-backend",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		description, err := NEGDescriptionFromString[BoundNEGDescription](tc.negDesc)
+		if err != nil && !tc.expectError {
+			t.Errorf("%s: BoundNEGDescriptionFromString(%s) resulted in error: %s", tc.desc, tc.negDesc, err)
+		}
+		if !reflect.DeepEqual(*description, tc.expectedDesc) {
+			t.Errorf("%s: BoundNEGDescriptionFromString(%s)=%s, want %s", tc.desc, tc.negDesc, description, tc.expectedDesc)
+		}
+	}
+}
+
+func TestStandardNEGDescriptionFromString(t *testing.T) {
+	testCases := []struct {
+		desc         string
+		negDesc      string
+		expectedDesc StandardNEGDescription
 		expectError  bool
 	}{
 		{
@@ -71,7 +133,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 		{
 			desc:    "no feature",
 			negDesc: `{"cluster-uid":"00000000001", "namespace":"my-namespace", "service-name":"my-service", "port":"80"}`,
-			expectedDesc: NegDescription{
+			expectedDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -82,7 +144,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 		{
 			desc:    "missing a field",
 			negDesc: `{"cluster-uid":"00000000001","service-name":"my-service", "port":"80"}`,
-			expectedDesc: NegDescription{
+			expectedDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				ServiceName: "my-service",
 				Port:        "80",
@@ -92,7 +154,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		description, err := NegDescriptionFromString(tc.negDesc)
+		description, err := NEGDescriptionFromString[StandardNEGDescription](tc.negDesc)
 		if err != nil && !tc.expectError {
 			t.Errorf("%s: NegDescriptionFromString(%s) resulted in error: %s", tc.desc, tc.negDesc, err)
 		}
@@ -103,7 +165,7 @@ func TestNegDescriptionFromString(t *testing.T) {
 }
 
 func TestVerifyDescription(t *testing.T) {
-	negDesc := NegDescription{
+	negDesc := StandardNEGDescription{
 		ClusterUID:  "00000000001",
 		Namespace:   "my-namespace",
 		ServiceName: "my-service",
@@ -113,13 +175,13 @@ func TestVerifyDescription(t *testing.T) {
 	testCases := []struct {
 		desc          string
 		negDescString string
-		expectNegDesc NegDescription
+		expectNegDesc NEGDescription
 		shouldMatch   bool
 	}{
 		{
 			desc:          "fields match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -130,7 +192,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "empty description",
 			negDescString: "",
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000001",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -141,7 +203,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "cluster uid doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -152,7 +214,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "namespace doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "not-my-namespace",
 				ServiceName: "my-service",
@@ -163,7 +225,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "service name doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "not-my-service",
@@ -174,7 +236,7 @@ func TestVerifyDescription(t *testing.T) {
 		{
 			desc:          "port doesn't match",
 			negDescString: negDesc,
-			expectNegDesc: NegDescription{
+			expectNegDesc: StandardNEGDescription{
 				ClusterUID:  "00000000002",
 				Namespace:   "my-namespace",
 				ServiceName: "my-service",
@@ -182,10 +244,86 @@ func TestVerifyDescription(t *testing.T) {
 			},
 			shouldMatch: false,
 		},
+		{
+			desc: "BoundNEGDescription fields match",
+			negDescString: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			shouldMatch: true,
+		},
+		{
+			desc:          "BoundNEGDescription empty description string",
+			negDescString: "",
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc:          "BoundNEGDescription invalid format description string",
+			negDescString: "invalid-json",
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription cluster name doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "other-cluster",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription namespace doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "other-namespace",
+				BackendRef:  "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription backend ref doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterName: "cluster-1",
+				Namespace:   "my-namespace",
+				BackendRef:  "other-backend",
+			},
+			shouldMatch: false,
+		},
 	}
 
 	for _, tc := range testCases {
-		matches, err := VerifyDescription(tc.expectNegDesc, tc.negDescString, "my-neg", "zone")
+		matches, err := tc.expectNegDesc.MatchesString(tc.negDescString, "my-neg", "zone")
 		if tc.shouldMatch && err != nil {
 			t.Errorf("%s: VerifyDescription(%+v, %s) had an unexpected error: %s", tc.desc, tc.expectNegDesc, tc.negDescString, err)
 		} else if !tc.shouldMatch && err == nil {

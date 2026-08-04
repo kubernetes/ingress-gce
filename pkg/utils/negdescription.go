@@ -26,8 +26,14 @@ import (
 
 var ErrNEGUsedByAnotherSyncer = errors.New("NEG is used by another syncer in the same cluster and namespace")
 
+// NEGDescription provides an interface for serializing and verifying NEG descriptions.
+type NEGDescription interface {
+	String() string
+	MatchesString(descString, negName, zone string) (bool, error)
+}
+
 // Description stores the description for a BackendService.
-type NegDescription struct {
+type StandardNEGDescription struct {
 	ClusterUID  string `json:"cluster-uid,omitempty"`
 	Namespace   string `json:"namespace,omitempty"`
 	ServiceName string `json:"service-name,omitempty"`
@@ -35,7 +41,7 @@ type NegDescription struct {
 }
 
 // String returns the string representation of a Description.
-func (desc NegDescription) String() string {
+func (desc StandardNEGDescription) String() string {
 	descJson, err := json.Marshal(desc)
 	if err != nil {
 		klog.Errorf("Failed to generate neg description string: %v, falling back to empty string", err)
@@ -44,23 +50,13 @@ func (desc NegDescription) String() string {
 	return string(descJson)
 }
 
-// DescriptionFromString gets a Description from string,
-func NegDescriptionFromString(descString string) (*NegDescription, error) {
-	var desc NegDescription
-	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
-		klog.Errorf("Failed to parse neg description: %s, falling back to empty list", descString)
-		return &NegDescription{}, err
-	}
-	return &desc, nil
-}
-
-// VerifyDescription returns whether the provided descString fields match Neg Description expectDesc.
-// If an empty string or malformed description is provided, VerifyDescription will return true.
+// MatchesString returns whether the provided descString fields match description's fields.
+// If an empty string or malformed description is provided, MatchesString will return true.
 // When returning false, a detailed error will also be returned
-func VerifyDescription(expectDesc NegDescription, descString, negName, zone string) (bool, error) {
+func (expectDesc StandardNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
 	// Return true if description string is empty
 	if descString != "" {
-		desc, err := NegDescriptionFromString(descString)
+		desc, err := NEGDescriptionFromString[StandardNEGDescription](descString)
 		if err != nil {
 			klog.Warningf("Error unmarshalling Neg Description %s err:%s", negName, err)
 		} else {
@@ -82,4 +78,49 @@ func VerifyDescription(expectDesc NegDescription, descString, negName, zone stri
 		}
 	}
 	return true, nil
+}
+
+// BoundNEGDescription stores the description for a NEG managed for NEGBinding CR.
+type BoundNEGDescription struct {
+	ClusterName string `json:"cluster-name,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	BackendRef  string `json:"backend-ref,omitempty"`
+}
+
+// String returns the string representation of a BoundNEGDescription.
+func (desc BoundNEGDescription) String() string {
+	descJson, err := json.Marshal(desc)
+	if err != nil {
+		klog.Errorf("Failed to generate neg description string: %v, falling back to empty string", err)
+		return ""
+	}
+	return string(descJson)
+}
+
+// MatchesString returns whether the provided descString fields match description's fields.
+// Unlike StandardNEGDescription if descString can't be unmarshalled into description it's considered as invalid description of NEG.
+func (expectDesc BoundNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
+	desc, err := NEGDescriptionFromString[BoundNEGDescription](descString)
+	if err != nil {
+		klog.Warningf("Error unmarshalling Neg Description %s err:%s", negName, err)
+		return false, fmt.Errorf("Error unmarshalling Neg Description %s err:%s", negName, err)
+	}
+
+	if desc.ClusterName != expectDesc.ClusterName ||
+		desc.Namespace != expectDesc.Namespace ||
+		desc.BackendRef != expectDesc.BackendRef {
+		return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)
+	}
+
+	return true, nil
+}
+
+// NEGDescriptionFromString parses string into NEG description structs
+func NEGDescriptionFromString[T NEGDescription](descString string) (*T, error) {
+	var desc T
+	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
+		klog.Errorf("Failed to parse neg description: %s, falling back to empty %T", descString, desc)
+		return &desc, err
+	}
+	return &desc, nil
 }
