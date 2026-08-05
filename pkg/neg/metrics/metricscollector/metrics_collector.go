@@ -448,6 +448,11 @@ func (sm *SyncerMetrics) SetNegService(svcKey string, negState NegServiceState) 
 	if sm.negMap == nil {
 		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
 	}
+	if existing, ok := sm.negMap[svcKey]; ok {
+		negState.NegBindingNeg = existing.NegBindingNeg
+		negState.BindingSuccessfulNeg = existing.BindingSuccessfulNeg
+		negState.BindingErrorNeg = existing.BindingErrorNeg
+	}
 	sm.negMap[svcKey] = negState
 }
 
@@ -456,7 +461,70 @@ func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	delete(sm.negMap, svcKey)
+	existing, ok := sm.negMap[svcKey]
+	if !ok {
+		return
+	}
+	if existing.NegBindingNeg == 0 {
+		delete(sm.negMap, svcKey)
+	} else {
+		sm.negMap[svcKey] = NegServiceState{
+			NegBindingNeg:        existing.NegBindingNeg,
+			BindingSuccessfulNeg: existing.BindingSuccessfulNeg,
+			BindingErrorNeg:      existing.BindingErrorNeg,
+		}
+	}
+}
+
+// GetNegService returns the NegServiceState for a given service key.
+func (sm *SyncerMetrics) GetNegService(svcKey string) (NegServiceState, bool) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	state, ok := sm.negMap[svcKey]
+	return state, ok
+}
+
+// SetNegBindingService sets or updates NegBindingNeg counts for a service key without overwriting other neg types.
+func (sm *SyncerMetrics) SetNegBindingService(svcKey string, negState NegServiceState) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.negMap == nil {
+		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	existing, ok := sm.negMap[svcKey]
+	if !ok {
+		if negState.NegBindingNeg == 0 {
+			return
+		}
+		sm.negMap[svcKey] = negState
+		return
+	}
+	existing.NegBindingNeg = negState.NegBindingNeg
+	existing.BindingSuccessfulNeg = negState.BindingSuccessfulNeg
+	existing.BindingErrorNeg = negState.BindingErrorNeg
+	sm.negMap[svcKey] = existing
+}
+
+// DeleteNegBindingService resets NegBindingNeg for a service key and removes the service if no other NEGs exist.
+func (sm *SyncerMetrics) DeleteNegBindingService(svcKey string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	existing, ok := sm.negMap[svcKey]
+	if !ok {
+		return
+	}
+
+	if existing.SuccessfulNeg != 0 || existing.ErrorNeg != 0 || existing.StandaloneNeg != 0 || existing.IngressNeg != 0 || existing.VmIpNeg != nil {
+		existing.NegBindingNeg = 0
+		existing.BindingSuccessfulNeg = 0
+		existing.BindingErrorNeg = 0
+		sm.negMap[svcKey] = existing
+	} else {
+		delete(sm.negMap, svcKey)
+	}
 }
 
 // computeNegMetrics aggregates NEG metrics in the cache
@@ -474,20 +542,22 @@ func (sm *SyncerMetrics) computeNegMetrics() map[feature]int {
 		vmIpNegCluster:    0,
 		customNamedNeg:    0,
 		preprovisionedNeg: 0,
+		negBindingNeg:     0,
 		negInSuccess:      0,
 		negInError:        0,
 	}
 
 	for key, negState := range sm.negMap {
-		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d and vmPrimaryNeg:%v",
-			key, negState.StandaloneNeg, negState.IngressNeg, negState.VmIpNeg)
+		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, negBindingNegs:%d and vmPrimaryNeg:%v",
+			key, negState.StandaloneNeg, negState.IngressNeg, negState.NegBindingNeg, negState.VmIpNeg)
 		counts[standaloneNeg] += negState.StandaloneNeg
 		counts[ingressNeg] += negState.IngressNeg
-		counts[neg] += negState.StandaloneNeg + negState.IngressNeg
+		counts[negBindingNeg] += negState.NegBindingNeg
+		counts[neg] += negState.StandaloneNeg + negState.IngressNeg + negState.NegBindingNeg
 		counts[customNamedNeg] += negState.CustomNamedNeg
 		counts[preprovisionedNeg] += negState.PreprovisionedNeg
-		counts[negInSuccess] += negState.SuccessfulNeg
-		counts[negInError] += negState.ErrorNeg
+		counts[negInSuccess] += negState.SuccessfulNeg + negState.BindingSuccessfulNeg
+		counts[negInError] += negState.ErrorNeg + negState.BindingErrorNeg
 		if negState.VmIpNeg != nil {
 			counts[neg] += 1
 			counts[vmIpNeg] += 1

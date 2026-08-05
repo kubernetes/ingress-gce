@@ -32,9 +32,15 @@ type NegServiceState struct {
 	CustomNamedNeg int
 	// PreprovisionedNeg is the count of standalone negs with pre-provisioning zones
 	PreprovisionedNeg int
+	// NegBindingNeg is the count of NEGs managed by NEGBinding CRs
+	NegBindingNeg int
+	// BindingSuccessfulNeg is the count of successful NEGBinding NEG syncers
+	BindingSuccessfulNeg int
+	// BindingErrorNeg is the count of error NEGBinding NEG syncers
+	BindingErrorNeg int
 	// SuccessfulNeg is the count of successful NEG syncer creations
 	SuccessfulNeg int
-	// SuccessfulNeg is the count of errors in NEG syncer creations
+	// ErrorNeg is the count of errors in NEG syncer creations
 	ErrorNeg int
 }
 
