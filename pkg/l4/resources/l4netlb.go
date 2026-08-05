@@ -284,25 +284,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 		return result
 	}
 
-	// Check conflicts between spec.loadBalancerIP and ip-collection
-	if ipCollectionV6 != "" && svc.Spec.LoadBalancerIP != "" {
-		err := fmt.Errorf("cannot specify both spec.LoadBalancerIP (%q) and %s (%q) for LoadBalancer", svc.Spec.LoadBalancerIP, annotations.IPCollectionV6AnnotationKey, ipCollectionV6)
-		result.Error = l4utils.NewUserError(err)
-		result.MetricsState.Status = metrics.StatusUserError
-		result.MetricsLegacyState.IsUserError = true
-		return result
-	}
-
-	// Check conflicts between load-balancer-ip-addresses and ip-collection
-	staticL4Addresses := svc.Annotations[annotations.StaticL4AddressesAnnotationKey]
-	if ipCollectionV6 != "" && staticL4Addresses != "" {
-		err := fmt.Errorf("cannot specify both %s (%q) and %s (%q) for LoadBalancer", annotations.StaticL4AddressesAnnotationKey, staticL4Addresses, annotations.IPCollectionV6AnnotationKey, ipCollectionV6)
-		result.Error = l4utils.NewUserError(err)
-		result.MetricsState.Status = metrics.StatusUserError
-		result.MetricsLegacyState.IsUserError = true
-		return result
-	}
-
 	// Check if ip-collection-v6 is specified for an IPv4 service
 	if ipCollectionV6 != "" && l4utils.NeedsIPv4(svc) {
 		err := fmt.Errorf("%s is currently only supported for IPv6-only Services", annotations.IPCollectionV6AnnotationKey)

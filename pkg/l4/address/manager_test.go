@@ -25,6 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -550,6 +551,71 @@ func testReleaseAddress(t *testing.T, mgr *address.Manager, svc gce.CloudAddress
 	require.NoError(t, err)
 	_, err = svc.GetRegionAddress(name, region)
 	assert.True(t, utils.IsNotFoundError(err))
+}
+
+func TestBYOIPv6AddressValidation(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+
+	svc, err := fakeGCECloud(vals)
+	require.NoError(t, err)
+
+	existingAddr := &compute.Address{
+		Name:             "existing-ipv6-addr",
+		Address:          "2001:db8::1",
+		IpVersion:        string(address.IPv6Version),
+		PrefixLength:     96,
+		AddressType:      string(cloud.SchemeExternal),
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     "my-pdp",
+	}
+	require.NoError(t, svc.ReserveRegionAddress(existingAddr, vals.Region))
+
+	testCases := []struct {
+		desc         string
+		ipCollection string
+		targetIP     string
+		expectErr    bool
+	}{
+		{
+			desc:         "Case 1: Reserved PDP static address without ip-collection-v6 annotation is accepted",
+			ipCollection: "",
+			targetIP:     "2001:db8::1",
+			expectErr:    false,
+		},
+		{
+			desc:         "Case 2: Static address matching ip-collection-v6 is accepted",
+			ipCollection: "my-pdp",
+			targetIP:     "2001:db8::1",
+			expectErr:    false,
+		},
+		{
+			desc:         "Case 3: Static address mismatching ip-collection-v6 is rejected",
+			ipCollection: "other-pdp",
+			targetIP:     "2001:db8::1",
+			expectErr:    true,
+		},
+		{
+			desc:         "Case 4: Removing ip-collection-v6 from ephemeral service rejects leftover PDP address",
+			ipCollection: "",
+			targetIP:     "",
+			expectErr:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, "test-lb-name", "existing-ipv6-addr", tc.targetIP, cloud.SchemeExternal, cloud.NetworkTierDefault, address.IPv6Version, klog.TODO())
+			mgr.SetIPCollection(tc.ipCollection)
+
+			_, _, err := mgr.HoldAddress()
+			if tc.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func fakeGCECloud(vals gce.TestClusterValues) (*gce.Cloud, error) {
