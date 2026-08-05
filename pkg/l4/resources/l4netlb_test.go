@@ -2480,3 +2480,98 @@ func TestEnsureFrontendDualStackIPCollectionError(t *testing.T) {
 		t.Errorf("Expected UserError for ip-collection on dualstack service, but got %v", result.Error)
 	}
 }
+
+func TestIPv6NetLBIPCollectionWithStaticAddressValidation(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	ipv6AddressMatching := &ga.Address{
+		Name:             "ipv6-address-matching",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     "my-collection",
+	}
+	ipv6AddressMismatching := &ga.Address{
+		Name:             "ipv6-address-mismatching",
+		Address:          "2::3",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     "other-collection",
+	}
+
+	testCases := []struct {
+		desc                string
+		ipCollectionVal     string
+		staticAnnotationVal string
+		addressToReserve    *ga.Address
+		expectError         bool
+	}{
+		{
+			desc:                "Case 1: Reserved PDP static address without ip-collection-v6 annotation is accepted",
+			ipCollectionVal:     "",
+			staticAnnotationVal: "ipv6-address-matching",
+			addressToReserve:    ipv6AddressMatching,
+			expectError:         false,
+		},
+		{
+			desc:                "Case 2: Static address matching ip-collection-v6 is accepted",
+			ipCollectionVal:     "my-collection",
+			staticAnnotationVal: "ipv6-address-matching",
+			addressToReserve:    ipv6AddressMatching,
+			expectError:         false,
+		},
+		{
+			desc:                "Case 3: Static address mismatching ip-collection-v6 is rejected",
+			ipCollectionVal:     "my-collection",
+			staticAnnotationVal: "ipv6-address-mismatching",
+			addressToReserve:    ipv6AddressMismatching,
+			expectError:         true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			if err := l4NetLB.cloud.ReserveRegionAddress(tc.addressToReserve, l4NetLB.cloud.Region()); err != nil {
+				t.Fatalf("Failed to reserve region address: %v", err)
+			}
+
+			if tc.ipCollectionVal != "" {
+				svc.Annotations[annotations.IPCollectionV6AnnotationKey] = tc.ipCollectionVal
+			}
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAnnotationVal
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if tc.expectError {
+				if result.Error == nil {
+					t.Errorf("Expected error for static address with mismatching IpCollection, but got nil")
+				}
+			} else {
+				if result.Error != nil {
+					t.Errorf("Expected success, but got err %v", result.Error)
+				}
+				frName := l4NetLB.ipv6FRName()
+				fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+				if err != nil {
+					t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
+				}
+				if tc.ipCollectionVal != "" && fwdRule.IpCollection != tc.ipCollectionVal {
+					t.Errorf("fwdRule.IpCollection = %v, want %v", fwdRule.IpCollection, tc.ipCollectionVal)
+				}
+				if strings.Split(fwdRule.IPAddress, "/")[0] != tc.addressToReserve.Address {
+					t.Errorf("fwdRule.IPAddress = %v, want %v", fwdRule.IPAddress, tc.addressToReserve.Address)
+				}
+			}
+		})
+	}
+}
