@@ -272,6 +272,7 @@ func NewController(
 		includeDrainNodesL4Local,
 	)
 
+	negLookup := readiness.NewCompositeNegLookup(manager)
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(
@@ -279,7 +280,7 @@ func NewController(
 			eventRecorderClient,
 			podInformer.GetIndexer(),
 			cloud,
-			manager,
+			negLookup,
 			zoneGetter,
 			enableDualStackNEG,
 			flags.F.EnableMultiSubnetCluster && !flags.F.EnableMultiSubnetClusterPhase1,
@@ -322,6 +323,7 @@ func NewController(
 			kubeSystemUID,
 			logger,
 		)
+		negLookup.AddLookup(negBindingMgr)
 	}
 
 	negController := &Controller{
