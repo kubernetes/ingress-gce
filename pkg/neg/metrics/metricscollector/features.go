@@ -36,4 +36,6 @@ const (
 	negInSuccess = feature("NegInSuccess")
 	// negInError feature specifies that an error occurring in ensuring Neg Syncer
 	negInError = feature("NegInError")
+	// negBindingNeg feature specifies that NEGs are bound using NEGBinding CR
+	negBindingNeg = feature("NegBindingNEG")
 )

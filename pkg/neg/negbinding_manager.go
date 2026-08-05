@@ -70,7 +70,7 @@ func ServiceKeyIndexFunc(obj interface{}) ([]string, error) {
 	if !ok {
 		return []string{}, fmt.Errorf("unexpected object type %T", obj)
 	}
-	if binding.Spec.BackendRef != nil && binding.Spec.BackendRef.Kind == negbindingv1beta1.ServiceKind {
+	if binding.Spec.BackendRef.Kind == negbindingv1beta1.ServiceKind {
 		return []string{fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)}, nil
 	}
 	return []string{}, nil
@@ -158,7 +158,7 @@ func (r *negOwnershipRegistry) setOwnerLocked(negName, owner string) {
 	r.ownedNEGs[owner].Insert(negName)
 }
 
-// setOwnerLocked ensures that owners and ownedNEGs are consistent when releasing NEG ownership. Should have lock when called.
+// unsetOwnerLocked ensures that owners and ownedNEGs are consistent when releasing NEG ownership. Should have lock when called.
 func (r *negOwnershipRegistry) unsetOwnerLocked(negName string) {
 	owner, ok := r.owners[negName]
 	if !ok {
@@ -300,7 +300,62 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	if syncer != nil {
 		syncer.Sync()
 	}
+	m.updateSyncerMetricsForService(svcKey)
 	return nil
+}
+
+func (m *negBindingManager) updateSyncerMetricsForService(svcKey string) {
+	objs, err := m.negBindingLister.ByIndex(ServiceKeyIndex, svcKey)
+	if err != nil {
+		m.logger.Error(err, "failed to list bindings for service to update metrics", "service", svcKey)
+		return
+	}
+	var totalNegBindingNeg, successfulNeg, errorNeg int
+	for _, obj := range objs {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			continue
+		}
+		if len(binding.Spec.NetworkEndpointGroups) == 0 {
+			continue
+		}
+
+		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+		m.mu.Lock()
+		syncer, syncerExists := m.syncerMap[bindingKey]
+		_, hasConfig := m.syncerConfigs[bindingKey]
+		m.mu.Unlock()
+
+		if !syncerExists || !hasConfig {
+			continue
+		}
+
+		var managedNEGs int
+		for _, negRef := range binding.Spec.NetworkEndpointGroups {
+			if m.ownershipRegistry.GetOwner(negRef.Name) == bindingKey {
+				managedNEGs++
+			}
+		}
+		if managedNEGs == 0 {
+			continue
+		}
+		totalNegBindingNeg += managedNEGs
+		if syncer == nil || syncer.IsStopped() {
+			errorNeg += managedNEGs
+		} else {
+			successfulNeg += managedNEGs
+		}
+	}
+
+	if totalNegBindingNeg == 0 {
+		m.syncerMetrics.DeleteNegBindingService(svcKey)
+		return
+	}
+	m.syncerMetrics.SetNegBindingService(svcKey, metricscollector.NegServiceState{
+		NegBindingNeg:        totalNegBindingNeg,
+		BindingSuccessfulNeg: successfulNeg,
+		BindingErrorNeg:      errorNeg,
+	})
 }
 
 func (m *negBindingManager) ensureCleanupSyncer(binding *negbindingv1beta1.NetworkEndpointGroupBinding) (negtypes.NegSyncer, error) {
@@ -580,14 +635,23 @@ func (m *negBindingManager) ProcessServiceDeletion(svcNamespace, svcName string)
 
 // StopSyncer stops the syncer associated with the binding and removes it from the map.
 func (m *negBindingManager) StopSyncer(namespace, name string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	bindingKey := fmt.Sprintf("%s/%s", namespace, name)
-	if syncer, ok := m.syncerMap[bindingKey]; ok {
+	m.mu.Lock()
+	syncer, ok := m.syncerMap[bindingKey]
+	if ok {
 		syncer.Stop()
 		m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 		delete(m.syncerMap, bindingKey)
 		delete(m.syncerConfigs, bindingKey)
+	}
+	m.mu.Unlock()
+
+	obj, exists, err := m.negBindingLister.GetByKey(bindingKey)
+	if err == nil && exists {
+		if binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding); ok {
+			svcKey := fmt.Sprintf("%s/%s", namespace, binding.Spec.BackendRef.Name)
+			m.updateSyncerMetricsForService(svcKey)
+		}
 	}
 }
 
@@ -668,9 +732,6 @@ func (m *negBindingManager) getPortTuple(svc *apiv1.Service, port int32) (negtyp
 // InitializeOwnershipRegistry reads NEG names from existing NEGBinding CRs' statuses and acquires them.
 // In case same NEG name found in multiple CRs, only one selected.
 func (m *negBindingManager) InitializeOwnershipRegistry() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	bindings := m.negBindingLister.List()
 	for _, obj := range bindings {
 		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
@@ -679,6 +740,7 @@ func (m *negBindingManager) InitializeOwnershipRegistry() error {
 			continue
 		}
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
+		var needUpdateMetrics bool
 		for _, statusRef := range binding.Status.NetworkEndpointGroups {
 			negID, err := cloud.ParseResourceURL(statusRef.ResourceURL)
 			if err != nil {
@@ -688,10 +750,15 @@ func (m *negBindingManager) InitializeOwnershipRegistry() error {
 			negName := negID.Key.Name
 			acquired, currentOwner := m.ownershipRegistry.Acquire(negName, bindingKey)
 			if acquired {
+				needUpdateMetrics = true
 				m.logger.Info("Acquired NEG ownership from status during registry init", "negName", negName, "owner", bindingKey)
 			} else {
 				m.logger.Info("Conflict acquiring NEG ownership from status during registry init", "negName", negName, "attemptedOwner", bindingKey, "currentOwner", currentOwner)
 			}
+		}
+		if needUpdateMetrics {
+			svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
+			m.updateSyncerMetricsForService(svcKey)
 		}
 	}
 	return nil
@@ -708,6 +775,8 @@ func (m *negBindingManager) ReconcileDeletion(binding *negbindingv1beta1.Network
 	if !ok {
 		if len(binding.Status.NetworkEndpointGroups) == 0 {
 			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
+			svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
+			m.updateSyncerMetricsForService(svcKey)
 			return m.removeFinalizer(binding)
 		}
 		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
@@ -727,6 +796,9 @@ func (m *negBindingManager) ReconcileDeletion(binding *negbindingv1beta1.Network
 			delete(m.syncerMap, bindingKey)
 			delete(m.syncerConfigs, bindingKey)
 		}()
+
+		svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
+		m.updateSyncerMetricsForService(svcKey)
 
 		return m.removeFinalizer(binding)
 	}
@@ -947,4 +1019,6 @@ func (m *negBindingManager) acquireNEGsForBinding(binding *negbindingv1beta1.Net
 	}
 
 	m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, acquiredNEGs)
+	svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
+	m.updateSyncerMetricsForService(svcKey)
 }

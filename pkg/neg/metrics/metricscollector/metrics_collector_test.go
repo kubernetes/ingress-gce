@@ -423,6 +423,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    0,
 				customNamedNeg:    0,
 				preprovisionedNeg: 0,
+				negBindingNeg:     0,
 				negInSuccess:      0,
 				negInError:        0,
 			},
@@ -441,6 +442,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    0,
 				customNamedNeg:    0,
 				preprovisionedNeg: 0,
+				negBindingNeg:     0,
 				negInSuccess:      1,
 				negInError:        0,
 			},
@@ -459,6 +461,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    1,
 				customNamedNeg:    0,
 				preprovisionedNeg: 0,
+				negBindingNeg:     0,
 				negInSuccess:      1,
 				negInError:        0,
 			},
@@ -477,6 +480,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    0,
 				customNamedNeg:    1,
 				preprovisionedNeg: 0,
+				negBindingNeg:     0,
 				negInSuccess:      1,
 				negInError:        0,
 			},
@@ -495,6 +499,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    0,
 				customNamedNeg:    0,
 				preprovisionedNeg: 1,
+				negBindingNeg:     0,
 				negInSuccess:      1,
 				negInError:        0,
 			},
@@ -516,8 +521,32 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNegCluster:    1,
 				customNamedNeg:    0,
 				preprovisionedNeg: 2,
+				negBindingNeg:     0,
 				negInSuccess:      6,
 				negInError:        6,
+			},
+		},
+		{
+			"negbinding neg",
+			[]NegServiceState{
+				{
+					NegBindingNeg:        2,
+					BindingSuccessfulNeg: 1,
+					BindingErrorNeg:      1,
+				},
+			},
+			map[feature]int{
+				standaloneNeg:     0,
+				ingressNeg:        0,
+				neg:               2,
+				vmIpNeg:           0,
+				vmIpNegLocal:      0,
+				vmIpNegCluster:    0,
+				customNamedNeg:    0,
+				preprovisionedNeg: 0,
+				negBindingNeg:     2,
+				negInSuccess:      1,
+				negInError:        1,
 			},
 		},
 	} {
@@ -532,6 +561,142 @@ func TestComputeNegMetrics(t *testing.T) {
 			gotNegCount := newMetrics.computeNegMetrics()
 			if diff := cmp.Diff(tc.expectNegCount, gotNegCount); diff != "" {
 				t.Errorf("Got diff for NEG counts (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSetNegBindingService(t *testing.T) {
+	svcKey := "test-ns/test-svc"
+
+	testCases := []struct {
+		desc         string
+		initialState map[string]NegServiceState
+		inputKey     string
+		inputState   NegServiceState
+		expectExist  bool
+		expectState  NegServiceState
+	}{
+		{
+			desc:         "NegBindingNeg=0 on non-existing entry does not create entry",
+			initialState: nil,
+			inputKey:     "test-ns/non-existing",
+			inputState:   NegServiceState{NegBindingNeg: 0},
+			expectExist:  false,
+		},
+		{
+			desc:         "creates new entry when svcKey does not exist in negMap",
+			initialState: nil,
+			inputKey:     svcKey,
+			inputState:   NegServiceState{NegBindingNeg: 1, BindingSuccessfulNeg: 1, BindingErrorNeg: 0},
+			expectExist:  true,
+			expectState:  NegServiceState{NegBindingNeg: 1, BindingSuccessfulNeg: 1, BindingErrorNeg: 0},
+		},
+		{
+			desc: "updates existing entry while preserving standalone/ingress fields",
+			initialState: map[string]NegServiceState{
+				svcKey: {StandaloneNeg: 2, SuccessfulNeg: 1, ErrorNeg: 0},
+			},
+			inputKey:    svcKey,
+			inputState:  NegServiceState{NegBindingNeg: 3, BindingSuccessfulNeg: 2, BindingErrorNeg: 1},
+			expectExist: true,
+			expectState: NegServiceState{StandaloneNeg: 2, SuccessfulNeg: 1, ErrorNeg: 0, NegBindingNeg: 3, BindingSuccessfulNeg: 2, BindingErrorNeg: 1},
+		},
+		{
+			desc: "overwrites existing NegBindingNeg fields while preserving standalone fields",
+			initialState: map[string]NegServiceState{
+				svcKey: {StandaloneNeg: 2, SuccessfulNeg: 1, ErrorNeg: 0, NegBindingNeg: 1, BindingSuccessfulNeg: 1, BindingErrorNeg: 0},
+			},
+			inputKey:    svcKey,
+			inputState:  NegServiceState{NegBindingNeg: 3, BindingSuccessfulNeg: 1, BindingErrorNeg: 2},
+			expectExist: true,
+			expectState: NegServiceState{StandaloneNeg: 2, SuccessfulNeg: 1, ErrorNeg: 0, NegBindingNeg: 3, BindingSuccessfulNeg: 1, BindingErrorNeg: 2},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			sm := FakeSyncerMetrics()
+			for k, v := range tc.initialState {
+				sm.negMap[k] = v
+			}
+			sm.SetNegBindingService(tc.inputKey, tc.inputState)
+
+			state, ok := sm.GetNegService(tc.inputKey)
+			if ok != tc.expectExist {
+				t.Fatalf("GetNegService(%q) exist = %v, want %v", tc.inputKey, ok, tc.expectExist)
+			}
+			if tc.expectExist {
+				if diff := cmp.Diff(tc.expectState, state); diff != "" {
+					t.Errorf("GetNegService(%q) diff (-want +got):\n%s", tc.inputKey, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteNegBindingService(t *testing.T) {
+	svcKey := "test-ns/test-svc"
+
+	testCases := []struct {
+		desc         string
+		initialState map[string]NegServiceState
+		inputKey     string
+		expectExist  bool
+		expectState  NegServiceState
+	}{
+		{
+			desc:         "non-existing key returns safely",
+			initialState: nil,
+			inputKey:     "test-ns/non-existing",
+			expectExist:  false,
+		},
+		{
+			desc: "deletes entry when only NegBindingNeg fields were present",
+			initialState: map[string]NegServiceState{
+				svcKey: {NegBindingNeg: 2, BindingSuccessfulNeg: 2, BindingErrorNeg: 0},
+			},
+			inputKey:    svcKey,
+			expectExist: false,
+		},
+		{
+			desc: "resets NegBindingNeg fields to zero while preserving standalone and ingress NEGs",
+			initialState: map[string]NegServiceState{
+				svcKey: {StandaloneNeg: 2, IngressNeg: 1, NegBindingNeg: 3, BindingSuccessfulNeg: 3},
+			},
+			inputKey:    svcKey,
+			expectExist: true,
+			expectState: NegServiceState{StandaloneNeg: 2, IngressNeg: 1, NegBindingNeg: 0, BindingSuccessfulNeg: 0, BindingErrorNeg: 0},
+		},
+		{
+			desc: "resets NegBindingNeg fields to zero while preserving VmIpNeg",
+			initialState: map[string]NegServiceState{
+				svcKey: {VmIpNeg: &VmIpNegType{}, NegBindingNeg: 1, BindingSuccessfulNeg: 1},
+			},
+			inputKey:    svcKey,
+			expectExist: true,
+			expectState: NegServiceState{VmIpNeg: &VmIpNegType{}, NegBindingNeg: 0, BindingSuccessfulNeg: 0, BindingErrorNeg: 0},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			sm := FakeSyncerMetrics()
+			for k, v := range tc.initialState {
+				sm.negMap[k] = v
+			}
+			sm.DeleteNegBindingService(tc.inputKey)
+
+			state, ok := sm.GetNegService(tc.inputKey)
+			if ok != tc.expectExist {
+				t.Fatalf("GetNegService(%q) exist = %v, want %v", tc.inputKey, ok, tc.expectExist)
+			}
+			if tc.expectExist {
+				if diff := cmp.Diff(tc.expectState, state, cmpopts.IgnoreUnexported(VmIpNegType{})); diff != "" {
+					t.Errorf("GetNegService(%q) diff (-want +got):\n%s", tc.inputKey, diff)
+				}
 			}
 		})
 	}

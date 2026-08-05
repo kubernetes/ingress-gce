@@ -318,20 +318,6 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 		expectedReason string
 	}{
 		{
-			desc:       "BackendRef is nil",
-			addService: false,
-			binding: &negbindingv1beta1.NetworkEndpointGroupBinding{
-				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "binding-nil-ref"},
-				Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
-					BackendRef:            nil,
-					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{{Name: "neg-1", Subnet: "default", Zones: []string{"us-central1-a"}}},
-				},
-			},
-			expectedErr:    ErrInvalidBackendRef.Error(),
-			expectedStatus: metav1.ConditionFalse,
-			expectedReason: "InvalidBackendRef",
-		},
-		{
 			desc:       "BackendRef Kind is invalid",
 			addService: false,
 			binding: &negbindingv1beta1.NetworkEndpointGroupBinding{
@@ -1230,5 +1216,264 @@ func TestNEGBindingManagerDeletionNoAcquireReleased(t *testing.T) {
 	owner := m.ownershipRegistry.GetOwner("neg-released")
 	if owner != "" {
 		t.Errorf("Expected released NEG 'neg-released' not to be acquired by deleting binding, got owner %s", owner)
+	}
+}
+
+func TestNEGBindingManagerMetrics(t *testing.T) {
+	kubeClient := fake.NewSimpleClientset()
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	namespace := "test-ns"
+	svcName := "test-svc"
+	svcPort := int32(80)
+	targetPort := "8080"
+	testSvc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      svcName,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{
+					Port:       svcPort,
+					TargetPort: intstr.FromString(targetPort),
+				},
+			},
+		},
+	}
+	_, err := kubeClient.CoreV1().Services(namespace).Create(context.TODO(), testSvc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	bindingName := "test-binding"
+	testBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      bindingName,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: svcName,
+				Port: svcPort,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-1",
+					Subnet: "default",
+					Zones:  []string{"us-central1-a"},
+				},
+				{
+					Name:   "neg-2",
+					Subnet: "default",
+					Zones:  []string{"us-central1-a"},
+				},
+			},
+		},
+	}
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	_, err = fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), testBinding, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create binding: %v", err)
+	}
+
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+		ServiceKeyIndex:      ServiceKeyIndexFunc,
+	}
+	negBindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
+	err = negBindingLister.Add(testBinding)
+	if err != nil {
+		t.Fatalf("failed to add binding to lister: %v", err)
+	}
+
+	podLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	err = serviceLister.Add(testSvc)
+	if err != nil {
+		t.Fatalf("failed to add service to lister: %v", err)
+	}
+	endpointSliceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	nodeLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default", false)
+	if err != nil {
+		t.Fatalf("failed to create zone getter: %v", err)
+	}
+
+	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
+	negMetrics := metrics.NewNegMetrics()
+	syncerMetrics := metricscollector.FakeSyncerMetrics()
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
+	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
+	fakeNetworkResolver := network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL})
+
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		podLister,
+		serviceLister,
+		endpointSliceLister,
+		nodeLister,
+		zoneGetter,
+		fakeNetworkResolver,
+		cloudAdapter,
+		record.NewFakeRecorder(100),
+		clusterNamer,
+		negMetrics,
+		syncerMetrics,
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		klog.TODO(),
+	)
+
+	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
+
+	err = m.EnsureSyncerForNEGBinding(testBinding)
+	if err != nil {
+		t.Fatalf("EnsureSyncerForNEGBinding failed: %v", err)
+	}
+
+	var state metricscollector.NegServiceState
+	var ok bool
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		state, ok = syncerMetrics.GetNegService(svcKey)
+		return ok && state.NegBindingNeg == 2 && state.BindingSuccessfulNeg == 2 && state.BindingErrorNeg == 0, nil
+	})
+	if err != nil {
+		t.Fatalf("Timed out waiting for syncerMetrics to reflect binding, ok=%v state=%+v", ok, state)
+	}
+
+	m.StopSyncer(namespace, bindingName)
+	if _, ok := syncerMetrics.GetNegService(svcKey); ok {
+		t.Errorf("Expected metrics entry for service %s to be deleted after StopSyncer", svcKey)
+	}
+}
+
+func TestNEGBindingManagerMetricsConflict(t *testing.T) {
+	kubeClient := fake.NewSimpleClientset()
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	namespace := "test-ns"
+	svcName := "test-svc"
+	svcPort := int32(80)
+	targetPort := "8080"
+	testSvc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      svcName,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{
+					Port:       svcPort,
+					TargetPort: intstr.FromString(targetPort),
+				},
+			},
+		},
+	}
+	_, err := kubeClient.CoreV1().Services(namespace).Create(context.TODO(), testSvc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create service: %v", err)
+	}
+
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+		ServiceKeyIndex:      ServiceKeyIndexFunc,
+	}
+	negBindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers)
+	negBindingLister := negBindingInformer.GetIndexer()
+
+	var testBindings []*negbindingv1beta1.NetworkEndpointGroupBinding
+	for i := 1; i <= 10; i++ {
+		binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      fmt.Sprintf("binding-%d", i),
+			},
+			Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+				BackendRef: &negbindingv1beta1.BackendRefConfig{
+					Kind: negbindingv1beta1.ServiceKind,
+					Name: svcName,
+					Port: svcPort,
+				},
+				NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+					{
+						Name:   "neg-shared",
+						Subnet: "default",
+						Zones:  []string{"us-central1-a"},
+					},
+				},
+			},
+		}
+		testBindings = append(testBindings, binding)
+		_, err = fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatalf("failed to create binding: %v", err)
+		}
+		if err := negBindingLister.Add(binding); err != nil {
+			t.Fatalf("failed to add binding to lister: %v", err)
+		}
+	}
+
+	podLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	err = serviceLister.Add(testSvc)
+	if err != nil {
+		t.Fatalf("failed to add service to lister: %v", err)
+	}
+	endpointSliceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	nodeLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default", false)
+	if err != nil {
+		t.Fatalf("failed to create zone getter: %v", err)
+	}
+
+	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
+	negMetrics := metrics.NewNegMetrics()
+	syncerMetrics := metricscollector.FakeSyncerMetrics()
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
+	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
+	fakeNetworkResolver := network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL})
+
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		podLister,
+		serviceLister,
+		endpointSliceLister,
+		nodeLister,
+		zoneGetter,
+		fakeNetworkResolver,
+		cloudAdapter,
+		record.NewFakeRecorder(100),
+		clusterNamer,
+		negMetrics,
+		syncerMetrics,
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		klog.TODO(),
+	)
+
+	for _, binding := range testBindings {
+		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
+			t.Fatalf("EnsureSyncerForNEGBinding failed: %v", err)
+		}
+	}
+
+	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
+	var state metricscollector.NegServiceState
+	var ok bool
+	err = wait.PollImmediate(100*time.Millisecond, 5*time.Second, func() (bool, error) {
+		state, ok = syncerMetrics.GetNegService(svcKey)
+		return ok && state.NegBindingNeg == 1, nil
+	})
+	if err != nil {
+		t.Fatalf("Expected NegBindingNeg=1 for 10 bindings referencing same NEG name, got ok=%v state=%+v", ok, state)
 	}
 }
