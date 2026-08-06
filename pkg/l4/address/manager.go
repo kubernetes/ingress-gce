@@ -399,8 +399,16 @@ func (m *Manager) validateAddress(addr *compute.Address) error {
 	if addr.NetworkTier != m.networkTier.ToGCEValue() {
 		return l4utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", m.name), m.networkTier.ToGCEValue(), addr.NetworkTier)
 	}
-	if flags.F.EnableBYOIPv6 && m.ipCollection != addr.IpCollection {
-		return fmt.Errorf("ipCollection mismatch, expected %q, actual: %q", m.ipCollection, addr.IpCollection)
+	if flags.F.EnableBYOIPv6 {
+		// 1. If the Service specifies an explicit IP collection, any address MUST match it.
+		if m.ipCollection != "" && m.ipCollection != addr.IpCollection {
+			return fmt.Errorf("ipCollection mismatch, expected %q, actual: %q", m.ipCollection, addr.IpCollection)
+		}
+		// 2. If the Service omits IP collection AND omits static address (ephemeral),
+		// do not reuse a leftover PDP ephemeral address so we revert to a Google IP.
+		if m.ipCollection == "" && m.targetIP == "" && addr.IpCollection != "" {
+			return fmt.Errorf("ipCollection mismatch for ephemeral address, expected empty collection (Google IP), actual: %q", addr.IpCollection)
+		}
 	}
 	return nil
 }
