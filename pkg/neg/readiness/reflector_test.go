@@ -648,3 +648,31 @@ func TestSyncPodMultipleSubnets(t *testing.T) {
 		})
 	}
 }
+
+func TestCompositeNegLookup(t *testing.T) {
+	lookup1 := &fakeLookUp{
+		readinessGateEnabled:     true,
+		readinessGateEnabledNegs: []string{"neg1", "neg2"},
+	}
+	lookup2 := &fakeLookUp{
+		readinessGateEnabled:     false,
+		readinessGateEnabledNegs: []string{"neg2", "neg3"},
+	}
+	holder := NewCompositeNegLookup(lookup1)
+	holder.AddLookup(lookup2)
+
+	negs := holder.ReadinessGateEnabledNegs("ns", map[string]string{"k": "v"})
+	expectedNegs := []string{"neg1", "neg2", "neg3"}
+	if !cmp.Equal(negs, expectedNegs) {
+		t.Errorf("Expected ReadinessGateEnabledNegs=%v, got %v", expectedNegs, negs)
+	}
+
+	if !holder.ReadinessGateEnabled(negtypes.NegSyncerKey{}) {
+		t.Errorf("Expected ReadinessGateEnabled=true when any lookup returns true")
+	}
+
+	holderNone := NewCompositeNegLookup(&fakeLookUp{readinessGateEnabled: false})
+	if holderNone.ReadinessGateEnabled(negtypes.NegSyncerKey{}) {
+		t.Errorf("Expected ReadinessGateEnabled=false when all lookups return false")
+	}
+}

@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -37,7 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
-	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
+	podlabels "k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
@@ -592,7 +593,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		false,
 		false,
 		m.logger,
-		labels.PodLabelPropagationConfig{},
+		podlabels.PodLabelPropagationConfig{},
 		false,
 		*networkInfo,
 		nbNamer,
@@ -1021,4 +1022,69 @@ func (m *negBindingManager) acquireNEGsForBinding(binding *negbindingv1beta1.Net
 	m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, acquiredNEGs)
 	svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
 	m.updateSyncerMetricsForService(svcKey)
+}
+
+// ReadinessGateEnabledNegs returns a list of NEGs which have readiness gate enabled for the input pod's namespace and labels.
+func (m *negBindingManager) ReadinessGateEnabledNegs(namespace string, podLabels map[string]string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ret := sets.New[string]()
+	objs, err := m.negBindingLister.ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		m.logger.Error(err, "Failed to list NEGBindings from indexer by namespace", "namespace", namespace)
+		m.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+		return sets.List(ret)
+	}
+
+	for _, obj := range objs {
+		binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+		if !ok {
+			continue
+		}
+
+		svcKey := fmt.Sprintf("%s/%s", namespace, binding.Spec.BackendRef.Name)
+		svcObj, exists, err := m.serviceLister.GetByKey(svcKey)
+		if err != nil {
+			m.logger.Error(err, "Failed to retrieve service from store", "service", svcKey)
+			m.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+			continue
+		}
+		if !exists {
+			continue
+		}
+
+		service, ok := svcObj.(*apiv1.Service)
+		if !ok || service.Spec.Selector == nil {
+			continue
+		}
+
+		selector := labels.Set(service.Spec.Selector).AsSelectorPreValidated()
+		if !selector.Matches(labels.Set(podLabels)) {
+			continue
+		}
+
+		bindingKey := fmt.Sprintf("%s/%s", namespace, binding.Name)
+		for _, negRef := range binding.Spec.NetworkEndpointGroups {
+			owner := m.ownershipRegistry.GetOwner(negRef.Name)
+			if owner == bindingKey || owner == "" {
+				ret.Insert(negRef.Name)
+			}
+		}
+	}
+	return sets.List(ret)
+}
+
+// ReadinessGateEnabled returns true if the NEG requires readiness feedback.
+func (m *negBindingManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool {
+	if syncerKey.NEGBindingName == "" {
+		return false
+	}
+	bindingKey := fmt.Sprintf("%s/%s", syncerKey.Namespace, syncerKey.NEGBindingName)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	syncer, ok := m.syncerMap[bindingKey]
+	return ok && syncer != nil && !syncer.IsStopped()
 }
