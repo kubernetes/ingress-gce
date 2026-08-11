@@ -48,8 +48,18 @@ import (
 )
 
 const (
+	// RegionalExternalLoadBalancerClass is the loadBalancerClass name used to select the
+	// RBS LB implementation.
+	RegionalExternalLoadBalancerClass = "networking.gke.io/l4-regional-external"
+
+	// NetLBFinalizerV1 is the finalizer used by cloud-controller-manager that manage L4 External LoadBalancer services.
+	NetLBFinalizerV1 = "gke.networking.io/l4-netlb-v1"
+
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+
+	// NetLBFinalizerV3 is the finalizer used by newer controllers that manage L4 External LoadBalancer services (similar to V2 but this one is for NEG based LBs).
+	NetLBFinalizerV3 = "gke.networking.io/l4-netlb-v3"
 )
 
 func fakeGCECloud(vals TestClusterValues) (*Cloud, error) {
@@ -176,22 +186,70 @@ func FirewallToGCloudDeleteCmd(fwName, projectID string) string {
 	return fmt.Sprintf("gcloud compute firewall-rules delete %v --project %v", fwName, projectID)
 }
 
+func formatFirewallRuleSpecs(protocol string, ports []string) []string {
+	if len(ports) == 0 {
+		return []string{protocol}
+	}
+	var specs []string
+	for _, p := range ports {
+		specs = append(specs, fmt.Sprintf("%v:%v", protocol, p))
+	}
+	return specs
+}
+
 func firewallToGcloudArgs(fw *compute.Firewall, projectID string) string {
-	var allPorts []string
-	for _, a := range fw.Allowed {
-		for _, p := range a.Ports {
-			allPorts = append(allPorts, fmt.Sprintf("%v:%v", a.IPProtocol, p))
+	var args []string
+
+	args = append(args, fmt.Sprintf("--description %q", fw.Description))
+
+	if len(fw.Allowed) > 0 {
+		var allowSpecs []string
+		for _, a := range fw.Allowed {
+			allowSpecs = append(allowSpecs, formatFirewallRuleSpecs(a.IPProtocol, a.Ports)...)
 		}
+		sort.Strings(allowSpecs)
+		args = append(args, fmt.Sprintf("--allow %v", strings.Join(allowSpecs, ",")))
 	}
 
-	// Sort all slices to prevent the event from being duped
-	sort.Strings(allPorts)
-	allow := strings.Join(allPorts, ",")
-	sort.Strings(fw.SourceRanges)
-	srcRngs := strings.Join(fw.SourceRanges, ",")
-	sort.Strings(fw.TargetTags)
-	targets := strings.Join(fw.TargetTags, ",")
-	return fmt.Sprintf("--description %q --allow %v --source-ranges %v --target-tags %v --project %v", fw.Description, allow, srcRngs, targets, projectID)
+	if len(fw.Denied) > 0 {
+		var denySpecs []string
+		for _, d := range fw.Denied {
+			denySpecs = append(denySpecs, formatFirewallRuleSpecs(d.IPProtocol, d.Ports)...)
+		}
+		sort.Strings(denySpecs)
+		args = append(args, fmt.Sprintf("--deny %v", strings.Join(denySpecs, ",")))
+	}
+
+	if len(fw.SourceRanges) > 0 {
+		sort.Strings(fw.SourceRanges)
+		args = append(args, fmt.Sprintf("--source-ranges %v", strings.Join(fw.SourceRanges, ",")))
+	}
+
+	if len(fw.DestinationRanges) > 0 {
+		sort.Strings(fw.DestinationRanges)
+		args = append(args, fmt.Sprintf("--destination-ranges %v", strings.Join(fw.DestinationRanges, ",")))
+	}
+
+	if len(fw.TargetTags) > 0 {
+		sort.Strings(fw.TargetTags)
+		args = append(args, fmt.Sprintf("--target-tags %v", strings.Join(fw.TargetTags, ",")))
+	}
+
+	if fw.Priority != 0 {
+		args = append(args, fmt.Sprintf("--priority %v", fw.Priority))
+	}
+
+	if fw.Direction != "" {
+		args = append(args, fmt.Sprintf("--direction %v", fw.Direction))
+	}
+
+	if fw.Disabled {
+		args = append(args, "--disabled")
+	}
+
+	args = append(args, fmt.Sprintf("--project %v", projectID))
+
+	return strings.Join(args, " ")
 }
 
 // Take a GCE instance 'hostname' and break it down to something that can be fed
@@ -385,6 +443,15 @@ func hasFinalizer(service *v1.Service, key string) bool {
 	return false
 }
 
+func hasLoadBalancerClass(service *v1.Service, key string) bool {
+	if service.Spec.LoadBalancerClass != nil {
+		if *service.Spec.LoadBalancerClass == key {
+			return true
+		}
+	}
+	return false
+}
+
 // removeString returns a newly created []string that contains all items from slice that
 // are not equal to s.
 func removeString(slice []string, s string) []string {
@@ -397,16 +464,38 @@ func removeString(slice []string, s string) []string {
 	return newSlice
 }
 
+// shouldProcessNetLB checks if service uses CCM as controller.
+// It should be handled by Service Controller.
+func shouldProcessNetLB(service *v1.Service, forwardingRule *compute.ForwardingRule, isRbsDefault bool) bool {
+	// Detect by load balancer class
+	if service.Spec.LoadBalancerClass != nil {
+		return hasLoadBalancerClass(service, LegacyRegionalExternalLoadBalancerClass)
+	}
+	// Detect CCM by finalizer
+	if hasFinalizer(service, NetLBFinalizerV1) {
+		return true
+	}
+	// Detect not CCM by RBS
+	if usesL4RBS(service, forwardingRule) {
+		return false
+	}
+	return !isRbsDefault
+}
+
 // usesL4RBS checks if service uses Regional Backend Service as a Backend.
 // Such services implemented in other controllers and
 // should not be handled by Service Controller.
 func usesL4RBS(service *v1.Service, forwardingRule *compute.ForwardingRule) bool {
+	// Detect RBS by loadBalancerClass
+	if hasLoadBalancerClass(service, RegionalExternalLoadBalancerClass) {
+		return true
+	}
 	// Detect RBS by annotation
 	if val, ok := service.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
 		return true
 	}
 	// Detect RBS by finalizer
-	if hasFinalizer(service, NetLBFinalizerV2) {
+	if hasFinalizer(service, NetLBFinalizerV2) || hasFinalizer(service, NetLBFinalizerV3) {
 		return true
 	}
 	// Detect RBS by existing forwarding rule with Backend Service attached

@@ -22,10 +22,10 @@ package gce
 import (
 	"fmt"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"k8s.io/api/core/v1"
 )
 
 // LoadBalancerType defines a specific type for holding load balancer types (eg. Internal)
@@ -45,6 +45,14 @@ const (
 
 	// Deprecating the lowercase spelling of Internal.
 	deprecatedTypeInternalLowerCase LoadBalancerType = "internal"
+
+	// LegacyRegionalInternalLoadBalancerClass is the loadBalancerClass name used to select the
+	// GKE CCM ILB implementation.
+	LegacyRegionalInternalLoadBalancerClass = "networking.gke.io/l4-regional-internal-legacy"
+
+	// LegacyRegionalExternalLoadBalancerClass is the loadBalancerClass name used to select the
+	// GKE CCM NetLB implementation.
+	LegacyRegionalExternalLoadBalancerClass = "networking.gke.io/l4-regional-external-legacy"
 
 	// ServiceAnnotationILBBackendShare is annotated on a service with "true" when users
 	// want to share GCP Backend Services for a set of internal load balancers.
@@ -81,11 +89,37 @@ const (
 
 	// RBSEnabled is an annotation to indicate the Service is opt-in for RBS
 	RBSEnabled = "enabled"
+
+	// serviceStatusPrefix is the prefix used in annotations used to record
+	// debug information in the Service annotations. This is applicable to L4 LB services.
+	serviceStatusPrefix = "networking.gke.io"
+
+	backendServiceResource = "backend-service"
+	targetPoolResource     = "target-pool"
+
+	// backendServiceKey is the annotation key used by l4 controller to record
+	// GCP Backend service name.
+	backendServiceKey = serviceStatusPrefix + "/" + backendServiceResource
+
+	// targetPoolKey is the annotation key used by l4 controller to record
+	// GCP Target pool name.
+	targetPoolKey = serviceStatusPrefix + "/" + targetPoolResource
 )
+
+var l4ResourceAnnotationKeys = []string{
+	backendServiceKey,
+	targetPoolKey,
+}
 
 // GetLoadBalancerAnnotationType returns the type of GCP load balancer which should be assembled.
 func GetLoadBalancerAnnotationType(service *v1.Service) LoadBalancerType {
 	var lbType LoadBalancerType
+	// Check LoadBalancerClass before load balancer type annotation since it has precedence.
+	if hasLoadBalancerClass(service, LegacyRegionalInternalLoadBalancerClass) {
+		return LBTypeInternal
+	} else if hasLoadBalancerClass(service, LegacyRegionalExternalLoadBalancerClass) {
+		return lbType
+	}
 	for _, ann := range []string{
 		ServiceAnnotationLoadBalancerType,
 		deprecatedServiceAnnotationLoadBalancerType,
@@ -161,4 +195,28 @@ func GetLoadBalancerAnnotationSubnet(service *v1.Service) string {
 		return val
 	}
 	return ""
+}
+
+// mergeMap returns a new map containing the merged content of existing and update.
+// Keys in existing are overwritten by values from update.
+// If a value in the update map is an empty string, the key is removed from the returned map.
+// The existing map is not modified.
+func mergeMap(existing, update map[string]string) map[string]string {
+	if existing == nil && len(update) == 0 {
+		return nil
+	}
+	res := make(map[string]string)
+	for k, v := range existing {
+		if _, exists := update[k]; exists && update[k] != "" {
+			res[k] = update[k]
+		} else if !exists {
+			res[k] = v
+		}
+	}
+	for k, v := range update {
+		if _, exists := existing[k]; !exists && v != "" {
+			res[k] = v
+		}
+	}
+	return res
 }
