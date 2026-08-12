@@ -241,16 +241,16 @@ func NewDynamicStrategy(
 	noRequestsTimeoutBeforeResettingDelay time.Duration,
 	clock clock.Clock) (Strategy, error) {
 	if successesBeforeDecreasingDelay > successesBeforeResettingDelay {
-		return nil, fmt.Errorf("%s: successesBeforeDecreasingDelay=%q should not be greater than successesBeforeResettingDelay=%q", creationErrMsg, successesBeforeDecreasingDelay, successesBeforeResettingDelay)
+		return nil, fmt.Errorf("%s: successesBeforeDecreasingDelay=%d should not be greater than successesBeforeResettingDelay=%d", creationErrMsg, successesBeforeDecreasingDelay, successesBeforeResettingDelay)
 	}
 	if errorsBeforeIncreasingDelay <= 0 {
-		return nil, fmt.Errorf("%s: errorsBeforeIncreasingDelay=%q should be positive", creationErrMsg, errorsBeforeIncreasingDelay)
+		return nil, fmt.Errorf("%s: errorsBeforeIncreasingDelay=%d should be positive", creationErrMsg, errorsBeforeIncreasingDelay)
 	}
 	if successesBeforeDecreasingDelay <= 0 {
-		return nil, fmt.Errorf("%s: successesBeforeDecreasingDelay=%q should be positive", creationErrMsg, successesBeforeDecreasingDelay)
+		return nil, fmt.Errorf("%s: successesBeforeDecreasingDelay=%d should be positive", creationErrMsg, successesBeforeDecreasingDelay)
 	}
 	if successesBeforeResettingDelay <= 0 {
-		return nil, fmt.Errorf("%s: successesBeforeResettingDelay=%q should be positive", creationErrMsg, successesBeforeResettingDelay)
+		return nil, fmt.Errorf("%s: successesBeforeResettingDelay=%d should be positive", creationErrMsg, successesBeforeResettingDelay)
 	}
 	strategy, err := NewTwoWayStrategy(minDelay, maxDelay, noRequestsTimeoutBeforeDecreasingDelay, noRequestsTimeoutBeforeResettingDelay, clock)
 	if err != nil {
