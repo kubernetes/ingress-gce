@@ -56,6 +56,8 @@ const (
 
 	// NEGBindingFinalizer is the finalizer key used to block NEGBinding deletion until NEGs are drained.
 	NEGBindingFinalizer = "networking.gke.io/negbinding-cleanup"
+
+	BackendRefAttachedCondition = "BackendRefAttached"
 )
 
 var (
@@ -263,7 +265,7 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	m.acquireNEGsForBinding(binding)
 	err := m.validateBackendRef(binding)
 	if err != nil {
-		_ = m.updateBackendRefCondition(binding, err)
+		_ = m.updateBackendRefAttachedCondition(binding, err)
 		return err
 	}
 
@@ -271,7 +273,7 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	svcKey := fmt.Sprintf("%s/%s", binding.Namespace, svcName)
 	svc, err := m.getServiceFromCache(svcKey)
 	if err != nil {
-		_ = m.updateBackendRefCondition(binding, err)
+		_ = m.updateBackendRefAttachedCondition(binding, err)
 		if errors.Is(err, ErrServiceNotFound) {
 			bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 			m.logger.Info("Service not found for NEGBinding, ensuring cleanup syncer", "binding", bindingKey, "serviceKey", svcKey)
@@ -289,7 +291,7 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 
 	networkInfo, err := m.getAndVerifyNetworkInfo(svc)
 	if err != nil {
-		_ = m.updateBackendRefCondition(binding, err)
+		_ = m.updateBackendRefAttachedCondition(binding, err)
 		return err
 	}
 
@@ -452,13 +454,13 @@ func (m *negBindingManager) EnsureSyncersForService(svcNamespace, svcName string
 
 		err := m.validateBackendRef(binding)
 		if err != nil {
-			_ = m.updateBackendRefCondition(binding, err)
+			_ = m.updateBackendRefAttachedCondition(binding, err)
 			errs = append(errs, err)
 			continue
 		}
 
 		if networkInfoErr != nil {
-			_ = m.updateBackendRefCondition(binding, networkInfoErr)
+			_ = m.updateBackendRefAttachedCondition(binding, networkInfoErr)
 			continue
 		}
 
@@ -493,11 +495,11 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 
 	portTuple, err := m.getPortTuple(svc, svcPort)
 	if err != nil {
-		_ = m.updateBackendRefCondition(binding, err)
+		_ = m.updateBackendRefAttachedCondition(binding, err)
 		return nil, err
 	}
 
-	if err := m.updateBackendRefCondition(binding, nil); err != nil {
+	if err := m.updateBackendRefAttachedCondition(binding, nil); err != nil {
 		return nil, err
 	}
 
@@ -625,7 +627,7 @@ func (m *negBindingManager) ProcessServiceDeletion(svcNamespace, svcName string)
 		}
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 		m.logger.Info("Service deleted, ensuring cleanup syncer for binding", "binding", bindingKey, "service", svcKey)
-		_ = m.updateBackendRefCondition(binding, fmt.Errorf("%w: %s/%s", ErrServiceNotFound, svcNamespace, svcName))
+		_ = m.updateBackendRefAttachedCondition(binding, fmt.Errorf("%w: %s/%s", ErrServiceNotFound, svcNamespace, svcName))
 
 		// Will ensure cleanup syncer, as there is no service, which needed for normal syncer
 		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
@@ -856,9 +858,9 @@ func (m *negBindingManager) validateBackendRef(binding *negbindingv1beta1.Networ
 	return nil
 }
 
-func (m *negBindingManager) updateBackendRefCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding, validationErr error) error {
+func (m *negBindingManager) updateBackendRefAttachedCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding, validationErr error) error {
 	cond := negbindingv1beta1.Condition{
-		Type:               "BackendRef",
+		Type:               BackendRefAttachedCondition,
 		LastTransitionTime: metav1.Now(),
 	}
 	if validationErr == nil {

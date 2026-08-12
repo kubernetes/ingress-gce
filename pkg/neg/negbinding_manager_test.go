@@ -168,9 +168,9 @@ func TestNEGBindingManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get updated binding: %v", err)
 	}
-	cond, found := findCondition(updatedBinding.Status.Conditions, "BackendRef")
+	cond, found := findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
 	if !found {
-		t.Fatalf("Condition BackendRef not found")
+		t.Fatalf("Condition %s not found", BackendRefAttachedCondition)
 	}
 	if cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected BackendRef condition status True, got %s", cond.Status)
@@ -475,16 +475,16 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 				t.Fatalf("Failed to get updated binding: %v", err)
 			}
 
-			cond, found := findCondition(updatedBinding.Status.Conditions, "BackendRef")
+			cond, found := findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
 			if !found {
-				t.Fatalf("Condition %s not found in updated status", "BackendRef")
+				t.Fatalf("Condition %s not found in updated status", BackendRefAttachedCondition)
 			}
 
 			if cond.Status != tc.expectedStatus {
-				t.Errorf("Condition %s status got %s, expected %s", "BackendRef", cond.Status, tc.expectedStatus)
+				t.Errorf("Condition %s status got %s, expected %s", BackendRefAttachedCondition, cond.Status, tc.expectedStatus)
 			}
 			if cond.Reason != tc.expectedReason {
-				t.Errorf("Condition %s reason got %s, expected %s", "BackendRef", cond.Reason, tc.expectedReason)
+				t.Errorf("Condition %s reason got %s, expected %s", BackendRefAttachedCondition, cond.Reason, tc.expectedReason)
 			}
 		})
 	}
