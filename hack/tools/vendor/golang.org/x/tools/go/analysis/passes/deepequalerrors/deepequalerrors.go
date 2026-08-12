@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = `check for calls of reflect.DeepEqual on error values
@@ -35,7 +35,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	if !analysisinternal.Imports(pass.Pkg, "reflect") {
+	if !typesinternal.Imports(pass.Pkg, "reflect") {
 		return nil, nil // doesn't directly import reflect
 	}
 
@@ -47,7 +47,7 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
 		obj := typeutil.Callee(pass.TypesInfo, call)
-		if analysisinternal.IsFunctionNamed(obj, "reflect", "DeepEqual") && hasError(pass, call.Args[0]) && hasError(pass, call.Args[1]) {
+		if typesinternal.IsFunctionNamed(obj, "reflect", "DeepEqual") && hasError(pass, call.Args[0]) && hasError(pass, call.Args[1]) {
 			pass.ReportRangef(call, "avoid using reflect.DeepEqual with errors")
 		}
 	})
@@ -96,8 +96,8 @@ func containsError(typ types.Type) bool {
 		case *types.Map:
 			return check(t.Key()) || check(t.Elem())
 		case *types.Struct:
-			for i := 0; i < t.NumFields(); i++ {
-				if check(t.Field(i).Type()) {
+			for field := range t.Fields() {
+				if check(field.Type()) {
 					return true
 				}
 			}
