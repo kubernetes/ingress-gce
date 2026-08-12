@@ -643,7 +643,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		expectedNEGDesc = utils.BoundNEGDescription{
 			ClusterName: flags.F.GKEClusterName,
 			Namespace:   s.Namespace,
-			BackendRef:  s.NegSyncerKey.NEGBindingName,
+			BackendRef:  s.NegSyncerKey.Name,
 		}
 	} else {
 		expectedNEGDesc = utils.StandardNEGDescription{

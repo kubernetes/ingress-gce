@@ -5525,7 +5525,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			boundDesc := utils.BoundNEGDescription{
 				ClusterName: flags.F.GKEClusterName,
 				Namespace:   namespace,
-				BackendRef:  bindingName,
+				BackendRef:  "svc-name",
 			}.String()
 
 			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
