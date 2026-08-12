@@ -106,7 +106,7 @@ func TestReportStatus(t *testing.T) {
 			errList: nil,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  "NEGsAttachmentSuccessful",
 					Message: "NEGs have been successfully attached and synced",
@@ -138,7 +138,7 @@ func TestReportStatus(t *testing.T) {
 			errList: nil,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  "NEGsAttachmentSuccessful",
 					Message: "NEGs have been successfully attached and synced",
@@ -161,7 +161,7 @@ func TestReportStatus(t *testing.T) {
 			errList: []error{fmt.Errorf("GCE API timeout error"), fmt.Errorf("Quota exceeded")},
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionFalse,
 					Reason:  "NEGsAttachmentFailed",
 					Message: utilerrors.NewAggregate([]error{fmt.Errorf("GCE API timeout error"), fmt.Errorf("Quota exceeded")}).Error(),
@@ -182,7 +182,7 @@ func TestReportStatus(t *testing.T) {
 			errList: []error{fmt.Errorf("Quota exceeded for zone us-central1-b")},
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionFalse,
 					Reason:  "NEGsAttachmentFailed",
 					Message: utilerrors.NewAggregate([]error{fmt.Errorf("Quota exceeded for zone us-central1-b")}).Error(),
@@ -286,7 +286,7 @@ func TestReportSyncStatus(t *testing.T) {
 			expectedNeedInit: true,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  NEGsAttachmentSuccessful,
 					Message: "NEGs have been successfully attached and synced",
@@ -307,7 +307,7 @@ func TestReportSyncStatus(t *testing.T) {
 			expectedNeedInit: true,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  NEGsAttachmentSuccessful,
 					Message: "NEGs have been successfully attached and synced",
@@ -319,7 +319,7 @@ func TestReportSyncStatus(t *testing.T) {
 			initialStatus: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
 				Conditions: []negbindingv1beta1.Condition{
 					{
-						Type:   NEGsAttached,
+						Type:   NegsAttachedCondition,
 						Status: metav1.ConditionTrue,
 						Reason: NEGsAttachmentSuccessful,
 					},
@@ -329,7 +329,7 @@ func TestReportSyncStatus(t *testing.T) {
 			expectedNeedInit: true,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  NEGsAttachmentSuccessful,
 					Message: "NEGs have been successfully attached and synced",
@@ -341,7 +341,7 @@ func TestReportSyncStatus(t *testing.T) {
 			initialStatus: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
 				Conditions: []negbindingv1beta1.Condition{
 					{
-						Type:   NEGsAttached,
+						Type:   NegsAttachedCondition,
 						Status: metav1.ConditionTrue,
 						Reason: NEGsAttachmentSuccessful,
 					},
@@ -357,7 +357,7 @@ func TestReportSyncStatus(t *testing.T) {
 			expectedNeedInit: false,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionTrue,
 					Reason:  NEGsAttachmentSuccessful,
 					Message: "NEGs have been successfully attached and synced",
@@ -369,7 +369,7 @@ func TestReportSyncStatus(t *testing.T) {
 			initialStatus: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
 				Conditions: []negbindingv1beta1.Condition{
 					{
-						Type:   NEGsAttached,
+						Type:   NegsAttachedCondition,
 						Status: metav1.ConditionTrue,
 						Reason: NEGsAttachmentSuccessful,
 					},
@@ -385,7 +385,7 @@ func TestReportSyncStatus(t *testing.T) {
 			expectedNeedInit: false,
 			expectedConditions: []negbindingv1beta1.Condition{
 				{
-					Type:    NEGsAttached,
+					Type:    NegsAttachedCondition,
 					Status:  metav1.ConditionFalse,
 					Reason:  NEGsAttachmentFailed,
 					Message: "syncer failed to reconcile endpoints",
@@ -651,7 +651,7 @@ func TestPatchStatusNoChanges(t *testing.T) {
 	}
 
 	expectedCond := negbindingv1beta1.Condition{
-		Type:    NEGsAttached,
+		Type:    NegsAttachedCondition,
 		Status:  metav1.ConditionTrue,
 		Reason:  "NEGsAttachmentSuccessful",
 		Message: "NEGs have been successfully attached and synced",
@@ -730,7 +730,7 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 	}
 
 	updatedBinding, _ := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	cond, _, found := h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	cond, _, found := h.findCondition(updatedBinding.Status.Conditions, NegsAttachedCondition)
 	if !found || cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected NEGsAttached=True, got: %+v", cond)
 	}
@@ -764,7 +764,7 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 	if cond.Message != expectedMessage {
 		t.Errorf("Expected Message %q, got %q", expectedMessage, cond.Message)
 	}
-	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NegsAttachedCondition)
 	if !found || cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected NEGsAttached=True on conflict (no sync error), got: %+v", cond)
 	}
@@ -779,7 +779,7 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 	if !found || cond.Status != metav1.ConditionFalse || cond.Reason != NEGOwnershipConflict {
 		t.Errorf("Expected Managed=False due to conflict in ReportSyncStatus, got: %+v", cond)
 	}
-	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NegsAttachedCondition)
 	if !found || cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected NEGsAttached=True due to conflict in ReportSyncStatus (no sync error), got: %+v", cond)
 	}
@@ -802,7 +802,7 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 	if cond.Reason != NEGOwnershipNoConflicts {
 		t.Errorf("Expected Reason=%s after conflict resolved, got %q", NEGOwnershipNoConflicts, cond.Reason)
 	}
-	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NEGsAttached)
+	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NegsAttachedCondition)
 	if !found || cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected NEGsAttached=True after conflict resolved, got: %+v", cond)
 	}

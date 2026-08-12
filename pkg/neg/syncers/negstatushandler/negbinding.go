@@ -42,8 +42,8 @@ type negOwnershipRegistry interface {
 }
 
 const (
-	ManagedCondition = "Managed"
-	NEGsAttached     = "NEGsAttached"
+	ManagedCondition      = "Managed"
+	NegsAttachedCondition = "NegsAttached"
 
 	NEGOwnershipNoConflicts  = "NEGOwnershipNoConflicts"
 	NEGOwnershipConflict     = "NEGOwnershipConflict"
@@ -180,7 +180,7 @@ func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) 
 
 	ts := metav1.Now()
 	needInit := false
-	if _, _, exists := h.findCondition(binding.Status.Conditions, NEGsAttached); !exists {
+	if _, _, exists := h.findCondition(binding.Status.Conditions, NegsAttachedCondition); !exists {
 		needInit = true
 	}
 	h.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(binding.Status.LastSyncTime.Time))
@@ -229,7 +229,7 @@ func (h *NEGBindingStatusHandler) ensureCondition(binding *negbindingv1beta1.Net
 func (h *NEGBindingStatusHandler) getAttachedCondition(err error) negbindingv1beta1.Condition {
 	if err != nil {
 		return negbindingv1beta1.Condition{
-			Type:               NEGsAttached,
+			Type:               NegsAttachedCondition,
 			Status:             metav1.ConditionFalse,
 			Reason:             NEGsAttachmentFailed,
 			LastTransitionTime: metav1.Now(),
@@ -238,7 +238,7 @@ func (h *NEGBindingStatusHandler) getAttachedCondition(err error) negbindingv1be
 	}
 
 	return negbindingv1beta1.Condition{
-		Type:               NEGsAttached,
+		Type:               NegsAttachedCondition,
 		Status:             metav1.ConditionTrue,
 		Reason:             NEGsAttachmentSuccessful,
 		LastTransitionTime: metav1.Now(),
