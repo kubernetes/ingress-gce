@@ -424,9 +424,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	l4.network = *svcNetwork
 
-	// Check if ip-collection is specified for IPv4 service
-	if flags.F.EnableBYOIPv6 && annotations.FromService(svc).GetIPCollectionV6() != "" && l4utils.NeedsIPv4(svc) {
-		err := fmt.Errorf("%s is currently only supported for IPv6-only external LBs", annotations.IPCollectionV6AnnotationKey)
+	// Check if ip-collection-v6 is specified for internal load balancer
+	if flags.F.EnableBYOIPv6 && annotations.FromService(svc).GetIPCollectionV6() != "" {
+		err := fmt.Errorf("%s is not supported for Internal LoadBalancers. To use BYOIPv6 with ILB, specify a BYOIP subnet using the \"%s\" annotation", annotations.IPCollectionV6AnnotationKey, annotations.CustomSubnetAnnotationKey)
 		l4.recorder.Event(l4.Service, corev1.EventTypeWarning, "IPCollectionV6Error", err.Error())
 	}
 
