@@ -25,10 +25,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	firewallcrclient "github.com/GoogleCloudPlatform/gke-networking-api/client/gcpfirewall/clientset/versioned"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/prometheus/client_golang/prometheus"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -284,7 +286,10 @@ func main() {
 				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
 			}
 			ctx := context.Background()
-			syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, rootLogger)
+			syncerMetrics, err := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, mtmetrics.NewStdMetricFactory(prometheus.DefaultRegisterer), rootLogger)
+			if err != nil {
+				klog.Fatalf("Failed to initialize syncer metrics: %v", err)
+			}
 			go syncerMetrics.Run(stopCh)
 
 			if flags.F.LeaderElection.LeaderElect {
@@ -744,8 +749,15 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		adapter = ctx.Cloud
 	}
 
-	negMetrics := metrics.NewNegMetrics()
-	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	stdFactory := mtmetrics.NewStdMetricFactory(prometheus.DefaultRegisterer)
+	negMetrics, err := metrics.NewNegMetricsWithFactory(stdFactory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG metrics: %w", err)
+	}
+	syncerMetrics, err := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, stdFactory, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create syncer metrics collector: %w", err)
+	}
 	go syncerMetrics.Run(stopCh)
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.

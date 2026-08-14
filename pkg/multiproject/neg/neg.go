@@ -3,8 +3,10 @@ package neg
 import (
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -65,6 +67,12 @@ func StartNEGController(
 	providerConfigName := providerConfig.Name
 	logger.V(2).Info("Initializing NEG controller", "providerConfig", providerConfigName)
 
+	tenantUID := providerConfig.Name
+	if providerConfig.Spec.PrincipalInfo != nil && providerConfig.Spec.PrincipalInfo.ID != "" {
+		tenantUID = providerConfig.Spec.PrincipalInfo.ID
+	}
+	mtFactory := mtmetrics.NewMTMetricFactory(tenantUID, prometheus.DefaultRegisterer, mtmetrics.DefaultGlobalTracker)
+
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
 	providerConfigStopCh := make(chan struct{})
 
@@ -74,6 +82,7 @@ func StartNEGController(
 		defer func() {
 			close(joinedStopCh)
 			logger.V(2).Info("NEG controller stop channel closed")
+			mtFactory.Cleanup()
 		}()
 		select {
 		case <-globalStopCh:
@@ -117,6 +126,7 @@ func StartNEGController(
 		lpConfig,
 		joinedStopCh,
 		logger,
+		mtFactory,
 		syncerMetrics,
 	)
 
@@ -153,6 +163,7 @@ func createNEGController(
 	lpConfig labels.PodLabelPropagationConfig,
 	stopCh <-chan struct{},
 	logger klog.Logger,
+	factory mtmetrics.MetricFactory,
 	syncerMetrics *syncMetrics.SyncerMetrics,
 ) (*neg.Controller, error) {
 
@@ -164,7 +175,10 @@ func createNEGController(
 	}
 
 	noDefaultBackendServicePort := utils.ServicePort{}
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics, err := metrics.NewNegMetricsWithFactory(factory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG metrics: %w", err)
+	}
 
 	negController, err := newNEGController(
 		kubeClient,
