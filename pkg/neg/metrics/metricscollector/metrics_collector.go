@@ -3,7 +3,7 @@ Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+you may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,21 +33,8 @@ import (
 
 var register sync.Once
 
-// RegisterSyncerMetrics registers syncer related metrics
+// RegisterMetrics is a no-op because metrics are registered via the factory.
 func RegisterMetrics() {
-	register.Do(func() {
-		prometheus.MustRegister(SyncerCountBySyncResult)
-		prometheus.MustRegister(syncerEndpointState)
-		prometheus.MustRegister(syncerEndpointSliceState)
-		prometheus.MustRegister(NumberOfEndpoints)
-		prometheus.MustRegister(DualStackMigrationFinishedDurations)
-		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
-		prometheus.MustRegister(DualStackMigrationServiceCount)
-		prometheus.MustRegister(SyncerCountByEndpointType)
-		prometheus.MustRegister(syncerSyncResult)
-		prometheus.MustRegister(negsManagedCount)
-		prometheus.MustRegister(networkEndpointGroupCount)
-	})
 }
 
 type SyncerMetricsCollector interface {
@@ -91,10 +79,123 @@ type SyncerMetrics struct {
 
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
+
+	// Syncer metrics scoped to struct fields
+	syncerCountBySyncResult                     mtmetrics.GaugeVec
+	syncerEndpointState                         mtmetrics.GaugeVec
+	syncerEndpointSliceState                    mtmetrics.GaugeVec
+	numberOfEndpoints                           mtmetrics.GaugeVec
+	dualStackMigrationFinishedDurations         mtmetrics.ObserverVec
+	dualStackMigrationLongestUnfinishedDuration mtmetrics.GaugeVec
+	syncerCountByEndpointType                   mtmetrics.GaugeVec
+	dualStackMigrationServiceCount              mtmetrics.GaugeVec
+	syncerSyncResult                            mtmetrics.CounterVec
+	negsManagedCount                            mtmetrics.GaugeVec
+	networkEndpointGroupCount                   mtmetrics.GaugeVec
 }
 
-// NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
-func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
+// NewNegMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
+func NewNegMetricsCollector(exportInterval time.Duration, factory mtmetrics.MetricFactory, logger klog.Logger) (*SyncerMetrics, error) {
+	syncerCountBySyncResult, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "syncer_count",
+		Help:      "Current count of syncers in each state",
+	}, []string{"last_sync_result", "in_error_state"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create syncer_count: %w", err)
+	}
+
+	syncerEndpointState, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "syncer_endpoint_state",
+		Help:      "Current count of endpoints in each state",
+	}, []string{"state"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create syncer_endpoint_state: %w", err)
+	}
+
+	syncerEndpointSliceState, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "syncer_endpoint_slice_state",
+		Help:      "Current count of endpoint slices in each state",
+	}, []string{"state"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create syncer_endpoint_slice_state: %w", err)
+	}
+
+	numberOfEndpoints, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "number_of_endpoints",
+		Help:      "The total number of endpoints",
+	}, []string{"feature"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create number_of_endpoints: %w", err)
+	}
+
+	dualStackMigrationFinishedDurations, err := factory.NewHistogramVec(prometheus.HistogramOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "dual_stack_migration_finished_durations_seconds",
+		Help:      "Time taken to migrate all endpoints within all NEGs for a service port",
+		// Buckets ~= [1s, 1.85s, 3.42s, 6s, 11s, 21s, 40s, 1m14s, 2m17s, 4m13s, 7m49s, 14m28s, 26m47s, 49m33s, 1h31m40s, 2h49m35s, 5h13m45s, 9h40m27s, +Inf]
+		Buckets: prometheus.ExponentialBuckets(1, 1.85, 18),
+	}, []string{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dual_stack_migration_finished_durations_seconds: %w", err)
+	}
+
+	dualStackMigrationLongestUnfinishedDuration, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "dual_stack_migration_longest_unfinished_duration_seconds",
+		Help:      "Longest time elapsed since a migration was started which hasn't yet completed",
+	}, []string{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dual_stack_migration_longest_unfinished_duration_seconds: %w", err)
+	}
+
+	syncerCountByEndpointType, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "syncer_count_by_endpoint_type",
+		Help:      "Number of Syncers managing NEGs containing endpoint of a particular kind",
+	}, []string{"endpoint_type"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create syncer_count_by_endpoint_type: %w", err)
+	}
+
+	dualStackMigrationServiceCount, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "dual_stack_migration_service_count",
+		Help:      "Number of Services which have migration endpoints",
+	}, []string{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dual_stack_migration_service_count: %w", err)
+	}
+
+	syncerSyncResult, err := factory.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "sync_result",
+		Help:      "Current count for each sync result",
+	}, []string{"result"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sync_result: %w", err)
+	}
+
+	negsManagedCount, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: negControllerSubsystem,
+		Name:      "managed_neg_count",
+		Help:      "Number of NEGs the Neg Controller Manages",
+	}, []string{"location", "endpoint_type"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create managed_neg_count: %w", err)
+	}
+
+	networkEndpointGroupCount, err := factory.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "number_of_negs",
+		Help: "Number of NEGs",
+	}, []string{"feature"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create number_of_negs: %w", err)
+	}
+
 	return &SyncerMetrics{
 		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
@@ -108,12 +209,28 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		clock:                       clock.RealClock{},
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
-	}
+
+		syncerCountBySyncResult:                     syncerCountBySyncResult,
+		syncerEndpointState:                         syncerEndpointState,
+		syncerEndpointSliceState:                    syncerEndpointSliceState,
+		numberOfEndpoints:                           numberOfEndpoints,
+		dualStackMigrationFinishedDurations:         dualStackMigrationFinishedDurations,
+		dualStackMigrationLongestUnfinishedDuration: dualStackMigrationLongestUnfinishedDuration,
+		syncerCountByEndpointType:                   syncerCountByEndpointType,
+		dualStackMigrationServiceCount:              dualStackMigrationServiceCount,
+		syncerSyncResult:                            syncerSyncResult,
+		negsManagedCount:                            negsManagedCount,
+		networkEndpointGroupCount:                   networkEndpointGroupCount,
+	}, nil
 }
 
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
-	return NewNegMetricsCollector(5*time.Second, klog.TODO())
+	sm, err := NewNegMetricsCollector(5*time.Second, mtmetrics.NewStdMetricFactory(prometheus.NewRegistry()), klog.TODO())
+	if err != nil {
+		klog.Errorf("Failed to create FakeSyncerMetrics: %v", err)
+	}
+	return sm
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -129,29 +246,29 @@ func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
 // export exports syncer metrics.
 func (sm *SyncerMetrics) export() {
 	lpMetrics := sm.computeLabelMetrics()
-	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
-	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
+	sm.numberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
+	sm.numberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
 
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
 	//Reset metric so non-existent keys are now 0
-	SyncerCountBySyncResult.Reset()
+	sm.syncerCountBySyncResult.Reset()
 	for syncerState, count := range stateCount {
-		SyncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
+		sm.syncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
 	}
 
 	epStateCount, epsStateCount, epCount, epsCount := sm.computeEndpointStateMetrics()
 	for state, count := range epStateCount {
-		syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
+		sm.syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
 	}
 	for state, count := range epsStateCount {
-		syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
+		sm.syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
 	}
 
 	negCounts := sm.computeNegCounts()
 	//Clear existing metrics (ensures that keys that don't exist anymore are reset)
-	negsManagedCount.Reset()
+	sm.negsManagedCount.Reset()
 	for key, count := range negCounts {
-		negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
+		sm.negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
 	}
 
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
@@ -163,22 +280,22 @@ func (sm *SyncerMetrics) export() {
 
 	finishedDurations, longestUnfinishedDurations := sm.computeDualStackMigrationDurations()
 	for _, duration := range finishedDurations {
-		DualStackMigrationFinishedDurations.Observe(float64(duration))
+		sm.dualStackMigrationFinishedDurations.WithLabelValues().Observe(float64(duration))
 	}
-	DualStackMigrationLongestUnfinishedDuration.Set(float64(longestUnfinishedDurations))
+	sm.dualStackMigrationLongestUnfinishedDuration.WithLabelValues().Set(float64(longestUnfinishedDurations))
 
 	syncerCountByEndpointType, migrationEndpointCount, migrationServicesCount := sm.computeDualStackMigrationCounts()
 	for endpointType, count := range syncerCountByEndpointType {
-		SyncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
+		sm.syncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
 	}
-	syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
-	DualStackMigrationServiceCount.Set(float64(migrationServicesCount))
+	sm.syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
+	sm.dualStackMigrationServiceCount.WithLabelValues().Set(float64(migrationServicesCount))
 
 	sm.logger.V(3).Info("Exported DualStack Migration metrics")
 
 	negCount := sm.computeNegMetrics()
 	for feature, count := range negCount {
-		networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
+		sm.networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
 	}
 	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
 }
@@ -190,7 +307,7 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 		syncErr := negtypes.ClassifyError(err)
 		reason = syncErr.Reason
 	}
-	syncerSyncResult.WithLabelValues(string(reason)).Inc()
+	sm.syncerSyncResult.WithLabelValues(string(reason)).Inc()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStateMap == nil {

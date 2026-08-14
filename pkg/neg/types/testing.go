@@ -21,11 +21,13 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
 	informergkenetworkparamset "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	informernetwork "github.com/GoogleCloudPlatform/gke-networking-api/client/network/informers/externalversions/network/v1"
 	nodetopologyfake "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned/fake"
 	informernodetopology "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/informers/externalversions/nodetopology/v1"
+	"github.com/prometheus/client_golang/prometheus"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	informerv1 "k8s.io/client-go/informers/core/v1"
@@ -94,7 +96,10 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 
 	clusterNamer := namer.NewNamer(clusterID, "", klog.TODO())
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics, err := metrics.NewNegMetricsWithFactory(mtmetrics.NewStdMetricFactory(prometheus.NewRegistry()))
+	if err != nil {
+		klog.Fatalf("failed to create negMetrics: %v", err)
+	}
 
 	return &TestContext{
 		KubeClient:                 kubeClient,

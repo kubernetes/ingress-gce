@@ -21,8 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
@@ -238,7 +240,10 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 }
 
 func TestComputeLabelMetrics(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector, err := NewNegMetricsCollector(10*time.Second, mtmetrics.NewStdMetricFactory(prometheus.NewRegistry()), klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create NegMetricsCollector: %v", err)
+	}
 	syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -308,7 +313,10 @@ func TestComputeLabelMetrics(t *testing.T) {
 }
 
 func TestComputeNegCounts(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector, err := NewNegMetricsCollector(10*time.Second, mtmetrics.NewStdMetricFactory(prometheus.NewRegistry()), klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create NegMetricsCollector: %v", err)
+	}
 	l7Syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
