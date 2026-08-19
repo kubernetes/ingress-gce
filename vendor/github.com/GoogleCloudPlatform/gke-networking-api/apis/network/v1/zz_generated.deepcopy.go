@@ -438,6 +438,11 @@ func (in *NetworkSpec) DeepCopyInto(out *NetworkSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.Gateway6 != nil {
+		in, out := &in.Gateway6, &out.Gateway6
+		*out = new(string)
+		**out = **in
+	}
 	if in.DNSConfig != nil {
 		in, out := &in.DNSConfig, &out.DNSConfig
 		*out = new(DNSConfig)
