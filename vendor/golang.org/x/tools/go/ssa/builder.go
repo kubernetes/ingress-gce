@@ -85,6 +85,7 @@ import (
 	"slices"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -124,7 +125,7 @@ var (
 	// The ssa:deferstack intrinsic returns the current function's defer stack.
 	vDeferStack = &Builtin{
 		name: "ssa:deferstack",
-		sig:  types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(anonVar(tDeferStack)), false),
+		sig:  types.NewSignatureType(nil, nil, nil, nil, typesinternal.TupleOf(tDeferStack), false),
 	}
 )
 
@@ -582,33 +583,6 @@ func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *
 				loc.store(fn, ptr)
 			}
 			return
-		}
-
-		if _, ok := loc.(*address); ok {
-			if isNonTypeParamInterface(loc.typ()) {
-				// e.g. var x interface{} = T{...}
-				// Can't in-place initialize an interface value.
-				// Fall back to copying.
-			} else {
-				// x = T{...} or x := T{...}
-				addr := loc.address(fn)
-				if sb != nil {
-					b.compLit(fn, addr, e, isZero, sb)
-				} else {
-					var sb storebuf
-					b.compLit(fn, addr, e, isZero, &sb)
-					sb.emit(fn)
-				}
-
-				// Subtle: emit debug ref for aggregate types only;
-				// slice and map are handled by store ops in compLit.
-				switch typeparams.CoreType(loc.typ()).(type) {
-				case *types.Struct, *types.Array:
-					emitDebugRef(fn, e, addr, true)
-				}
-
-				return
-			}
 		}
 	}
 
@@ -1746,7 +1720,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 	for _, st := range states {
 		if st.Dir == types.RecvOnly {
 			chtyp := typeparams.CoreType(fn.typ(st.Chan.Type())).(*types.Chan)
-			vars = append(vars, anonVar(chtyp.Elem()))
+			vars = append(vars, newVar("", chtyp.Elem()))
 		}
 	}
 	sel.setType(types.NewTuple(vars...))

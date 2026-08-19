@@ -87,25 +87,43 @@ type Address struct {
 	// This identifier is
 	// defined by the server.
 	Id uint64 `json:"id,omitempty,string"`
-	// Reference to the source of external IPv4 addresses,
-	// like a PublicDelegatedPrefix (PDP) for BYOIP.
-	// The PDP must support enhanced IPv4 allocations.
+	// Reference to the source of IP addresses.
 	//
-	// Use one of the following formats to specify a PDP when reserving
-	// an
-	// external IPv4 address using BYOIP.
+	// It supports the following cases:
 	//
 	//    -
-	//    Full resource URL, as
-	// inhttps://www.googleapis.com/compute/v1/projects/projectId/regions/reg
-	// ion/publicDelegatedPrefixes/pdp-name
+	//      Case 1: PublicDelegatedPrefix (PDP) for BYOIP external
+	//      addresses. If an IPv4 PDP is used, the PDP must support enhanced
+	// IPv4
+	//      allocations. If an IPv6 PDP is used, the PDP must be in
+	//      EXTERNAL_IPV6_FORWARDING_RULE_CREATION mode.
 	//    -
-	//    Partial URL, as in
+	//      Case 2: Internal Range for global internal addresses.
 	//
 	//
-	//           -
+	//
+	// Use one of the following formats to specify the resource:
+	//
+	// For a Public Delegated Prefix:
+	//
+	//    -
+	//    Full resource
+	// URL:https://www.googleapis.com/compute/v1/projects/projectId/regions/r
+	// egion/publicDelegatedPrefixes/pdp
+	//    - Partial URL:
+	//       -
 	// projects/projectId/regions/region/publicDelegatedPrefixes/pdp-name
-	//           - regions/region/publicDelegatedPrefixes/pdp-name
+	//       - regions/region/publicDelegatedPrefixes/pdp-name
+	//
+	//
+	//
+	// For an Internal Range:
+	//
+	//    - Full
+	// URL:https://networkconnectivity.googleapis.com/v1/projects/project/loc
+	// ations/global/internalRanges/internal-range
+	//    - Partial
+	// URL:projects/project/locations/global/internalRanges/internal-range
 	IpCollection string `json:"ipCollection,omitempty"`
 	// The IP version that will be used by this address. Valid options
 	// areIPV4 or IPV6.
@@ -155,6 +173,13 @@ type Address struct {
 	// can
 	// only be used with INTERNAL type with theVPC_PEERING purpose.
 	Network string `json:"network,omitempty"`
+	// Optional. The URL of the network attachment that this address comes
+	// from in the
+	// following
+	// format:
+	// projects/{project}/regions/{region_name}/networkAttachments/{n
+	// etwork_attachment_name}.
+	NetworkAttachment string `json:"networkAttachment,omitempty"`
 	// This signifies the networking tier used for configuring this address
 	// and
 	// can only take the following values: PREMIUM orSTANDARD. Internal IP
@@ -198,6 +223,15 @@ type Address struct {
 	//      used to configure Private Service Connect. Only global internal
 	// addresses
 	//      can use this purpose.
+	//      - `PASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP0` for addresses
+	//      that can only be assigned to global external Passthrough Network
+	// Load
+	//      Balancer forwarding rules, as an Availability Group 0 address.
+	//      - `PASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP1` for addresses
+	// that
+	//      can only be assigned to global external Passthrough Network Load
+	// Balancer
+	//      forwarding rules, as an Availability Group 1 address.
 	Purpose string `json:"purpose,omitempty"`
 	// Output only. [Output Only] The URL of the region where a regional
 	// address resides.
@@ -212,6 +246,12 @@ type Address struct {
 	// Output only. [Output Only] Server-defined URL for this resource with
 	// the resource id.
 	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
+	// Optional. Producer Service's Service class ID for the region of this
+	// address. Can
+	// only be used with network_attachment. It is not possible to use on
+	// its own;
+	// however, network_attachment can be used without service_class_id.
+	ServiceClassId string `json:"serviceClassId,omitempty"`
 	// Output only. [Output Only] The status of the address, which can be
 	// one ofRESERVING, RESERVED, or IN_USE.
 	// An address that is RESERVING is currently in the process of
@@ -1070,7 +1110,15 @@ type BackendService struct {
 	//
 	// Can only be set if load balancing scheme is
 	// EXTERNAL_MANAGED,
-	// INTERNAL_MANAGED or INTERNAL_SELF_MANAGED and the scope is global.
+	// INTERNAL_MANAGED or INTERNAL_SELF_MANAGED for a global backend
+	// service, and
+	// EXTERNAL_MANAGED or INTERNAL_MANAGED for a regional backend service.
+	// For a
+	// global backend service, the service lb policy must be global. For
+	// a
+	// regional backend service, the service lb policy must be regional and
+	// in the
+	// same region.
 	ServiceLbPolicy string `json:"serviceLbPolicy,omitempty"`
 	// Type of session affinity to use. The default is NONE.
 	//
@@ -3718,7 +3766,8 @@ type HealthCheck struct {
 	// resources
 	// can use this health check:
 	//
-	//    - SSL, HTTP2, and GRPC protocols are not supported.
+	//    - SSL, HTTP2, GRPC, and GRPC_WITH_TLS protocols are not
+	// supported.
 	//    - The TCP request field is not supported.
 	//    - The proxyHeader field for HTTP, HTTPS, and TCP is not
 	//    supported.
@@ -3735,9 +3784,10 @@ type HealthCheck struct {
 	// value than checkIntervalSec.
 	TimeoutSec int64 `json:"timeoutSec,omitempty"`
 	// Specifies the type of the healthCheck, either TCP,SSL, HTTP,
-	// HTTPS,HTTP2 or GRPC. Exactly one of the
-	// protocol-specific health check fields must be specified, which must
-	// matchtype field.
+	// HTTPS,HTTP2, GRPC or GRPC_WITH_TLS.
+	// Exactly one of the protocol-specific health check fields must be
+	// specified,
+	// which must match type field.
 	Type           string          `json:"type,omitempty"`
 	UdpHealthCheck *UDPHealthCheck `json:"udpHealthCheck,omitempty"`
 	// A so-far healthy instance will be marked unhealthy after this
