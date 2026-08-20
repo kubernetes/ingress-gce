@@ -143,7 +143,7 @@ func TestEnsureL4BackendService(t *testing.T) {
 				t.Errorf("BackendService.LoadBalancingScheme was not populated correctly, want=%q, got=%q", tc.schemeType, bs.LoadBalancingScheme)
 			}
 			if bs.ConnectionDraining == nil || bs.ConnectionDraining.DrainingTimeoutSec != DefaultConnectionDrainingTimeoutSeconds {
-				t.Errorf("BackendService.ConnectionDraining was not populated correctly, want=connection draining with %q, got=%q", DefaultConnectionDrainingTimeoutSeconds, bs.ConnectionDraining)
+				t.Errorf("BackendService.ConnectionDraining was not populated correctly, want=connection draining with %d, got=%v", DefaultConnectionDrainingTimeoutSeconds, bs.ConnectionDraining)
 			}
 			if tc.enableStrongSessionAffinity {
 				if diff := cmp.Diff(bs.ConnectionTrackingPolicy, tc.connectionTrackingPolicy); diff != "" {
