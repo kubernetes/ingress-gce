@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -22,7 +22,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nilness",
-	Doc:      analysisutil.MustExtractDoc(doc, "nilness"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "nilness"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness",
 	Run:      run,
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
@@ -52,7 +52,7 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 	// notNil reports an error if v is provably nil.
 	notNil := func(stack []fact, instr ssa.Instruction, v ssa.Value, descr string) {
 		if nilnessOf(stack, v) == isnil {
-			reportf("nilderef", instr.Pos(), descr)
+			reportf("nilderef", instr.Pos(), "%s", descr)
 		}
 	}
 
