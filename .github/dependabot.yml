@@ -2,6 +2,7 @@ version: 2
 updates:
 - package-ecosystem: docker
   directory: /
+  target-branch: master
   schedule:
     interval: weekly
   labels:
@@ -9,6 +10,7 @@ updates:
   - ok-to-test
 - package-ecosystem: gomod
   directory: /
+  target-branch: master
   schedule:
     interval: weekly
   groups:
@@ -21,6 +23,347 @@ updates:
   - ok-to-test
 - package-ecosystem: gomod
   directory: /hack/tools
+  target-branch: master
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.41
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.41
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.41
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.40
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.40
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.40
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.39
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.39
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.39
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.38
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.38
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.38
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.37
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.37
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.37
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.36
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.36
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.36
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.35
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.35
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.35
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.34
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.34
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.34
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.33
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.33
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.33
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: docker
+  directory: /
+  target-branch: release-1.32
+  schedule:
+    interval: weekly
+  labels:
+  - docker
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /
+  target-branch: release-1.32
+  schedule:
+    interval: weekly
+  groups:
+    gomod-dependencies:
+      patterns:
+      - '*'
+  labels:
+  - go
+  - dependencies
+  - ok-to-test
+- package-ecosystem: gomod
+  directory: /hack/tools
+  target-branch: release-1.32
   schedule:
     interval: weekly
   groups:
