@@ -12,7 +12,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.293.0
