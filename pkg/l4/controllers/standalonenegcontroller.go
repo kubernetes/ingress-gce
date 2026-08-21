@@ -62,6 +62,8 @@ const (
 	UnsupportedLBType = lbConditionReason("UnsupportedLBType")
 	// InvalidForwardingRule Reason
 	InvalidForwardingRule = lbConditionReason("InvalidForwardingRule")
+	// BackendNotAttached Reason
+	BackendNotAttached = lbConditionReason("BackendNotAttached")
 	// ProviderError Reason
 	ProviderError = lbConditionReason("ProviderError")
 	// Maximum number of forwarding rules
@@ -381,7 +383,7 @@ func (lc *StandaloneNEGLBController) validateBackendService(fr *composite.Forwar
 	}
 
 	if !backendServiceHasNEGAttached(bs, targetNEGs) {
-		return l4utils.NewUserError(fmt.Errorf("the service NEGs are not attached to the load balancer (backend service: %s)", resourceID.Key.Name))
+		return l4utils.NewUserError(l4utils.NewBackendNotAttachedError(resourceID.Key.Name))
 	}
 
 	return nil
@@ -594,6 +596,9 @@ func classifyError(err error) lbConditionReason {
 	if err == nil {
 		return ProviderError
 	}
+	if l4utils.IsBackendNotAttachedError(err) {
+		return BackendNotAttached
+	}
 	if utils.IsNotFoundError(err) {
 		return InvalidForwardingRule
 	}
@@ -637,6 +642,8 @@ func messageForReason(reason lbConditionReason) string {
 		return "The referenced forwarding rule has an unsupported load balancing scheme"
 	case InvalidForwardingRule:
 		return "The custom forwarding rule reference is invalid"
+	case BackendNotAttached:
+		return "The service NEGs are not attached to the load balancer backend service"
 	case ProviderError:
 		return "GCE provider error encountered while retrieving forwarding rules"
 	default:
