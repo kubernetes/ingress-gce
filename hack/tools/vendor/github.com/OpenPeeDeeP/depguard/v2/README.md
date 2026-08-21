@@ -7,13 +7,12 @@ allow specific packages within a repository.
 ## Install
 
 ```bash
-go get github.com/OpenPeeDeeP/depguard/v2
+go install github.com/OpenPeeDeeP/depguard/cmd/depguard@latest
 ```
 
 ## Config
 
-The Depguard binary looks for a file named `^\.?depguard\.(yaml|yml|json|toml)$` in the current
-current working directory. Examples include (`.depguard.yml` or `depguard.toml`).
+The Depguard binary looks for a file named `^\.?depguard\.(yaml|yml|json|toml)$` in the current working directory. Examples include (`.depguard.yml` or `depguard.toml`).
 
 The following is an example configuration file.
 
@@ -24,6 +23,7 @@ The following is an example configuration file.
       "$all",
       "!$test"
     ],
+    "listMode": "Strict",
     "allow": [
       "$gostd",
       "github.com/OpenPeeDeeP"
@@ -36,6 +36,7 @@ The following is an example configuration file.
     "files": [
       "$test"
     ],
+    "listMode": "Lax",
     "deny": {
       "github.com/stretchr/testify": "Please use standard library for tests"
     }
@@ -48,6 +49,7 @@ the linter's output.
 - `files` - list of file globs that will match this list of settings to compare against
 - `allow` - list of allowed packages
 - `deny` - map of packages that are not allowed where the value is a suggestion
+- `listMode` - the mode to use for package matching
 
 Files are matched using [Globs](https://github.com/gobwas/glob). If the files 
 list is empty, then all files will match that list. Prefixing a file
@@ -67,6 +69,21 @@ A Prefix List just means that a package will match a value, if the value is a
 prefix of the package. Example `github.com/OpenPeeDeeP/depguard` package will match
 a value of `github.com/OpenPeeDeeP` but won't match `github.com/OpenPeeDeeP/depguard/v2`.
 
+ListMode is used to determine the package matching priority. There are three
+different modes; Original, Strict, and Lax.
+
+Original is the original way that the package was written to use. It is not recommended
+to stay with this and is only here for backwards compatibility.
+
+Strict, at its roots, is everything is denied unless in allowed.
+
+Lax, at its roots, is everything is allowed unless it is denied.
+
+There are cases where a package can be matched in both the allow and denied lists.
+You may allow a subpackage but deny the root or vice versa. The `settings_tests.go` file
+has many scenarios listed out under `TestListImportAllowed`. These tests will stay
+up to date as features are added.
+
 ### Variables
 
 There are variable replacements for each type of list (file or package). This is
@@ -74,7 +91,7 @@ to reduce repetition and tedious behaviors.
 
 #### File Variables
 
-> you can still use and exclamation mark `!` in front of a variable to say not to 
+> you can still use an exclamation mark `!` in front of a variable to say not to 
 use it. Example `!$test` will match any file that is not a go test file.
 
 - `$all` - matches all go files
@@ -136,11 +153,29 @@ would be allowed.
 ```yaml
 Main:
   deny:
-  - github.com/OpenPeeDeeP/depguard$
+    github.com/OpenPeeDeeP/depguard$: Please use v2
 ```
 
-## Golangci-lint
+## golangci-lint
 
 This linter was built with
-[Golangci-lint](https://github.com/golangci/golangci-lint) in mind. It is compatible
-and read their docs to see how to implement all their linters, including this one.
+[golangci-lint](https://github.com/golangci/golangci-lint) in mind, read the [linters docs](https://golangci-lint.run/usage/linters/#depguard) to see how to configure all their linters, including this one.
+
+The config is similar to the YAML depguard config documented above, however due to [golangci-lint limitation](https://github.com/golangci/golangci-lint/pull/4227) the `deny` value must be provided as a list, with `pkg` and `desc` keys (otherwise a [panic](https://github.com/OpenPeeDeeP/depguard/issues/74) may occur):
+
+```yaml
+# golangci-lint config
+linters-settings:
+  depguard:
+    rules:
+      prevent_unmaintained_packages:
+        list-mode: lax # allow unless explicitely denied
+        files:
+          - $all
+          - "!$test"
+        allow:
+          - $gostd
+        deny:
+          - pkg: io/ioutil
+            desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+```

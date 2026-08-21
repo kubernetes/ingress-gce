@@ -1,45 +1,32 @@
 package gomoddirectives
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 
+	"github.com/ldez/grignotin/goenv"
 	"golang.org/x/mod/modfile"
 )
 
-type modInfo struct {
-	Path      string `json:"Path"`
-	Dir       string `json:"Dir"`
-	GoMod     string `json:"GoMod"`
-	GoVersion string `json:"GoVersion"`
-	Main      bool   `json:"Main"`
-}
-
 // GetModuleFile gets module file.
 func GetModuleFile() (*modfile.File, error) {
-	// https://github.com/golang/go/issues/44753#issuecomment-790089020
-	cmd := exec.Command("go", "list", "-m", "-json")
-
-	raw, err := cmd.CombinedOutput()
+	goMod, err := goenv.GetOne(context.Background(), goenv.GOMOD)
 	if err != nil {
-		return nil, fmt.Errorf("command go list: %w: %s", err, string(raw))
+		return nil, err
 	}
 
-	var v modInfo
-	err = json.NewDecoder(bytes.NewBuffer(raw)).Decode(&v)
+	mod, err := parseGoMod(goMod)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshaling error: %w: %s", err, string(raw))
+		return nil, fmt.Errorf("failed to parse go.mod (%s): %w", goMod, err)
 	}
 
-	if v.GoMod == "" {
-		return nil, errors.New("working directory is not part of a module")
-	}
+	return mod, nil
+}
 
-	raw, err = os.ReadFile(v.GoMod)
+func parseGoMod(goMod string) (*modfile.File, error) {
+	raw, err := os.ReadFile(filepath.Clean(goMod))
 	if err != nil {
 		return nil, fmt.Errorf("reading go.mod file: %w", err)
 	}

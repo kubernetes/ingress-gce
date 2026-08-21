@@ -1,48 +1,39 @@
 package processors
 
 import (
-	"fmt"
-	"path/filepath"
-
 	"github.com/golangci/golangci-lint/pkg/fsutils"
+	"github.com/golangci/golangci-lint/pkg/logutils"
 	"github.com/golangci/golangci-lint/pkg/result"
 )
 
+var _ Processor = (*PathPrettifier)(nil)
+
+// PathPrettifier modifies report file path to be relative to the base path.
+// Also handles the `output.path-prefix` option.
 type PathPrettifier struct {
-	root string
+	prefix string
+	log    logutils.Log
 }
 
-var _ Processor = PathPrettifier{}
-
-func NewPathPrettifier() *PathPrettifier {
-	root, err := fsutils.Getwd()
-	if err != nil {
-		panic(fmt.Sprintf("Can't get working dir: %s", err))
-	}
+func NewPathPrettifier(log logutils.Log, prefix string) *PathPrettifier {
 	return &PathPrettifier{
-		root: root,
+		prefix: prefix,
+		log:    log.Child(logutils.DebugKeyPathPrettifier),
 	}
 }
 
-func (p PathPrettifier) Name() string {
+func (*PathPrettifier) Name() string {
 	return "path_prettifier"
 }
 
-func (p PathPrettifier) Process(issues []result.Issue) ([]result.Issue, error) {
-	return transformIssues(issues, func(i *result.Issue) *result.Issue {
-		if !filepath.IsAbs(i.FilePath()) {
-			return i
-		}
+func (p *PathPrettifier) Process(issues []result.Issue) ([]result.Issue, error) {
+	return transformIssues(issues, func(issue *result.Issue) *result.Issue {
+		newIssue := issue
 
-		rel, err := fsutils.ShortestRelPath(i.FilePath(), "")
-		if err != nil {
-			return i
-		}
+		newIssue.Pos.Filename = fsutils.WithPathPrefix(p.prefix, issue.RelativePath)
 
-		newI := i
-		newI.Pos.Filename = rel
-		return newI
+		return newIssue
 	}), nil
 }
 
-func (p PathPrettifier) Finish() {}
+func (*PathPrettifier) Finish() {}

@@ -2,6 +2,7 @@ package processors
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,70 +10,91 @@ import (
 
 	"github.com/golangci/revgrep"
 
+	"github.com/golangci/golangci-lint/pkg/config"
 	"github.com/golangci/golangci-lint/pkg/result"
 )
 
 const envGolangciDiffProcessorPatch = "GOLANGCI_DIFF_PROCESSOR_PATCH"
 
+var _ Processor = (*Diff)(nil)
+
+// Diff filters issues based on options `new`, `new-from-rev`, etc.
+//
+// Uses `git`.
+// The paths inside the patch are relative to the path where git is run (the same location where golangci-lint is run).
+//
+// Warning: it doesn't use `path-prefix` option.
 type Diff struct {
 	onlyNew       bool
 	fromRev       string
+	fromMergeBase string
 	patchFilePath string
 	wholeFiles    bool
 	patch         string
 }
 
-var _ Processor = Diff{}
-
-func NewDiff(onlyNew bool, fromRev, patchFilePath string, wholeFiles bool) *Diff {
+func NewDiff(cfg *config.Issues) *Diff {
 	return &Diff{
-		onlyNew:       onlyNew,
-		fromRev:       fromRev,
-		patchFilePath: patchFilePath,
-		wholeFiles:    wholeFiles,
+		onlyNew:       cfg.Diff,
+		fromRev:       cfg.DiffFromRevision,
+		fromMergeBase: cfg.DiffFromMergeBase,
+		patchFilePath: cfg.DiffPatchFilePath,
+		wholeFiles:    cfg.WholeFiles,
 		patch:         os.Getenv(envGolangciDiffProcessorPatch),
 	}
 }
 
-func (p Diff) Name() string {
+func (*Diff) Name() string {
 	return "diff"
 }
 
-func (p Diff) Process(issues []result.Issue) ([]result.Issue, error) {
-	if !p.onlyNew && p.fromRev == "" && p.patchFilePath == "" && p.patch == "" { // no need to work
+func (p *Diff) Process(issues []result.Issue) ([]result.Issue, error) {
+	if !p.onlyNew && p.fromRev == "" && p.fromMergeBase == "" && p.patchFilePath == "" && p.patch == "" {
 		return issues, nil
 	}
 
 	var patchReader io.Reader
-	if p.patchFilePath != "" {
+	switch {
+	case p.patchFilePath != "":
 		patch, err := os.ReadFile(p.patchFilePath)
 		if err != nil {
-			return nil, fmt.Errorf("can't read from patch file %s: %s", p.patchFilePath, err)
+			return nil, fmt.Errorf("can't read from patch file %s: %w", p.patchFilePath, err)
 		}
+
 		patchReader = bytes.NewReader(patch)
-	} else if p.patch != "" {
+
+	case p.patch != "":
 		patchReader = strings.NewReader(p.patch)
 	}
 
-	c := revgrep.Checker{
+	checker := revgrep.Checker{
 		Patch:        patchReader,
 		RevisionFrom: p.fromRev,
+		MergeBase:    p.fromMergeBase,
 		WholeFiles:   p.wholeFiles,
 	}
-	if err := c.Prepare(); err != nil {
-		return nil, fmt.Errorf("can't prepare diff by revgrep: %s", err)
+
+	err := checker.Prepare(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("can't prepare diff by revgrep: %w", err)
 	}
 
-	return transformIssues(issues, func(i *result.Issue) *result.Issue {
-		hunkPos, isNew := c.IsNewIssue(i)
+	return transformIssues(issues, func(issue *result.Issue) *result.Issue {
+		if issue.FromLinter == typeCheckName {
+			// Never hide typechecking errors.
+			return issue
+		}
+
+		hunkPos, isNew := checker.IsNew(issue.WorkingDirectoryRelativePath, issue.Line())
 		if !isNew {
 			return nil
 		}
 
-		newI := *i
-		newI.HunkPos = hunkPos
-		return &newI
+		newIssue := *issue
+		newIssue.HunkPos = hunkPos
+
+		return &newIssue
 	}), nil
 }
 
-func (Diff) Finish() {}
+func (*Diff) Finish() {}

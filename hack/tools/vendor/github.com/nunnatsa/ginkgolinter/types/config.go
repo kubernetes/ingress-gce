@@ -1,9 +1,8 @@
 package types
 
 import (
-	"strings"
-
 	"go/ast"
+	"strings"
 )
 
 const (
@@ -14,31 +13,42 @@ const (
 	suppressCompareAssertionWarning = suppressPrefix + "ignore-compare-assert-warning"
 	suppressAsyncAsertWarning       = suppressPrefix + "ignore-async-assert-warning"
 	suppressFocusContainerWarning   = suppressPrefix + "ignore-focus-container-warning"
+	suppressTypeCompareWarning      = suppressPrefix + "ignore-type-compare-warning"
 )
 
 type Config struct {
-	SuppressLen     Boolean
-	SuppressNil     Boolean
-	SuppressErr     Boolean
-	SuppressCompare Boolean
-	SuppressAsync   Boolean
-	ForbidFocus     Boolean
-	AllowHaveLen0   Boolean
+	SuppressLen            bool
+	SuppressNil            bool
+	SuppressErr            bool
+	SuppressCompare        bool
+	SuppressAsync          bool
+	ForbidFocus            bool
+	SuppressTypeCompare    bool
+	AllowHaveLen0          bool
+	ForceExpectTo          bool
+	ValidateAsyncIntervals bool
+	ForbidSpecPollution    bool
+	ForceSucceedForFuncs   bool
 }
 
 func (s *Config) AllTrue() bool {
-	return bool(s.SuppressLen && s.SuppressNil && s.SuppressErr && s.SuppressCompare && s.SuppressAsync && !s.ForbidFocus)
+	return s.SuppressLen && s.SuppressNil && s.SuppressErr && s.SuppressCompare && s.SuppressAsync && !s.ForbidFocus
 }
 
 func (s *Config) Clone() Config {
 	return Config{
-		SuppressLen:     s.SuppressLen,
-		SuppressNil:     s.SuppressNil,
-		SuppressErr:     s.SuppressErr,
-		SuppressCompare: s.SuppressCompare,
-		SuppressAsync:   s.SuppressAsync,
-		ForbidFocus:     s.ForbidFocus,
-		AllowHaveLen0:   s.AllowHaveLen0,
+		SuppressLen:            s.SuppressLen,
+		SuppressNil:            s.SuppressNil,
+		SuppressErr:            s.SuppressErr,
+		SuppressCompare:        s.SuppressCompare,
+		SuppressAsync:          s.SuppressAsync,
+		ForbidFocus:            s.ForbidFocus,
+		SuppressTypeCompare:    s.SuppressTypeCompare,
+		AllowHaveLen0:          s.AllowHaveLen0,
+		ForceExpectTo:          s.ForceExpectTo,
+		ValidateAsyncIntervals: s.ValidateAsyncIntervals,
+		ForbidSpecPollution:    s.ForbidSpecPollution,
+		ForceSucceedForFuncs:   s.ForceSucceedForFuncs,
 	}
 }
 
@@ -69,6 +79,8 @@ func (s *Config) UpdateFromComment(commentGroup []*ast.CommentGroup) {
 					s.SuppressAsync = true
 				case suppressFocusContainerWarning:
 					s.ForbidFocus = false
+				case suppressTypeCompareWarning:
+					s.SuppressTypeCompare = true
 				}
 			}
 		}

@@ -28,7 +28,7 @@ const (
 	UntypedRune string = "untyped rune"
 )
 
-// Violation describs what message we going to give to a particular code violation
+// Violation describes what message we going to give to a particular code violation
 type Violation struct {
 	Type     ViolationType //
 	Args     []int         // Indexes of the arguments needs to be checked
@@ -52,9 +52,10 @@ type Violation struct {
 
 // Tests (generation) related struct.
 type Generate struct {
-	PreCondition string // Precondition we want to be generated
-	Pattern      string // Generate pattern (for the `want` message)
-	Returns      int    // Expected to return n elements
+	SkipGenerate bool
+	PreCondition string   // Precondition we want to be generated
+	Pattern      string   // Generate pattern (for the `want` message)
+	Returns      []string // ReturnTypes as slice
 }
 
 func (v *Violation) With(base []byte, e *ast.CallExpr, args map[int]ast.Expr) *Violation {
@@ -142,7 +143,7 @@ func (v *Violation) Diagnostic(fSet *token.FileSet) analysis.Diagnostic {
 		v.AltPackage = v.Package
 	}
 
-	// Hooray! we dont need to change package and redo imports.
+	// Hooray! we don't need to change package and redo imports.
 	if v.Type == Function && v.AltPackage == v.Package && noNl {
 		diagnostic.SuggestedFixes = []analysis.SuggestedFix{{
 			Message: "Fix Issue With",
@@ -165,7 +166,7 @@ type GolangIssue struct {
 	Original  string
 }
 
-// Issue inteanded to be used only with golangci-lint, bu you can use use it
+// Issue intended to be used only within `golangci-lint`, but you can use it
 // alongside Diagnostic if you wish.
 func (v *Violation) Issue(fSet *token.FileSet) GolangIssue {
 	issue := GolangIssue{
@@ -174,7 +175,7 @@ func (v *Violation) Issue(fSet *token.FileSet) GolangIssue {
 		Message: v.Message(),
 	}
 
-	// original expression (useful for debug & requied for replace)
+	// original expression (useful for debug & required for replace)
 	var buf bytes.Buffer
 	printer.Fprint(&buf, fSet, v.callExpr)
 	issue.Original = buf.String()

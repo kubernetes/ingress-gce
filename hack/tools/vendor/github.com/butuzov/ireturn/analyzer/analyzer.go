@@ -4,15 +4,16 @@ import (
 	"flag"
 	"go/ast"
 	gotypes "go/types"
+	"runtime"
 	"strings"
 	"sync"
-
-	"github.com/butuzov/ireturn/analyzer/internal/config"
-	"github.com/butuzov/ireturn/analyzer/internal/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+
+	"github.com/butuzov/ireturn/analyzer/internal/config"
+	"github.com/butuzov/ireturn/analyzer/internal/types"
 )
 
 const name string = "ireturn" // linter name
@@ -22,9 +23,11 @@ type validator interface {
 }
 
 type analyzer struct {
-	once    sync.Once
-	handler validator
-	err     error
+	once           sync.Once
+	mu             sync.RWMutex
+	handler        validator
+	err            error
+	disabledNolint bool
 
 	found []analysis.Diagnostic
 }
@@ -60,8 +63,7 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		// 003. Is it allowed to be checked?
-		// TODO(butuzov): add inline comment
-		if hasDisallowDirective(f.Doc) {
+		if !a.disabledNolint && hasDisallowDirective(f.Doc) {
 			return
 		}
 
@@ -69,7 +71,6 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 
 		// 004. Filtering Results.
 		for _, issue := range filterInterfaces(pass, f.Type, dotImportedStd) {
-
 			if a.handler.IsValid(issue) {
 				continue
 			}
@@ -83,16 +84,25 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			seen[key] = true
 
-			a.found = append(a.found, issue.ExportDiagnostic())
+			a.addDiagnostic(issue.ExportDiagnostic())
 		}
 	})
 
 	// 02. Printing reports.
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	for i := range a.found {
 		pass.Report(a.found[i])
 	}
 
 	return nil, nil
+}
+
+func (a *analyzer) addDiagnostic(d analysis.Diagnostic) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.found = append(a.found, d)
 }
 
 func (a *analyzer) readConfiguration(fs *flag.FlagSet) {
@@ -102,6 +112,13 @@ func (a *analyzer) readConfiguration(fs *flag.FlagSet) {
 		return
 	}
 
+	// First: checking nonolint directive
+	val := fs.Lookup("nonolint")
+	if val != nil {
+		a.disabledNolint = fs.Lookup("nonolint").Value.String() == "true"
+	}
+
+	// Second: validators implementation next
 	if validatorImpl, ok := cnf.(validator); ok {
 		a.handler = validatorImpl
 		return
@@ -111,7 +128,7 @@ func (a *analyzer) readConfiguration(fs *flag.FlagSet) {
 }
 
 func NewAnalyzer() *analysis.Analyzer {
-	a := analyzer{} //nolint: exhaustivestruct
+	a := analyzer{}
 
 	return &analysis.Analyzer{
 		Name:     name,
@@ -126,6 +143,7 @@ func flags() flag.FlagSet {
 	set := flag.NewFlagSet("", flag.PanicOnError)
 	set.String("allow", "", "accept-list of the comma-separated interfaces")
 	set.String("reject", "", "reject-list of the comma-separated interfaces")
+	set.Bool("nonolint", false, "disable nolint checks")
 	return *set
 }
 
@@ -136,13 +154,10 @@ func filterInterfaces(p *analysis.Pass, ft *ast.FuncType, di map[string]struct{}
 		return results
 	}
 
-	tp := newTypeParams(ft.TypeParams)
-
 	for _, el := range ft.Results.List {
 		switch v := el.Type.(type) {
 		// ----- empty or anonymous interfaces
 		case *ast.InterfaceType:
-
 			if len(v.Methods.List) == 0 {
 				results = append(results, types.NewIssue("interface{}", types.EmptyInterface))
 				continue
@@ -154,35 +169,65 @@ func filterInterfaces(p *analysis.Pass, ft *ast.FuncType, di map[string]struct{}
 		case *ast.Ident:
 
 			t1 := p.TypesInfo.TypeOf(el.Type)
-			if !gotypes.IsInterface(t1.Underlying()) {
+			val, ok := t1.Underlying().(*gotypes.Interface)
+			if !ok {
 				continue
 			}
 
-			word := t1.String()
-			// only build in interface is error
-			if obj := gotypes.Universe.Lookup(word); obj != nil {
-				results = append(results, types.NewIssue(obj.Name(), types.ErrorInterface))
+			var (
+				name    = t1.String()
+				isNamed = strings.Contains(name, ".")
+				isEmpty = val.Empty()
+			)
+
+			// catching any
+			if isEmpty && name == "any" {
+				results = append(results, types.NewIssue(name, types.EmptyInterface))
 				continue
 			}
 
-			// found in type params
-			if tp.In(word) {
-				results = append(results, types.NewIssue(word, types.Generic))
+			// NOTE: FIXED!
+			if name == "error" {
+				results = append(results, types.NewIssue(name, types.ErrorInterface))
+				continue
+			}
+
+			if !isNamed {
+
+				typeParams := val.String()
+				prefix, suffix := "interface{", "}"
+				if strings.HasPrefix(typeParams, prefix) { //nolint:gosimple
+					typeParams = typeParams[len(prefix):]
+				}
+				if strings.HasSuffix(typeParams, suffix) {
+					typeParams = typeParams[:len(typeParams)-1]
+				}
+
+				goVersion := runtime.Version()
+				if strings.HasPrefix(goVersion, "go1.18") || strings.HasPrefix(goVersion, "go1.19") {
+					typeParams = strings.ReplaceAll(typeParams, "|", " | ")
+				}
+
+				results = append(results, types.IFace{
+					Name:   name,
+					Type:   types.Generic,
+					OfType: typeParams,
+				})
 				continue
 			}
 
 			// is it dot-imported package?
 			// handling cases when stdlib package imported via "." dot-import
 			if len(di) > 0 {
-				name := stdPkgInterface(word)
-				if _, ok := di[name]; ok {
-					results = append(results, types.NewIssue(word, types.NamedStdInterface))
+				pkgName := stdPkgInterface(name)
+				if _, ok := di[pkgName]; ok {
+					results = append(results, types.NewIssue(name, types.NamedStdInterface))
 
 					continue
 				}
 			}
 
-			results = append(results, types.NewIssue(word, types.NamedInterface))
+			results = append(results, types.NewIssue(name, types.NamedInterface))
 
 		// ------- standard library and 3rd party interfaces
 		case *ast.SelectorExpr:
