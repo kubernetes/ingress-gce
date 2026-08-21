@@ -1015,7 +1015,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			expectError: false,
+			expectError:        false,
+			expectEventReasons: []string{"ForwardingRulesLimitExceeded", "SyncLoadBalancerSuccessful"},
 			// Note the alphabetical order.
 			expectIPs: []string{"10.0.0.100", "10.0.0.109", "10.0.0.110", "10.0.0.111", "10.0.0.101", "10.0.0.102", "10.0.0.103", "10.0.0.104", "10.0.0.105", "10.0.0.106"},
 			expectCondition: &metav1.Condition{
@@ -2102,6 +2103,7 @@ func TestStandaloneNEGLBControllerEventHandlers_Add(t *testing.T) {
 	go lc.svcQueue.Run()
 	defer lc.svcQueue.Shutdown()
 
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "svc1",
@@ -2109,7 +2111,7 @@ func TestStandaloneNEGLBControllerEventHandlers_Add(t *testing.T) {
 		},
 		Spec: v1.ServiceSpec{
 			Type:              v1.ServiceTypeLoadBalancer,
-			LoadBalancerClass: new(annotations.StandalonePassthroughNegLoadBalancerClass),
+			LoadBalancerClass: &lbClass,
 		},
 	}
 	svcKey := svc.Namespace + "/" + svc.Name
@@ -2134,6 +2136,7 @@ func TestStandaloneNEGLBControllerEventHandlers_Update(t *testing.T) {
 	kubeClient, _, lc, stopCh := setupControllerContext(t)
 	defer close(stopCh)
 
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "svc1",
@@ -2141,7 +2144,7 @@ func TestStandaloneNEGLBControllerEventHandlers_Update(t *testing.T) {
 		},
 		Spec: v1.ServiceSpec{
 			Type:              v1.ServiceTypeLoadBalancer,
-			LoadBalancerClass: new(annotations.StandalonePassthroughNegLoadBalancerClass),
+			LoadBalancerClass: &lbClass,
 		},
 	}
 	svcKey := svc.Namespace + "/" + svc.Name
