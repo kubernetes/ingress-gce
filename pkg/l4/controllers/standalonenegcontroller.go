@@ -407,11 +407,13 @@ func backendServiceHasNEGAttached(bs *composite.BackendService, targetNEGs sets.
 
 // IPAddress field is used for creating Regional NetLB forwarding rules, IPAddresses[] field is used for creating Global NetLB forwarding rules.
 func frAddresses(fr *composite.ForwardingRule) []string {
-	ipAddrs := fr.IPAddresses
-	if len(ipAddrs) == 0 {
-		ipAddrs = []string{fr.IPAddress}
+	if len(fr.IPAddresses) > 0 {
+		return fr.IPAddresses
 	}
-	return ipAddrs
+	if fr.IPAddress != "" {
+		return []string{fr.IPAddress}
+	}
+	return nil
 }
 
 func parsedFRNames(frs []parsedForwardingRule) []string {
@@ -490,15 +492,24 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			errs = append(errs, err)
 			continue
 		}
+		if len(addresses) == 0 {
+			errs = append(errs, l4utils.NewUserError(fmt.Errorf("forwarding rule %s has no IP address", parsed.rawName)))
+			continue
+		}
 		schemes.Insert(lbScheme)
 		for _, a := range addresses {
+			if a == "" {
+				continue
+			}
 			// GCP IPv6 forwarding rules provide the IP in CIDR form (e.g. /96 range). We must extract the base IP.
 			trimmedIP := strings.Split(a, "/")[0]
 			// And make it canonical to avoid warnings from k8s apiserver
 			if ipAddr, err := netip.ParseAddr(trimmedIP); err == nil {
 				trimmedIP = ipAddr.String()
 			}
-			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: trimmedIP, IPMode: &vipMode})
+			if trimmedIP != "" {
+				lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: trimmedIP, IPMode: &vipMode})
+			}
 		}
 	}
 
@@ -546,17 +557,28 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 // join errors but if all are UserErrors make the wrapping error a UserError as
 // well. This is required to properly attribute sync status in metrics.
 func joinMaybeUserErrors(errs ...error) error {
-	allUserErrors := true
+	var nonNilErrs []error
 	for _, err := range errs {
+		if err != nil {
+			nonNilErrs = append(nonNilErrs, err)
+		}
+	}
+	if len(nonNilErrs) == 0 {
+		return nil
+	}
+
+	allUserErrors := true
+	for _, err := range nonNilErrs {
 		if !resources.IsUserError(err) {
 			allUserErrors = false
 			break
 		}
 	}
+	joinedErr := errors.Join(nonNilErrs...)
 	if allUserErrors {
-		return l4utils.NewUserError(errors.Join(errs...))
+		return l4utils.NewUserError(joinedErr)
 	}
-	return errors.Join(errs...)
+	return joinedErr
 }
 
 func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLogger klog.Logger) error {
