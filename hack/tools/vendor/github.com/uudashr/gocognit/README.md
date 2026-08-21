@@ -1,6 +1,8 @@
-[![GoDoc](https://godoc.org/github.com/uudashr/gocognit?status.svg)](https://godoc.org/github.com/uudashr/gocognit)
+[![Go Reference](https://pkg.go.dev/badge/github.com/uudashr/gocognit.svg)](https://pkg.go.dev/github.com/uudashr/gocognit)
+[![go-recipes](https://raw.githubusercontent.com/nikolaydubina/go-recipes/main/badge.svg?raw=true)](https://github.com/nikolaydubina/go-recipes)
+
 # Gocognit
-Gocognit calculates cognitive complexities of functions in Go source code. A measurement of how hard does the code is intuitively to understand.
+Gocognit calculates cognitive complexities of functions (and methods) in Go source code. A measurement of how hard does the code is intuitively to understand.
 
 ## Understanding the complexity
 
@@ -37,10 +39,10 @@ func GetWords(number int) string {
 
 As you see above codes are the same, but the second code are easier to understand, that is why the cognitive complexity score are lower compare to the first one.
 
-## Comparison with cyclometic complexity
+## Comparison with cyclomatic complexity
 
 ### Example 1
-#### Cyclometic complexity
+#### Cyclomatic complexity
 ```go
 func GetWords(number int) string {      // +1
     switch number {
@@ -145,14 +147,14 @@ The following structures receive a nesting increment commensurate with their nes
 
 ## Installation
 
-```
-$ go install github.com/uudashr/gocognit/cmd/gocognit@latest
+```shell
+go install github.com/uudashr/gocognit/cmd/gocognit@latest
 ```
 
 or 
 
-```
-$ go get github.com/uudashr/gocognit/cmd/gocognit
+```shell
+go get github.com/uudashr/gocognit/cmd/gocognit
 ```
 
 ## Usage
@@ -160,16 +162,57 @@ $ go get github.com/uudashr/gocognit/cmd/gocognit
 ```
 $ gocognit
 Calculate cognitive complexities of Go functions.
+
 Usage:
-        gocognit [flags] <Go file or directory> ...
+
+  gocognit [<flag> ...] <Go file or directory> ...
+
 Flags:
-        -over N   show functions with complexity > N only and
-                  return exit code 1 if the set is non-empty
-        -top N    show the top N most complex functions only
-        -avg      show the average complexity over all functions,
-                  not depending on whether -over or -top are set
-The output fields for each line are:
-<complexity> <package> <function> <file:row:column>
+
+  -over N       show functions with complexity > N only
+                and return exit code 1 if the output is non-empty
+  -top N        show the top N most complex functions only
+  -avg          show the average complexity over all functions,
+                not depending on whether -over or -top are set
+  -test         indicates whether test files should be included
+  -json         encode the output as JSON
+  -d 	        enable diagnostic output
+  -f format     string the format to use
+                (default "{{.Complexity}} {{.PkgName}} {{.FuncName}} {{.Pos}}")
+  -ignore expr  ignore files matching the given regexp
+
+The (default) output fields for each line are:
+
+  <complexity> <package> <function> <file:row:column>
+
+The (default) output fields for each line are:
+
+  {{.Complexity}} {{.PkgName}} {{.FuncName}} {{.Pos}}
+
+or equal to <complexity> <package> <function> <file:row:column>
+
+The struct being passed to the template is:
+
+  type Stat struct {
+    PkgName     string
+    FuncName    string
+    Complexity  int
+    Pos         token.Position
+    Diagnostics []Diagnostics
+  }
+
+  type Diagnostic struct {
+    Inc     string
+    Nesting int
+    Text    string
+    Pos     DiagnosticPosition
+  }
+
+  type DiagnosticPosition struct {
+    Offset int
+    Line   int
+    Column int
+  }
 ```
 
 Examples:
@@ -180,12 +223,92 @@ $ gocognit main.go
 $ gocognit -top 10 src/
 $ gocognit -over 25 docker
 $ gocognit -avg .
+$ gocognit -ignore "_test|testdata" .
 ```
 
 The output fields for each line are:
 ```
 <complexity> <package> <function> <file:row:column>
 ```
+
+## Ignore individual functions
+Ignore individual functions by specifying `gocognit:ignore` directive.
+```go
+//gocognit:ignore
+func IgnoreMe() {
+    // ...
+}
+```
+
+## Diagnostic
+To understand how the complexity are calculated, we can enable the diagnostic by using `-d` flag.
+
+Example:
+```shell
+$ gocognit -json -d .
+```
+
+It will show the diagnostic output in JSON format
+<details>
+
+<summary>JSON Output</summary>
+    
+```json
+[
+    {
+        "PkgName": "prime",
+        "FuncName": "SumOfPrimes",
+        "Complexity": 7,
+        "Pos": {
+            "Filename": "prime.go",
+            "Offset": 15,
+            "Line": 3,
+            "Column": 1
+        },
+        "Diagnostics": [
+            {
+                "Inc": 1,
+                "Text": "for",
+                "Pos": {
+                    "Offset": 69,
+                    "Line": 7,
+                    "Column": 2
+                }
+            },
+            {
+                "Inc": 2,
+                "Nesting": 1,
+                "Text": "for",
+                "Pos": {
+                    "Offset": 104,
+                    "Line": 8,
+                    "Column": 3
+                }
+            },
+            {
+                "Inc": 3,
+                "Nesting": 2,
+                "Text": "if",
+                "Pos": {
+                    "Offset": 152,
+                    "Line": 9,
+                    "Column": 4
+                }
+            },
+            {
+                "Inc": 1,
+                "Text": "continue",
+                "Pos": {
+                    "Offset": 190,
+                    "Line": 10,
+                    "Column": 5
+                }
+            }
+        ]
+    }
+]
+```
+</details>
 
 ## Related project
 - [Gocyclo](https://github.com/fzipp/gocyclo) where the code are based on.

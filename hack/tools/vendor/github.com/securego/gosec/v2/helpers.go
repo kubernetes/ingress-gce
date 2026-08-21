@@ -15,12 +15,15 @@
 package gosec
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
@@ -28,6 +31,9 @@ import (
 	"strconv"
 	"strings"
 )
+
+// envGoModVersion overrides the Go version detection.
+const envGoModVersion = "GOSECGOVERSION"
 
 // MatchCallByPackage ensures that the specified package is imported,
 // adjusts the name for any aliases and ignores cases that are
@@ -100,7 +106,7 @@ func GetChar(n ast.Node) (byte, error) {
 // Unlike the other getters, it does _not_ raise an error for unknown ast.Node types. At the base, the recursion will hit a non-BinaryExpr type,
 // either BasicLit or other, so it's not an error case. It will only error if `strconv.Unquote` errors. This matters, because there's
 // currently functionality that relies on error values being returned by GetString if and when it hits a non-basiclit string node type,
-// hence for cases where recursion is needed, we use this separate function, so that we can still be backwards compatbile.
+// hence for cases where recursion is needed, we use this separate function, so that we can still be backwards compatible.
 //
 // This was added to handle a SQL injection concatenation case where the injected value is infixed between two strings, not at the start or end. See example below
 //
@@ -183,7 +189,7 @@ func GetCallInfo(n ast.Node, ctx *Context) (string, string, error) {
 			case *ast.CallExpr:
 				switch call := expr.Fun.(type) {
 				case *ast.Ident:
-					if call.Name == "new" {
+					if call.Name == "new" && len(expr.Args) > 0 {
 						t := ctx.Info.TypeOf(expr.Args[0])
 						if t != nil {
 							return t.String(), fn.Sel.Name, nil
@@ -260,7 +266,7 @@ func getIdentStringValues(ident *ast.Ident, stringFinder func(ast.Node) (string,
 	return values
 }
 
-// getIdentStringRecursive returns the string of values of an Ident if they can be resolved
+// GetIdentStringValuesRecursive returns the string of values of an Ident if they can be resolved
 // The difference between this and GetIdentStringValues is that it will attempt to resolve the strings recursively,
 // if it is passed a *ast.BinaryExpr. See GetStringRecursive for details
 func GetIdentStringValuesRecursive(ident *ast.Ident) []string {
@@ -493,19 +499,49 @@ func RootPath(root string) (string, error) {
 	return filepath.Abs(root)
 }
 
-// GoVersion returns parsed version of Go from runtime
+// GoVersion returns parsed version of Go mod version and fallback to runtime version if not found.
 func GoVersion() (int, int, int) {
-	return parseGoVersion(runtime.Version())
+	if env, ok := os.LookupEnv(envGoModVersion); ok {
+		return parseGoVersion(strings.TrimPrefix(env, "go"))
+	}
+
+	goVersion, err := goModVersion()
+	if err != nil {
+		return parseGoVersion(strings.TrimPrefix(runtime.Version(), "go"))
+	}
+
+	return parseGoVersion(goVersion)
+}
+
+type goListOutput struct {
+	GoVersion string `json:"GoVersion"`
+}
+
+func goModVersion() (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-json")
+
+	raw, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("command go list: %w: %s", err, string(raw))
+	}
+
+	var v goListOutput
+	err = json.NewDecoder(bytes.NewBuffer(raw)).Decode(&v)
+	if err != nil {
+		return "", fmt.Errorf("unmarshaling error: %w: %s", err, string(raw))
+	}
+
+	return v.GoVersion, nil
 }
 
 // parseGoVersion parses Go version.
 // example:
-// - go1.19rc2
-// - go1.19beta2
-// - go1.19.4
-// - go1.19
+// - 1.19rc2
+// - 1.19beta2
+// - 1.19.4
+// - 1.19
 func parseGoVersion(version string) (int, int, int) {
-	exp := regexp.MustCompile(`go(\d+).(\d+)(?:.(\d+))?.*`)
+	exp := regexp.MustCompile(`(\d+).(\d+)(?:.(\d+))?.*`)
 	parts := exp.FindStringSubmatch(version)
 	if len(parts) <= 1 {
 		return 0, 0, 0

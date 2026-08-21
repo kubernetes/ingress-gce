@@ -21,7 +21,7 @@ end of the last sentence if needed.
 Build from source
 
 ```sh
-go get -u github.com/tetafro/godot/cmd/godot
+go install github.com/tetafro/godot/cmd/godot@latest
 ```
 
 or download binary from [releases page](https://github.com/tetafro/godot/releases).
@@ -36,6 +36,7 @@ defaults are used:
 # Which comments to check:
 #   declarations - for top level declaration comments (default);
 #   toplevel     - for top level comments;
+#   noinline     - for all except inline comments;
 #   all          - for all comments.
 scope: declarations
 

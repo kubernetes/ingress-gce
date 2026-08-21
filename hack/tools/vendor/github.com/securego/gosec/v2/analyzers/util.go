@@ -38,7 +38,9 @@ type SSAAnalyzerResult struct {
 // BuildDefaultAnalyzers returns the default list of analyzers
 func BuildDefaultAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
-		newSSRFAnalyzer("G107", "URL provided to HTTP request as taint input"),
+		newConversionOverflowAnalyzer("G115", "Type conversion which leads to integer overflow"),
+		newSliceBoundsAnalyzer("G602", "Possible slice bounds out of range"),
+		newHardCodedNonce("G407", "Use of hardcoded IV/nonce for encryption"),
 	}
 }
 

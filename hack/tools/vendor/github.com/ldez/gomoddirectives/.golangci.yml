@@ -1,11 +1,31 @@
-run:
-  deadline: 2m
-  skip-files: []
-  skip-dirs: []
+linters:
+  enable-all: true
+  disable:
+    - exportloopref # deprecated
+    - sqlclosecheck # not relevant (SQL)
+    - rowserrcheck # not relevant (SQL)
+    - cyclop # duplicate of gocyclo
+    - lll
+    - dupl
+    - prealloc
+    - bodyclose
+    - wsl
+    - nlreturn
+    - mnd
+    - testpackage
+    - paralleltest
+    - tparallel
+    - err113
+    - wrapcheck
+    - exhaustive
+    - exhaustruct
+    - varnamelen
 
 linters-settings:
   govet:
     enable-all: true
+    disable:
+      - fieldalignment
   gocyclo:
     min-complexity: 12
   goconst:
@@ -16,10 +36,13 @@ linters-settings:
   gofumpt:
     extra-rules: true
   depguard:
-    list-type: blacklist
-    include-go-root: false
-    packages:
-      - github.com/pkg/errors
+    rules:
+      main:
+        deny:
+          - pkg: "github.com/instana/testify"
+            desc: not allowed
+          - pkg: "github.com/pkg/errors"
+            desc: Should be replaced by standard lib errors package
   godox:
     keywords:
       - FIXME
@@ -48,41 +71,30 @@ linters-settings:
       rules:
         json: pascal
 
-linters:
-  enable-all: true
-  disable:
-    - maligned # deprecated
-    - interfacer # deprecated
-    - golint # deprecated
-    - scopelint # deprecated
-    - sqlclosecheck # not relevant (SQL)
-    - rowserrcheck # not relevant (SQL)
-    - cyclop # duplicate of gocyclo
-    - lll
-    - dupl
-    - prealloc
-    - bodyclose
-    - wsl
-    - nlreturn
-    - gomnd
-    - testpackage
-    - paralleltest
-    - tparallel
-    - goerr113
-    - wrapcheck
-    - exhaustive
-    - exhaustivestruct
-    - varnamelen
-
 issues:
   exclude-use-default: false
-  max-per-linter: 0
+  max-issues-per-linter: 0
   max-same-issues: 0
-  exclude: []
+  exclude: [
+    'package-comments: should have a package comment'
+  ]
   exclude-rules:
     - path: "(.+)_test.go"
       linters:
-      - funlen
-      - goconst
+        - funlen
+        - goconst
+        - maintidx
     - path: cmd/gomoddirectives/gomoddirectives.go
+      linters:
+        - forbidigo
       text: 'use of `fmt.Println` forbidden'
+
+output:
+  show-stats: true
+  sort-results: true
+  sort-order:
+    - linter
+    - file
+
+run:
+  timeout: 2m

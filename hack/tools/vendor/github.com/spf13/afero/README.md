@@ -2,7 +2,7 @@
 
 A FileSystem Abstraction System for Go
 
-[![Build Status](https://travis-ci.org/spf13/afero.svg)](https://travis-ci.org/spf13/afero) [![Build status](https://ci.appveyor.com/api/projects/status/github/spf13/afero?branch=master&svg=true)](https://ci.appveyor.com/project/spf13/afero) [![GoDoc](https://godoc.org/github.com/spf13/afero?status.svg)](https://godoc.org/github.com/spf13/afero) [![Join the chat at https://gitter.im/spf13/afero](https://badges.gitter.im/Dev%20Chat.svg)](https://gitter.im/spf13/afero?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Test](https://github.com/spf13/afero/actions/workflows/test.yml/badge.svg)](https://github.com/spf13/afero/actions/workflows/test.yml) [![GoDoc](https://godoc.org/github.com/spf13/afero?status.svg)](https://godoc.org/github.com/spf13/afero) [![Join the chat at https://gitter.im/spf13/afero](https://badges.gitter.im/Dev%20Chat.svg)](https://gitter.im/spf13/afero?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 # Overview
 
@@ -12,7 +12,7 @@ types and methods. Afero has an exceptionally clean interface and simple design
 without needless constructors or initialization methods.
 
 Afero is also a library providing a base set of interoperable backend
-filesystems that make it easy to work with afero while retaining all the power
+filesystems that make it easy to work with, while retaining all the power
 and benefit of the os and ioutil packages.
 
 Afero provides significant improvements over using the os package alone, most

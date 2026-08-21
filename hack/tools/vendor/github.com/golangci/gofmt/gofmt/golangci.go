@@ -8,7 +8,18 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/rogpeppe/go-internal/diff"
 )
+
+type Options struct {
+	NeedSimplify bool
+	RewriteRules []RewriteRule
+}
+
+var parserModeMu sync.RWMutex
 
 type RewriteRule struct {
 	Pattern     string
@@ -16,13 +27,13 @@ type RewriteRule struct {
 }
 
 // Run runs gofmt.
-// Deprecated: use RunRewrite instead.
+// Deprecated: use [Source] instead.
 func Run(filename string, needSimplify bool) ([]byte, error) {
 	return RunRewrite(filename, needSimplify, nil)
 }
 
 // RunRewrite runs gofmt.
-// empty string `rewrite` will be ignored.
+// Deprecated: use [Source] instead.
 func RunRewrite(filename string, needSimplify bool, rewriteRules []RewriteRule) ([]byte, error) {
 	src, err := os.ReadFile(filename)
 	if err != nil {
@@ -31,7 +42,9 @@ func RunRewrite(filename string, needSimplify bool, rewriteRules []RewriteRule) 
 
 	fset := token.NewFileSet()
 
+	parserModeMu.Lock()
 	initParserMode()
+	parserModeMu.Unlock()
 
 	file, sourceAdj, indentAdj, err := parse(fset, filename, src, false)
 	if err != nil {
@@ -59,12 +72,38 @@ func RunRewrite(filename string, needSimplify bool, rewriteRules []RewriteRule) 
 	}
 
 	// formatting has changed
-	data, err := diffWithReplaceTempFile(src, res, filename)
+	newName := filepath.ToSlash(filename)
+	oldName := newName + ".orig"
+
+	return diff.Diff(oldName, src, newName, res), nil
+}
+
+// Source formats the code like gofmt.
+// Empty string `rewrite` will be ignored.
+func Source(filename string, src []byte, opts Options) ([]byte, error) {
+	fset := token.NewFileSet()
+
+	parserModeMu.Lock()
+	initParserMode()
+	parserModeMu.Unlock()
+
+	file, sourceAdj, indentAdj, err := parse(fset, filename, src, false)
 	if err != nil {
-		return nil, fmt.Errorf("error computing diff: %s", err)
+		return nil, err
 	}
 
-	return data, nil
+	file, err = rewriteFileContent(fset, file, opts.RewriteRules)
+	if err != nil {
+		return nil, err
+	}
+
+	ast.SortImports(fset, file)
+
+	if opts.NeedSimplify {
+		simplify(file)
+	}
+
+	return format(fset, file, sourceAdj, indentAdj, src, printer.Config{Mode: printerMode, Tabwidth: tabWidth})
 }
 
 func rewriteFileContent(fset *token.FileSet, file *ast.File, rewriteRules []RewriteRule) (*ast.File, error) {

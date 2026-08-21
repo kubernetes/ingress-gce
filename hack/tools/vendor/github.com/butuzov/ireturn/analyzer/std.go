@@ -191,4 +191,13 @@ var std = map[string]struct{}{
 	// added in Go v1.20 in compare to v1.19 (docker image)
 	"crypto/ecdh":      {},
 	"runtime/coverage": {},
+	// added in Go v1.21 in compare to v1.20 (docker image)
+	"cmp":              {},
+	"log/slog":         {},
+	"maps":             {},
+	"slices":           {},
+	"testing/slogtest": {},
+	// added in Go v1.22 in compare to v1.21 (docker image)
+	"go/version":   {},
+	"math/rand/v2": {},
 }

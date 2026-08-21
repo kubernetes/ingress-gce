@@ -11,14 +11,36 @@ import (
 type DataRaceRule struct{}
 
 // Apply applies the rule to given file.
-func (*DataRaceRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
+func (r *DataRaceRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
+	isGo122 := file.Pkg.IsAtLeastGo122()
 	var failures []lint.Failure
-	onFailure := func(failure lint.Failure) {
-		failures = append(failures, failure)
-	}
-	w := lintDataRaces{onFailure: onFailure}
+	for _, decl := range file.AST.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || funcDecl.Body == nil {
+			continue // not function declaration or empty function
+		}
 
-	ast.Walk(w, file.AST)
+		funcResults := funcDecl.Type.Results
+
+		// TODO: ast.Object is deprecated
+		returnIDs := map[*ast.Object]struct{}{}
+		if funcResults != nil {
+			returnIDs = r.extractReturnIDs(funcResults.List)
+		}
+
+		onFailure := func(failure lint.Failure) {
+			failures = append(failures, failure)
+		}
+
+		fl := &lintFunctionForDataRaces{
+			onFailure: onFailure,
+			returnIDs: returnIDs,
+			rangeIDs:  map[*ast.Object]struct{}{}, // TODO: ast.Object is deprecated
+			go122for:  isGo122,
+		}
+
+		ast.Walk(fl, funcDecl.Body)
+	}
 
 	return failures
 }
@@ -28,32 +50,8 @@ func (*DataRaceRule) Name() string {
 	return "datarace"
 }
 
-type lintDataRaces struct {
-	onFailure func(failure lint.Failure)
-}
-
-func (w lintDataRaces) Visit(n ast.Node) ast.Visitor {
-	node, ok := n.(*ast.FuncDecl)
-	if !ok {
-		return w // not function declaration
-	}
-	if node.Body == nil {
-		return nil // empty body
-	}
-
-	results := node.Type.Results
-
-	returnIDs := map[*ast.Object]struct{}{}
-	if results != nil {
-		returnIDs = w.ExtractReturnIDs(results.List)
-	}
-	fl := &lintFunctionForDataRaces{onFailure: w.onFailure, returnIDs: returnIDs, rangeIDs: map[*ast.Object]struct{}{}}
-	ast.Walk(fl, node.Body)
-
-	return nil
-}
-
-func (w lintDataRaces) ExtractReturnIDs(fields []*ast.Field) map[*ast.Object]struct{} {
+// TODO: ast.Object is deprecated
+func (*DataRaceRule) extractReturnIDs(fields []*ast.Field) map[*ast.Object]struct{} {
 	r := map[*ast.Object]struct{}{}
 	for _, f := range fields {
 		for _, id := range f.Names {
@@ -67,8 +65,10 @@ func (w lintDataRaces) ExtractReturnIDs(fields []*ast.Field) map[*ast.Object]str
 type lintFunctionForDataRaces struct {
 	_         struct{}
 	onFailure func(failure lint.Failure)
-	returnIDs map[*ast.Object]struct{}
-	rangeIDs  map[*ast.Object]struct{}
+	returnIDs map[*ast.Object]struct{} // TODO: ast.Object is deprecated
+	rangeIDs  map[*ast.Object]struct{} // TODO: ast.Object is deprecated
+
+	go122for bool
 }
 
 func (w lintFunctionForDataRaces) Visit(node ast.Node) ast.Visitor {
@@ -78,7 +78,7 @@ func (w lintFunctionForDataRaces) Visit(node ast.Node) ast.Visitor {
 			return nil
 		}
 
-		getIds := func(exprs ...ast.Expr) []*ast.Ident {
+		getIDs := func(exprs ...ast.Expr) []*ast.Ident {
 			r := []*ast.Ident{}
 			for _, expr := range exprs {
 				if id, ok := expr.(*ast.Ident); ok {
@@ -88,7 +88,7 @@ func (w lintFunctionForDataRaces) Visit(node ast.Node) ast.Visitor {
 			return r
 		}
 
-		ids := getIds(n.Key, n.Value)
+		ids := getIDs(n.Key, n.Value)
 		for _, id := range ids {
 			w.rangeIDs[id.Obj] = struct{}{}
 		}
@@ -111,25 +111,25 @@ func (w lintFunctionForDataRaces) Visit(node ast.Node) ast.Visitor {
 			return ok
 		}
 
-		ids := pick(funcLit.Body, selectIDs, nil)
+		ids := pick(funcLit.Body, selectIDs)
 		for _, id := range ids {
 			id := id.(*ast.Ident)
 			_, isRangeID := w.rangeIDs[id.Obj]
 			_, isReturnID := w.returnIDs[id.Obj]
 
 			switch {
-			case isRangeID:
+			case isRangeID && !w.go122for:
 				w.onFailure(lint.Failure{
 					Confidence: 1,
 					Node:       id,
-					Category:   "logic",
+					Category:   lint.FailureCategoryLogic,
 					Failure:    fmt.Sprintf("datarace: range value %s is captured (by-reference) in goroutine", id.Name),
 				})
 			case isReturnID:
 				w.onFailure(lint.Failure{
 					Confidence: 0.8,
 					Node:       id,
-					Category:   "logic",
+					Category:   lint.FailureCategoryLogic,
 					Failure:    fmt.Sprintf("potential datarace: return value %s is captured (by-reference) in goroutine", id.Name),
 				})
 			}
