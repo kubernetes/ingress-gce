@@ -28,7 +28,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -44,6 +43,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
+	"slices"
 )
 
 const (
@@ -201,8 +201,8 @@ func (lc *StandaloneNEGLBController) Run() {
 }
 
 func (lc *StandaloneNEGLBController) syncWrapper(key string) (err error) {
-	syncTrackingId := rand.Int31()
-	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingId)
+	syncTrackingID := rand.Int31()
+	svcLogger := lc.logger.WithValues("serviceKey", key, "syncId", syncTrackingID)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -325,9 +325,9 @@ func (lc *StandaloneNEGLBController) validateLoadBalancer(parsedFR parsedForward
 }
 
 func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.Set[cloud.ResourceMapKey], error) {
-	neglinks := sets.New[cloud.ResourceMapKey]()
+	negLinks := sets.New[cloud.ResourceMapKey]()
 	if svc == nil {
-		return neglinks, nil
+		return negLinks, nil
 	}
 
 	negName := lc.namer.L4Backend(svc.Namespace, svc.Name)
@@ -352,11 +352,11 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 				if err != nil {
 					continue
 				}
-				neglinks.Insert(resourceKey.MapKey())
+				negLinks.Insert(resourceKey.MapKey())
 			}
 		}
 	}
-	return neglinks, nil
+	return negLinks, nil
 }
 
 func (lc *StandaloneNEGLBController) validateBackendService(fr *composite.ForwardingRule, targetNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) error {
@@ -469,11 +469,11 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		return nil, joinMaybeUserErrors(clearErr, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation")))
 	}
 
+	// Sort alphabetically forwarding rules so rules and status ingress IPs are deterministic between resyncs.
+	sortParsedFRs(parsedRules)
 	if len(parsedRules) > ForwardingRulesLimit {
-		// Sort alphabetically forwarding rules so potentially skipped rules are consistent between resyncs.
-		sortParsedFRs(parsedRules)
 		skippedFrs := strings.Join(parsedFRNames(parsedRules[ForwardingRulesLimit:]), ", ")
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules (%s)", ForwardingRulesLimit, skippedFrs)
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRulesLimitExceeded", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules (%s)", ForwardingRulesLimit, skippedFrs)
 		parsedRules = parsedRules[:ForwardingRulesLimit]
 	}
 
@@ -516,7 +516,11 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 
 	if len(errs) > 0 {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use all Forwarding Rules: %v", errors.Join(errs...))
+		if len(lbIngresses) == 0 {
+			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "None of the Forwarding Rules could be used: %v", errors.Join(errs...))
+		} else {
+			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Some Forwarding Rules could not be used: %v", errors.Join(errs...))
+		}
 	}
 	// if at least one FR was ok then we use it
 	if len(lbIngresses) == 0 {
@@ -552,7 +556,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	if len(errs) > 0 {
 		return schemes, joinMaybeUserErrors(errs...)
 	}
-	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "SyncLoadBalancerSuccessful", "Successfully ensured Standalone NEG LoadBalancer resources")
+	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "SyncLoadBalancerSuccessful", "Successfully programmed Standalone NEG LoadBalancer IP(s)")
 	return schemes, nil
 }
 
