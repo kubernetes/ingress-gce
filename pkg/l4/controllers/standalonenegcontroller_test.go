@@ -1199,8 +1199,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
-				Reason:  "InvalidForwardingRule",
-				Message: "The custom forwarding rule reference is invalid",
+				Reason:  "BackendNotAttached",
+				Message: "The service NEGs are not attached to the load balancer backend service",
 			},
 		},
 		{
@@ -1462,8 +1462,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
-				Reason:  "InvalidForwardingRule",
-				Message: "The custom forwarding rule reference is invalid",
+				Reason:  "BackendNotAttached",
+				Message: "The service NEGs are not attached to the load balancer backend service",
 			},
 		},
 	}
@@ -2295,6 +2295,21 @@ func TestClassifyError(t *testing.T) {
 			desc:     "unsupported protocol wrapped in UserError and fmt.Errorf",
 			err:      fmt.Errorf("wrapped: %w", l4utils.NewUserError(l4utils.NewUnsupportedProtocolError("fr-name", "UAUDP", []string{"TCP"}))),
 			expected: InvalidForwardingRule,
+		},
+		{
+			desc:     "backend not attached",
+			err:      l4utils.NewBackendNotAttachedError("bs1"),
+			expected: BackendNotAttached,
+		},
+		{
+			desc:     "backend not attached wrapped in UserError",
+			err:      l4utils.NewUserError(l4utils.NewBackendNotAttachedError("bs1")),
+			expected: BackendNotAttached,
+		},
+		{
+			desc:     "backend not attached wrapped in UserError and fmt.Errorf",
+			err:      fmt.Errorf("wrapped: %w", l4utils.NewUserError(l4utils.NewBackendNotAttachedError("bs1"))),
+			expected: BackendNotAttached,
 		},
 		{
 			desc:     "generic error",
