@@ -248,13 +248,14 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			expectIPs:   []string{""},
-			expectError: false,
+			expectIPs:          nil,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
-				Status:  metav1.ConditionTrue,
-				Reason:  "IPProgrammed",
-				Message: "IPs programmed: ",
+				Status:  metav1.ConditionFalse,
+				Reason:  "InvalidForwardingRule",
+				Message: "The custom forwarding rule reference is invalid",
 			},
 		},
 		{
@@ -2334,4 +2335,63 @@ func generateForwardingRuleKey(fr string, num int) string {
 		buffer.WriteString(fmt.Sprintf("%s%d,", fr, i))
 	}
 	return strings.TrimSuffix(buffer.String(), ",")
+}
+
+func TestJoinMaybeUserErrors(t *testing.T) {
+	userErr1 := l4utils.NewUserError(errors.New("user err 1"))
+	userErr2 := l4utils.NewUserError(errors.New("user err 2"))
+	sysErr := errors.New("system err")
+
+	testCases := []struct {
+		desc       string
+		errs       []error
+		expectNil  bool
+		expectUser bool
+	}{
+		{
+			desc:      "all nil errors",
+			errs:      []error{nil, nil},
+			expectNil: true,
+		},
+		{
+			desc:       "nil mixed with user errors",
+			errs:       []error{nil, userErr1, nil, userErr2},
+			expectUser: true,
+		},
+		{
+			desc:       "only user errors",
+			errs:       []error{userErr1, userErr2},
+			expectUser: true,
+		},
+		{
+			desc:       "nil mixed with system error",
+			errs:       []error{nil, sysErr},
+			expectUser: false,
+		},
+		{
+			desc:       "user error mixed with system error and nil",
+			errs:       []error{nil, userErr1, sysErr},
+			expectUser: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := joinMaybeUserErrors(tc.errs...)
+			if tc.expectNil {
+				if got != nil {
+					t.Fatalf("expected nil error, got %v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected non-nil error, got nil")
+			}
+			var userErr *l4utils.UserError
+			isUser := errors.As(got, &userErr) && got == userErr
+			if isUser != tc.expectUser {
+				t.Errorf("isUserErrorWrapper(%v) = %v, expected %v", got, isUser, tc.expectUser)
+			}
+		})
+	}
 }
