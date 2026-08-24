@@ -2068,8 +2068,8 @@ k8s.io/cloud-provider/service/helpers
 k8s.io/cloud-provider/volume
 k8s.io/cloud-provider/volume/errors
 k8s.io/cloud-provider/volume/helpers
-# k8s.io/cloud-provider-gcp/providers v0.28.3-0.20241001174150-c2d05af3b14f
-## explicit; go 1.22.0
+# k8s.io/cloud-provider-gcp/providers v0.28.3-0.20260819214436-4e24531247d7
+## explicit; go 1.26.3
 k8s.io/cloud-provider-gcp/providers/gce
 # k8s.io/component-base v0.36.3
 ## explicit; go 1.26.0

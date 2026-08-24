@@ -949,7 +949,7 @@ func (g *Cloud) GetDiskByNameUnknownZone(diskName string) (*Disk, error) {
 	// on create)
 
 	var found *Disk
-	for _, zone := range g.managedZones {
+	for _, zone := range g.getManagedZones() {
 		disk, err := g.findDiskByName(diskName, zone)
 		if err != nil {
 			return nil, err
@@ -978,7 +978,7 @@ func (g *Cloud) GetDiskByNameUnknownZone(diskName string) (*Disk, error) {
 		return found, nil
 	}
 	klog.Warningf("GCE persistent disk %q not found in managed zones (%s)",
-		diskName, strings.Join(g.managedZones, ","))
+		diskName, strings.Join(g.getManagedZones(), ","))
 
 	return nil, cloudprovider.DiskNotFound
 }
