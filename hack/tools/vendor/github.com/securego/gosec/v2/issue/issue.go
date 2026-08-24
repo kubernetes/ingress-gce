@@ -67,6 +67,7 @@ var ruleToCWE = map[string]string{
 	"G112": "400",
 	"G113": "190",
 	"G114": "676",
+	"G115": "190",
 	"G201": "89",
 	"G202": "89",
 	"G203": "79",
@@ -77,32 +78,38 @@ var ruleToCWE = map[string]string{
 	"G304": "22",
 	"G305": "22",
 	"G306": "276",
-	"G401": "326",
+	"G401": "328",
 	"G402": "295",
 	"G403": "310",
 	"G404": "338",
+	"G405": "327",
+	"G406": "328",
+	"G407": "1204",
 	"G501": "327",
 	"G502": "327",
 	"G503": "327",
 	"G504": "327",
 	"G505": "327",
+	"G506": "327",
+	"G507": "327",
 	"G601": "118",
 	"G602": "118",
 }
 
 // Issue is returned by a gosec rule if it discovers an issue with the scanned code.
 type Issue struct {
-	Severity     Score             `json:"severity"`     // issue severity (how problematic it is)
-	Confidence   Score             `json:"confidence"`   // issue confidence (how sure we are we found it)
-	Cwe          *cwe.Weakness     `json:"cwe"`          // Cwe associated with RuleID
-	RuleID       string            `json:"rule_id"`      // Human readable explanation
-	What         string            `json:"details"`      // Human readable explanation
-	File         string            `json:"file"`         // File name we found it in
-	Code         string            `json:"code"`         // Impacted code line
-	Line         string            `json:"line"`         // Line number in file
-	Col          string            `json:"column"`       // Column number in line
-	NoSec        bool              `json:"nosec"`        // true if the issue is nosec
-	Suppressions []SuppressionInfo `json:"suppressions"` // Suppression info of the issue
+	Severity     Score             `json:"severity"`          // issue severity (how problematic it is)
+	Confidence   Score             `json:"confidence"`        // issue confidence (how sure we are we found it)
+	Cwe          *cwe.Weakness     `json:"cwe"`               // Cwe associated with RuleID
+	RuleID       string            `json:"rule_id"`           // Human readable explanation
+	What         string            `json:"details"`           // Human readable explanation
+	File         string            `json:"file"`              // File name we found it in
+	Code         string            `json:"code"`              // Impacted code line
+	Line         string            `json:"line"`              // Line number in file
+	Col          string            `json:"column"`            // Column number in line
+	NoSec        bool              `json:"nosec"`             // true if the issue is nosec
+	Suppressions []SuppressionInfo `json:"suppressions"`      // Suppression info of the issue
+	Autofix      string            `json:"autofix,omitempty"` // Proposed auto fix the issue
 }
 
 // SuppressionInfo object is to record the kind and the justification that used
@@ -178,11 +185,7 @@ func codeSnippetEndLine(node ast.Node, fobj *token.File) int64 {
 // New creates a new Issue
 func New(fobj *token.File, node ast.Node, ruleID, desc string, severity, confidence Score) *Issue {
 	name := fobj.Name()
-	start, end := fobj.Line(node.Pos()), fobj.Line(node.End())
-	line := strconv.Itoa(start)
-	if start != end {
-		line = fmt.Sprintf("%d-%d", start, end)
-	}
+	line := GetLine(fobj, node)
 	col := strconv.Itoa(fobj.Position(node.Pos()).Column)
 
 	var code string
@@ -216,4 +219,14 @@ func New(fobj *token.File, node ast.Node, ruleID, desc string, severity, confide
 func (i *Issue) WithSuppressions(suppressions []SuppressionInfo) *Issue {
 	i.Suppressions = suppressions
 	return i
+}
+
+// GetLine returns the line number of a given ast.Node
+func GetLine(fobj *token.File, node ast.Node) string {
+	start, end := fobj.Line(node.Pos()), fobj.Line(node.End())
+	line := strconv.Itoa(start)
+	if start != end {
+		line = fmt.Sprintf("%d-%d", start, end)
+	}
+	return line
 }

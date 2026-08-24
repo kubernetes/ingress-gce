@@ -8,12 +8,13 @@ import (
 	"github.com/golangci/golangci-lint/pkg/result"
 )
 
+// JSON prints issues in a JSON representation.
 type JSON struct {
 	rd *report.Data
 	w  io.Writer
 }
 
-func NewJSON(rd *report.Data, w io.Writer) *JSON {
+func NewJSON(w io.Writer, rd *report.Data) *JSON {
 	return &JSON{
 		rd: rd,
 		w:  w,

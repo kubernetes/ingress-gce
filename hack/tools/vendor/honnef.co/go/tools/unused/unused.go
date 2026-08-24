@@ -94,6 +94,7 @@ This overview is true when using the default options. Different options may chan
   - (6.3) embedded fields that help implement interfaces (either fully implements it, or contributes required methods) (recursively)
   - (6.4) embedded fields that have exported methods (recursively)
   - (6.5) embedded structs that have exported fields (recursively)
+  - (6.6) all fields if they have a structs.HostLayout field
 
 - (7.1) field accesses use fields
 - (7.2) fields use their types
@@ -168,7 +169,7 @@ type Result struct {
 }
 
 var Analyzer = &lint.Analyzer{
-	Doc: &lint.Documentation{
+	Doc: &lint.RawDocumentation{
 		Title: "Unused code",
 	},
 	Analyzer: &analysis.Analyzer{
@@ -344,7 +345,7 @@ func (g *graph) objectToObject(obj types.Object) Object {
 	}
 	name := obj.Name()
 	if sig, ok := obj.Type().(*types.Signature); ok && sig.Recv() != nil {
-		switch sig.Recv().Type().(type) {
+		switch types.Unalias(sig.Recv().Type()).(type) {
 		case *types.Named, *types.Pointer:
 			typ := types.TypeString(sig.Recv().Type(), func(*types.Package) string { return "" })
 			if len(typ) > 0 && typ[0] == '*' {
@@ -534,6 +535,19 @@ func (g *graph) entry() {
 		}
 	}
 
+	// We use a normal map instead of a typeutil.Map because we deduplicate
+	// these on a best effort basis, as an optimization.
+	allInterfaces := make(map[*types.Interface]struct{})
+	for _, typ := range g.interfaceTypes {
+		allInterfaces[typ] = struct{}{}
+	}
+	for _, ins := range g.info.Instances {
+		if typ, ok := ins.Type.(*types.Named); ok && typ.Obj().Pkg() == g.pkg {
+			if iface, ok := typ.Underlying().(*types.Interface); ok {
+				allInterfaces[iface] = struct{}{}
+			}
+		}
+	}
 	processMethodSet := func(named *types.TypeName, ms *types.MethodSet) {
 		if g.opts.ExportedIsUsed {
 			for i := 0; i < ms.Len(); i++ {
@@ -552,7 +566,7 @@ func (g *graph) entry() {
 			// (8.0) handle interfaces
 			//
 			// We don't care about interfaces implementing interfaces; all their methods are already used, anyway
-			for _, iface := range g.interfaceTypes {
+			for iface := range allInterfaces {
 				if sels, ok := implements(named.Type(), iface, ms); ok {
 					for _, sel := range sels {
 						// (8.2) any concrete type implements all known interfaces
@@ -628,7 +642,7 @@ func (g *graph) entry() {
 				// use methods and fields of ignored types
 				if obj, ok := obj.(*types.TypeName); ok {
 					if obj.IsAlias() {
-						if typ, ok := obj.Type().(*types.Named); ok && (g.opts.ExportedIsUsed && typ.Obj().Pkg() != obj.Pkg() || typ.Obj().Pkg() == nil) {
+						if typ, ok := types.Unalias(obj.Type()).(*types.Named); ok && (g.opts.ExportedIsUsed && typ.Obj().Pkg() != obj.Pkg() || typ.Obj().Pkg() == nil) {
 							// This is an alias of a named type in another package.
 							// Don't walk its fields or methods; we don't have to.
 							//
@@ -637,7 +651,7 @@ func (g *graph) entry() {
 							continue
 						}
 					}
-					if typ, ok := obj.Type().(*types.Named); ok {
+					if typ, ok := types.Unalias(obj.Type()).(*types.Named); ok {
 						for i := 0; i < typ.NumMethods(); i++ {
 							g.use(typ.Method(i), nil)
 						}
@@ -874,7 +888,7 @@ func (g *graph) read(node ast.Node, by types.Object) {
 			g.read(arg, by)
 		}
 
-		// Handle conversiosn
+		// Handle conversions
 		conv := node
 		if len(conv.Args) != 1 || conv.Ellipsis.IsValid() {
 			return
@@ -960,7 +974,7 @@ func (g *graph) write(node ast.Node, by types.Object) {
 
 	case *ast.SelectorExpr:
 		if g.opts.FieldWritesAreUses {
-			// Writing to a field constitutes a use. See https://staticcheck.io/issues/288 for some discussion on that.
+			// Writing to a field constitutes a use. See https://staticcheck.dev/issues/288 for some discussion on that.
 			//
 			// This code can also get triggered by qualified package variables, in which case it doesn't matter what we do,
 			// because the object is in another package.
@@ -1457,7 +1471,7 @@ func isNoCopyType(typ types.Type) bool {
 		return false
 	}
 
-	named, ok := typ.(*types.Named)
+	named, ok := types.Unalias(typ).(*types.Named)
 	if !ok {
 		return false
 	}
@@ -1483,8 +1497,11 @@ func (g *graph) namedType(typ *types.TypeName, spec ast.Expr) {
 	// (2.2) named types use the type they're based on
 
 	if st, ok := spec.(*ast.StructType); ok {
-		// Named structs are special in that its unexported fields are only used if they're being written to. That is,
-		// the fields are not used by the named type itself, nor are the types of the fields.
+		var hasHostLayout bool
+
+		// Named structs are special in that their unexported fields are only
+		// used if they're being written to. That is, the fields are not used by
+		// the named type itself, nor are the types of the fields.
 		for _, field := range st.Fields.List {
 			seen := map[*types.Struct]struct{}{}
 			// For `type x struct { *x; F int }`, don't visit the embedded x
@@ -1545,6 +1562,40 @@ func (g *graph) namedType(typ *types.TypeName, spec ast.Expr) {
 				}
 			}
 
+			// (6.6) if the struct has a field of type structs.HostLayout, then
+			// this signals that all fields are relevant to match some
+			// externally specified memory layout.
+			//
+			// This augments the 5.2 heuristic of using all fields when
+			// converting via unsafe.Pointer. For example, 5.2 doesn't currently
+			// handle conversions involving more than one level of pointer
+			// indirection (although it probably should). Another example that
+			// doesn't involve the use of unsafe at all is exporting symbols for
+			// use by C libraries.
+			//
+			// The actual requirements for the use of structs.HostLayout fields
+			// haven't been determined yet. It's an open question whether named
+			// types of underlying type structs.HostLayout, aliases of it,
+			// generic instantiations, or embedding structs that themselves
+			// contain a HostLayout field count as valid uses of the marker (see
+			// https://golang.org/issues/66408#issuecomment-2120644459)
+			//
+			// For now, we require a struct to have a field of type
+			// structs.HostLayout or an alias of it, where the field itself may
+			// be embedded. We don't handle fields whose types are type
+			// parameters.
+			fieldType := types.Unalias(g.info.TypeOf(field.Type))
+			if fieldType, ok := fieldType.(*types.Named); ok {
+				obj := fieldType.Obj()
+				if obj.Name() == "HostLayout" && obj.Pkg().Path() == "structs" {
+					hasHostLayout = true
+				}
+			}
+		}
+
+		// For 6.6.
+		if hasHostLayout {
+			g.useAllFieldsRecursively(typ.Type(), typ)
 		}
 	} else {
 		g.read(spec, typ)

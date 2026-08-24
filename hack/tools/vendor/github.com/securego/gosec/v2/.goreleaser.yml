@@ -1,4 +1,5 @@
 ---
+version: 2
 project_name: gosec
 
 release:
@@ -19,6 +20,7 @@ builds:
       - amd64
       - arm64
       - s390x
+      - ppc64le
     ldflags: -X main.Version={{.Version}} -X main.GitTag={{.Tag}} -X main.BuildDate={{.Date}}
     env:
       - CGO_ENABLED=0

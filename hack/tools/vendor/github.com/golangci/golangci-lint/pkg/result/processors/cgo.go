@@ -1,57 +1,52 @@
 package processors
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/ldez/grignotin/goenv"
 
 	"github.com/golangci/golangci-lint/pkg/goutil"
 	"github.com/golangci/golangci-lint/pkg/result"
 )
 
+var _ Processor = (*Cgo)(nil)
+
+// Cgo filters cgo artifacts.
+//
+// Some linters (e.g. gosec, etc.) return incorrect file paths for cgo files.
+//
+// Require absolute file path.
 type Cgo struct {
 	goCacheDir string
 }
 
-var _ Processor = Cgo{}
-
-func NewCgo(goenv *goutil.Env) *Cgo {
+func NewCgo(env *goutil.Env) *Cgo {
 	return &Cgo{
-		goCacheDir: goenv.Get(goutil.EnvGoCache),
+		goCacheDir: env.Get(goenv.GOCACHE),
 	}
 }
 
-func (p Cgo) Name() string {
+func (*Cgo) Name() string {
 	return "cgo"
 }
 
-func (p Cgo) Process(issues []result.Issue) ([]result.Issue, error) {
-	return filterIssuesErr(issues, func(i *result.Issue) (bool, error) {
-		// some linters (.e.g gosec, deadcode) return incorrect filepaths for cgo issues,
-		// also cgo files have strange issues looking like false positives.
-
-		// cache dir contains all preprocessed files including cgo files
-
-		issueFilePath := i.FilePath()
-		if !filepath.IsAbs(i.FilePath()) {
-			absPath, err := filepath.Abs(i.FilePath())
-			if err != nil {
-				return false, fmt.Errorf("failed to build abs path for %q: %w", i.FilePath(), err)
-			}
-			issueFilePath = absPath
-		}
-
-		if p.goCacheDir != "" && strings.HasPrefix(issueFilePath, p.goCacheDir) {
-			return false, nil
-		}
-
-		if filepath.Base(i.FilePath()) == "_cgo_gotypes.go" {
-			// skip cgo warning for go1.10
-			return false, nil
-		}
-
-		return true, nil
-	})
+func (p *Cgo) Process(issues []result.Issue) ([]result.Issue, error) {
+	return filterIssuesErr(issues, p.shouldPassIssue)
 }
 
-func (Cgo) Finish() {}
+func (*Cgo) Finish() {}
+
+func (p *Cgo) shouldPassIssue(issue *result.Issue) (bool, error) {
+	// [p.goCacheDir] contains all preprocessed files including cgo files.
+	if p.goCacheDir != "" && strings.HasPrefix(issue.FilePath(), p.goCacheDir) {
+		return false, nil
+	}
+
+	if filepath.Base(issue.FilePath()) == "_cgo_gotypes.go" {
+		// skip cgo warning for go1.10
+		return false, nil
+	}
+
+	return true, nil
+}
