@@ -665,7 +665,7 @@ func (l4netlb *L4NetLB) ensureDeny(result *L4NetLBSyncResult, nodeNames []string
 
 func denyFirewall(namer func(namespace, name string) string, svc *corev1.Service, nodeNames []string, network network.NetworkInfo, ruleAddress string) *firewalls.FirewallParams {
 	src := []string{"0.0.0.0/0"}
-	if isIPv6 := strings.Contains(ruleAddress, ":"); isIPv6 {
+	if strings.Contains(ruleAddress, ":") {
 		src = []string{"::/0"}
 	}
 

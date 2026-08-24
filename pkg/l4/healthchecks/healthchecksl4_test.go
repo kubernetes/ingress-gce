@@ -18,8 +18,12 @@ package healthchecks
 
 import (
 	"context"
+	"reflect"
+	"sort"
 	"strconv"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/flags"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +42,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -974,4 +979,204 @@ func createVMInstanceWithTag(t *testing.T, fakeGCE *gce.Cloud, tag string) {
 	if err != nil {
 		t.Errorf("failed to create instance err=%v", err)
 	}
+}
+
+func TestGetHCFirewallSourceRangesWithFlags(t *testing.T) {
+	tests := []struct {
+		name                 string
+		ipVersion            address.IPVersion
+		l4Type               utils.L4LBType
+		shared               bool
+		ilbFlagCIDRs         string
+		netlbFlagCIDRs       string
+		expectedSourceRanges []string
+	}{
+		{
+			name:                 "IPv4 Default ILB",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			expectedSourceRanges: gce.L4LoadBalancerSrcRanges(),
+		},
+		{
+			name:                 "IPv4 Default NetLB",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			expectedSourceRanges: gce.L4LoadBalancerSrcRanges(),
+		},
+		{
+			name:                 "IPv6 Default ILB",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			expectedSourceRanges: []string{L4ILBIPv6HCRange},
+		},
+		{
+			name:                 "IPv6 Default NetLB",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			expectedSourceRanges: []string{L4NetLBIPv6HCRange},
+		},
+		{
+			name:                 "IPv6 Default Shared",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB, // l4Type doesn't matter for shared default
+			shared:               true,
+			expectedSourceRanges: []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange},
+		},
+		{
+			name:                 "IPv4 Override ILB with both IPv4 and IPv6",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "10.0.0.0/8, 2001:db8::/32,  12.0.0.0/8",
+			expectedSourceRanges: []string{"10.0.0.0/8", "12.0.0.0/8"},
+		},
+		{
+			name:                 "IPv4 Override ILB with both IPv4 and IPv6",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "10.0.0.0/8,2001:db8::/32",
+			expectedSourceRanges: []string{"10.0.0.0/8"},
+		},
+		{
+			name:                 "IPv6 Override ILB with both IPv4 and IPv6",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "10.0.0.0/8,2001:db8::/32",
+			expectedSourceRanges: []string{"2001:db8::/32"},
+		},
+		{
+			name:                 "IPv6 Override ILB with both IPv4 and IPv6",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "10.0.0.0/8, 2001:db8::/32, 12.0.0.0/8",
+			expectedSourceRanges: []string{"2001:db8::/32"},
+		},
+		{
+			name:                 "IPv4 Override NetLB with both IPv4 and IPv6",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			netlbFlagCIDRs:       "192.168.0.0/16,fe80::/10",
+			expectedSourceRanges: []string{"192.168.0.0/16"},
+		},
+		{
+			name:                 "IPv6 Override NetLB with both IPv4 and IPv6",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			netlbFlagCIDRs:       "192.168.0.0/16,fe80::/10",
+			expectedSourceRanges: []string{"fe80::/10"},
+		},
+		{
+			name:                 "IPv4 Shared with both ILB and NetLB Overrides",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               true,
+			ilbFlagCIDRs:         "10.0.0.0/8,2001:db8::/32",
+			netlbFlagCIDRs:       "192.168.0.0/16,fe80::/10",
+			expectedSourceRanges: []string{"10.0.0.0/8", "192.168.0.0/16"},
+		},
+		{
+			name:                 "IPv6 Shared with both ILB and NetLB Overrides",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               true,
+			ilbFlagCIDRs:         "10.0.0.0/8,2001:db8::/32",
+			netlbFlagCIDRs:       "192.168.0.0/16,fe80::/10",
+			expectedSourceRanges: []string{"2001:db8::/32", "fe80::/10"},
+		},
+		{
+			name:                 "IPv4 Override ILB but only IPv6 provided",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "2001:db8::/32",
+			expectedSourceRanges: gce.L4LoadBalancerSrcRanges(),
+		},
+		{
+			name:                 "IPv6 Override ILB but only IPv4 provided",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "10.0.0.0/8",
+			expectedSourceRanges: []string{L4ILBIPv6HCRange},
+		},
+		{
+			name:                 "IPv4 Override ILB with malformed CIDR (Fail Closed)",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "192.168.1.1/999",
+			expectedSourceRanges: []string{}, // Should return empty array (fail closed)
+		},
+		{
+			name:                 "IPv6 Override ILB with malformed CIDR (Fail Closed)",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.ILB,
+			shared:               false,
+			ilbFlagCIDRs:         "invalid-cidr",
+			expectedSourceRanges: []string{}, // Should return empty array (fail closed)
+		},
+		{
+			name:                 "IPv4 Override NetLB but only IPv6 provided",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			netlbFlagCIDRs:       "2001:db8::/32",
+			expectedSourceRanges: gce.L4LoadBalancerSrcRanges(),
+		},
+		{
+			name:                 "IPv6 Override NetLB but only IPv4 provided",
+			ipVersion:            address.IPv6Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			netlbFlagCIDRs:       "10.0.0.0/8",
+			expectedSourceRanges: []string{L4NetLBIPv6HCRange},
+		},
+		{
+			name:                 "IPv4 Override NetLB with malformed CIDR (Fail Closed)",
+			ipVersion:            address.IPv4Version,
+			l4Type:               utils.XLB,
+			shared:               false,
+			netlbFlagCIDRs:       "10.0.0.0/8,invalid",
+			expectedSourceRanges: []string{}, // The entire parse fails, so returns empty
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.F.OverrideL4ILBHealthCheckSourceCIDRs = tc.ilbFlagCIDRs
+			flags.F.OverrideL4NetLBHealthCheckSourceCIDRs = tc.netlbFlagCIDRs
+
+			actual := getHCFirewallSourceRanges(tc.l4Type, tc.shared, tc.ipVersion)
+
+			// Sort both slices before comparing
+			expected := make([]string, len(tc.expectedSourceRanges))
+			copy(expected, tc.expectedSourceRanges)
+			sort.Strings(expected)
+
+			actualSorted := make([]string, len(actual))
+			copy(actualSorted, actual)
+			sort.Strings(actualSorted)
+
+			if !reflect.DeepEqual(actualSorted, expected) {
+				// Also handle empty vs nil nicely
+				if len(actual) == 0 && len(tc.expectedSourceRanges) == 0 {
+					return
+				}
+				t.Errorf("Expected %v, got %v", tc.expectedSourceRanges, actual)
+			}
+		})
+	}
+
+	// Reset flags
+	flags.F.OverrideL4ILBHealthCheckSourceCIDRs = ""
+	flags.F.OverrideL4NetLBHealthCheckSourceCIDRs = ""
 }
