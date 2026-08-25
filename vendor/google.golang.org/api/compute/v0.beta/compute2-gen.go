@@ -7365,8 +7365,12 @@ type BackendServicesListUsableCall struct {
 	header_      http.Header
 }
 
-// ListUsable: Retrieves a list of all usable backend services in the specified
-// project.
+// ListUsable: Retrieves a list of all usable backend services for Application
+// Load
+// Balancers and Proxy Network Load Balancers in the specified project.
+// Backend services for external and internal passthrough Network
+// Load
+// Balancers are not included in the response.
 //
 // - project: Project ID for this request.
 func (r *BackendServicesService) ListUsable(project string) *BackendServicesListUsableCall {
@@ -80226,6 +80230,15 @@ type ProjectViewsGetCall struct {
 // Get: Returns the specified global ProjectViews resource, with a
 // regional
 // context.
+// This regional API endpoint reads resource metadata from regional
+// read-only replicas. Because changes are copied to these regional
+// replicas
+// asynchronously, for real-time resource reads or any write
+// operations
+// (creating, updating, or deleting resources), use the global
+// projects.get
+// (https://cloud.google.com/compute/docs/reference/rest/v1/projects/get)
+// endpoint.
 //
 // - project: Project ID for this request. This is part of the URL path.
 // - region: Name of the region for this request. This is part of the URL path.
@@ -88150,9 +88163,12 @@ type RegionBackendServicesListUsableCall struct {
 	header_      http.Header
 }
 
-// ListUsable: Retrieves a list of all usable backend services in the specified
-// project in
-// the given region.
+// ListUsable: Retrieves a list of all usable backend services for Application
+// Load
+// Balancers and Proxy Network Load Balancers in the specified project in
+// the
+// given region. Backend services for external and internal passthrough
+// Network Load Balancers are not included in the response.
 //
 //   - project: Project ID for this request.
 //   - region: Name of the region scoping this request.
