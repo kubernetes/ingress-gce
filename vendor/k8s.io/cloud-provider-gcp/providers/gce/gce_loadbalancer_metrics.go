@@ -20,6 +20,7 @@ limitations under the License.
 package gce
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -43,12 +44,36 @@ var (
 		},
 		[]string{label},
 	)
+	l4NetLBCount = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Name: "number_of_l4_netlbs",
+			Help: "Metric containing the number of NetLBs that can be filtered by feature labels and status",
+		},
+		[]string{"status", "deny_firewall"},
+	)
+	ccmFeatureGateInfo = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Name:           "ccm_feature_gate_info",
+			Help:           "Information about GKE Cloud Controller Manager feature gates.",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"name", "enabled"},
+	)
 )
 
 // init registers L4 internal loadbalancer usage metrics.
 func init() {
 	klog.V(3).Infof("Registering Service Controller loadbalancer usage metrics %v", l4ILBCount)
 	legacyregistry.MustRegister(l4ILBCount)
+	klog.V(3).Infof("Registering Service Controller loadbalancer usage metrics %v", l4NetLBCount)
+	legacyregistry.MustRegister(l4NetLBCount)
+	klog.V(3).Infof("Registering CCM feature gate info metrics %v", ccmFeatureGateInfo)
+	legacyregistry.MustRegister(ccmFeatureGateInfo)
+}
+
+// RecordFeatureGateMetrics records the status of feature gates at CCM startup.
+func RecordFeatureGateMetrics(enableFineGrainedLocks bool) {
+	ccmFeatureGateInfo.WithLabelValues("finegrainedlock", strconv.FormatBool(enableFineGrainedLocks)).Set(1.0)
 }
 
 // LoadBalancerMetrics is a cache that contains loadbalancer service resource
@@ -56,6 +81,7 @@ func init() {
 type LoadBalancerMetrics struct {
 	// l4ILBServiceMap is a map of service key and L4 ILB service state.
 	l4ILBServiceMap map[string]L4ILBServiceState
+	l4NetLBMap      map[string]L4NetLBServiceState
 
 	sync.Mutex
 }
@@ -97,6 +123,10 @@ type loadbalancerMetricsCollector interface {
 	SetL4ILBService(svcKey string, state L4ILBServiceState)
 	// DeleteL4ILBService removes the given L4 ILB service key.
 	DeleteL4ILBService(svcKey string)
+	// SetL4NetLBService adds/updates L4 NetLB service state for given service key.
+	SetL4NetLBService(svcKey string, state L4NetLBServiceState)
+	// DeleteL4NetLBService removes the given L4 NetLB service key.
+	DeleteL4NetLBService(svcKey string)
 }
 
 // newLoadBalancerMetrics initializes LoadBalancerMetrics and starts a goroutine
@@ -104,6 +134,7 @@ type loadbalancerMetricsCollector interface {
 func newLoadBalancerMetrics() loadbalancerMetricsCollector {
 	return &LoadBalancerMetrics{
 		l4ILBServiceMap: make(map[string]L4ILBServiceState),
+		l4NetLBMap:      make(map[string]L4NetLBServiceState),
 	}
 }
 
@@ -140,6 +171,11 @@ func (lm *LoadBalancerMetrics) DeleteL4ILBService(svcKey string) {
 
 // export computes and exports loadbalancer usage metrics.
 func (lm *LoadBalancerMetrics) export() {
+	lm.exportILBMetrics()
+	lm.exportNetLBMetrics()
+}
+
+func (lm *LoadBalancerMetrics) exportILBMetrics() {
 	ilbCount := lm.computeL4ILBMetrics()
 	klog.V(5).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
 	for feature, count := range ilbCount {
@@ -179,4 +215,61 @@ func (lm *LoadBalancerMetrics) computeL4ILBMetrics() map[feature]int {
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
 	return counts
+}
+
+// L4ServiceStatus denotes the status of the service
+type L4ServiceStatus string
+
+// L4ServiceStatus denotes the status of the service
+const (
+	StatusSuccess         = L4ServiceStatus("Success")
+	StatusUserError       = L4ServiceStatus("UserError")
+	StatusError           = L4ServiceStatus("Error")
+	StatusPersistentError = L4ServiceStatus("PersistentError")
+)
+
+// DenyFirewallStatus represents IP stack used when the deny firewalls are provisioned.
+type DenyFirewallStatus string
+
+// DenyFirewallStatus represents IP stack used when the deny firewalls are provisioned.
+const (
+	DenyFirewallStatusUnknown  = DenyFirewallStatus("UNKNOWN")  // Shouldn't happen, but if it does something is wrong.
+	DenyFirewallStatusNone     = DenyFirewallStatus("")         // Case when no firewalls have been provisioned yet or when the feature has not been enabled explicitly
+	DenyFirewallStatusDisabled = DenyFirewallStatus("DISABLED") // Case to mark when the feature has been enabled then explicitly disabled - for example when the feature is rolled back
+	DenyFirewallStatusIPv4     = DenyFirewallStatus("IPv4")
+)
+
+type L4NetLBServiceState struct {
+	Status       L4ServiceStatus
+	DenyFirewall DenyFirewallStatus
+}
+
+// SetL4NetLBService patches information about L4 NetLB
+func (lm *LoadBalancerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServiceState) {
+	lm.Lock()
+	defer lm.Unlock()
+
+	lm.l4NetLBMap[svcKey] = state
+}
+
+// DeleteL4NetLBService removes the given L4 NetLB service key.
+func (lm *LoadBalancerMetrics) DeleteL4NetLBService(svcKey string) {
+	lm.Lock()
+	defer lm.Unlock()
+
+	delete(lm.l4NetLBMap, svcKey)
+}
+
+// exportNetLBMetrics computes and exports loadbalancer usage metrics.
+func (lm *LoadBalancerMetrics) exportNetLBMetrics() {
+	lm.Lock()
+	defer lm.Unlock()
+
+	klog.Info("Exporting L4 NetLB usage metrics for services", "serviceCount", len(lm.l4NetLBMap))
+
+	l4NetLBCount.Reset()
+	for _, svcState := range lm.l4NetLBMap {
+		l4NetLBCount.WithLabelValues(string(svcState.Status), string(svcState.DenyFirewall)).Inc()
+	}
+	klog.Info("L4 NetLB usage metrics exported")
 }
