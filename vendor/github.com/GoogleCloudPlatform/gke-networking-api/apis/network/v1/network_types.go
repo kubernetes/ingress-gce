@@ -75,6 +75,19 @@ const (
 	ExternalMode IPAMModeType = "External"
 )
 
+// StackType defines the IP stack mode for the network.
+// +kubebuilder:validation:Enum=ipv4;ipv6;ipv4-ipv6
+type StackType string
+
+const (
+	// IPv4StackType enables IPv4 only on the network.
+	IPv4StackType StackType = "ipv4"
+	// IPv6StackType enables IPv6 only on the network.
+	IPv6StackType StackType = "ipv6"
+	// DualStackType enables both IPv4 and IPv6 on the network.
+	DualStackType StackType = "ipv4-ipv6"
+)
+
 // +genclient
 // +genclient:nonNamespaced
 // +kubebuilder:object:root=true
@@ -129,6 +142,16 @@ type NetworkSpec struct {
 	// Required if ExternalDHCP4 is false or not set on L2 type network.
 	// +optional
 	Gateway4 *string `json:"gateway4,omitempty"`
+
+	// Gateway6 defines the gateway IPv6 address for the network.
+	// +optional
+	Gateway6 *string `json:"gateway6,omitempty"`
+
+	// StackType specifies the IP stack mode of the network.
+	// Valid options include: ipv4, ipv6, ipv4-ipv6
+	// +optional
+	// +kubebuilder:default="ipv4"
+	StackType StackType `json:"stackType,omitempty"`
 
 	// Specifies the DNS configuration of the network.
 	// Required if ExternalDHCP4 is false or not set on L2 type network.
