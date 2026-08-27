@@ -702,7 +702,11 @@ func checkSvcNEG(
 			}
 			return false, fmt.Errorf("failed to get Svc NEG %s/%s: %v", svc.Namespace, negName, err)
 		}
-		t.Logf("Svc NEG found: %s/%s with %d endpoints", negCheck.Namespace, negCheck.Name, len(negCheck.Status.NetworkEndpointGroups))
+		if len(negCheck.Status.NetworkEndpointGroups) == 0 {
+			t.Logf("Svc NEG found: %s/%s with 0 NEGs, waiting...", negCheck.Namespace, negCheck.Name)
+			return false, nil
+		}
+		t.Logf("Svc NEG found: %s/%s with %d NEGs", negCheck.Namespace, negCheck.Name, len(negCheck.Status.NetworkEndpointGroups))
 		return true, nil
 	})
 }
