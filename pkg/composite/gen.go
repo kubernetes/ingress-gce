@@ -192,6 +192,11 @@ type Address struct {
 	NetworkTier string `json:"networkTier,omitempty"`
 	// The prefix length if the resource represents an IP range.
 	PrefixLength int64 `json:"prefixLength,omitempty"`
+	// The public DNS PTR record to be configured for this external
+	// IP.
+	PtrDomainName string `json:"ptrDomainName,omitempty"`
+	// The TTL in seconds for public DNS PTR record.
+	PtrDomainNameTtl int64 `json:"ptrDomainNameTtl,omitempty"`
 	// The purpose of this resource, which can be one of the following
 	// values:
 	//
@@ -336,8 +341,10 @@ type Backend struct {
 	// see
 	// Connection balancing mode.
 	//
-	// Backends must use compatible balancing modes. For more information,
-	// see
+	// Backends must use compatible balancing modes. Backends of a
+	// backend
+	// service may use different balancing modes. For more information, see
+	//
 	// Supported balancing modes and target capacity settings
 	// and
 	// Restrictions and guidance for instance groups.
@@ -380,6 +387,11 @@ type Backend struct {
 	// This field designates whether this is a failover backend. More than
 	// one
 	// failover backend can be configured for a given BackendService.
+	//
+	// This field can only be used for a regional external Passthrough
+	// Network
+	// Load Balancer or a regional internal Passthrough Network Load
+	// Balancer.
 	Failover bool `json:"failover,omitempty"`
 	// The fully-qualified URL of aninstance
 	// group or network endpoint
@@ -478,6 +490,16 @@ type Backend struct {
 	//    assigned based on the load balancing algorithm you use. This is
 	// the
 	//    default
+	//
+	//
+	//
+	// For global external Passthrough Network Load Balancers, the
+	// following
+	// restrictions apply:
+	//
+	//    - At most one backend can be marked as PREFERRED.
+	//    - PREFERRED and DEFAULT backends cannot reside
+	//    in the same Cloud region.
 	Preference string `json:"preference,omitempty"`
 	// Represents a service backend (e.g., Cloud Run service, PSC
 	// Service
@@ -697,8 +719,9 @@ type BackendService struct {
 	// Load
 	// Balancers](https://cloud.google.com/load-balancing/docs/network/n
 	// etworklb-failover-overview).
-	//
-	// failoverPolicy cannot be specified with haPolicy.
+	// failoverPolicy cannot be specified with haPolicy.failoverPolicy
+	// cannot be used by global external Passthrough
+	// Network Load Balancers.
 	FailoverPolicy *BackendServiceFailoverPolicy `json:"failoverPolicy,omitempty"`
 	// Fingerprint of this resource. A hash of the contents stored in this
 	// object.
@@ -750,10 +773,11 @@ type BackendService struct {
 	// endpoint health and electing a leader among the healthy
 	// endpoints.
 	// Therefore, haPolicy cannot be specified with healthChecks.
-	//
-	// haPolicy can only be specified for External Passthrough Network
-	// Load
-	// Balancers and Internal Passthrough Network Load Balancers.
+	// haPolicy can only be specified for External Passthrough
+	// Network Load Balancers and Internal Passthrough Network Load
+	// Balancers.haPolicy cannot be used by global external Passthrough
+	// Network
+	// Load Balancers.
 	HaPolicy *BackendServiceHAPolicy `json:"haPolicy,omitempty"`
 	// The list of URLs to the healthChecks, httpHealthChecks (legacy),
 	// or
@@ -831,8 +855,8 @@ type BackendService struct {
 	// Specifies the load balancer type. A backend service
 	// created for one type of load balancer cannot be used with
 	// another.
-	// For more information, refer toChoosing
-	// a load balancer.
+	// For more information, refer to
+	// Backend services product and scheme table.
 	LoadBalancingScheme string `json:"loadBalancingScheme,omitempty"`
 	// A list of locality load-balancing policies to be used in order
 	// of
@@ -892,32 +916,50 @@ type BackendService struct {
 	//    HTTP response header field Endpoint-Load-Metrics. The reported
 	//    metrics to use for computing the weights are specified via
 	// thecustomMetrics field.
-	//
-	//    This field is applicable to either:
-	//       - A regional backend service with the service protocol set to
-	// HTTP,
-	//       HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
-	//       INTERNAL_MANAGED.
-	//       - A global backend service with the
-	//       load_balancing_scheme set to INTERNAL_SELF_MANAGED,
-	// INTERNAL_MANAGED, or
-	//       EXTERNAL_MANAGED.
-	//
-	//
-	//    If sessionAffinity is not configured—that is, if session
-	//    affinity remains at the default value of NONE—then the
-	//    default value for localityLbPolicy
-	//    is ROUND_ROBIN. If session affinity is set to a value other
-	//    than NONE,
-	//    then the default value for localityLbPolicy isMAGLEV.
-	//
-	//    Only ROUND_ROBIN and RING_HASH are supported
-	//    when the backend service is referenced by a URL map that is bound
+	//    - WEIGHTED_MAGLEV: Per-endpoint weighted load balancing via
+	//    health check reported weights. If set, the backend service must
+	// configure
+	//    an HTTP-based Health Check, and health check replies are expected
 	// to
-	//    target gRPC proxy that has validateForProxyless field set to
+	//    contain the non-standard HTTP response header
+	// fieldX-Load-Balancing-Endpoint-Weight to specify the per-endpoint
+	//    weights. If set, load balancing is weighted based on the
+	// per-endpoint
+	//    weights reported in the last processed health check replies, as
+	// long as
+	//    every instance either reported a valid weight or had
+	// UNAVAILABLE_WEIGHT.
+	//    Otherwise, load balancing remains equal-weight.
+	//
+	//
+	//
+	// This field is applicable to either:
+	//
+	//    - A regional backend service with the service protocol set to
+	// HTTP,
+	//    HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
+	//    INTERNAL_MANAGED.
+	//    - A global backend service with the
+	//    load_balancing_scheme set to INTERNAL_SELF_MANAGED,
+	// INTERNAL_MANAGED, or
+	//    EXTERNAL_MANAGED.
+	//
+	//
+	//
+	// If sessionAffinity is not configured—that is, if session
+	// affinity remains at the default value of NONE—then the
+	// default value for localityLbPolicy
+	// is ROUND_ROBIN. If session affinity is set to a value other
+	// than NONE,
+	// then the default value for localityLbPolicy isMAGLEV.
+	//
+	// Only ROUND_ROBIN and RING_HASH are supported
+	// when the backend service is referenced by a URL map that is bound
+	// to
+	// target gRPC proxy that has validateForProxyless field set to
 	// true.
 	//
-	//    localityLbPolicy cannot be specified with haPolicy.
+	// localityLbPolicy cannot be specified with haPolicy.
 	LocalityLbPolicy string `json:"localityLbPolicy,omitempty"`
 	// This field denotes the logging options for the load balancer traffic
 	// served
@@ -1064,16 +1106,16 @@ type BackendService struct {
 	// Load
 	// Balancers, omit port_name.
 	PortName string `json:"portName,omitempty"`
-	// The protocol this BackendService uses to communicate
-	// with backends.
+	// The protocol this BackendService uses to communicate with
+	// backends.
 	//
-	// Possible values are HTTP, HTTPS, HTTP2, H2C, TCP, SSL, UDP or
-	// GRPC.
-	// depending on the chosen load balancer or Traffic Director
-	// configuration.
-	// Refer to the documentation for the load balancers or for Traffic
+	// Possible values are HTTP, HTTPS, HTTP2, H2C, TCP, SSL, UDP, GRPC,
+	// or
+	// UNSPECIFIED, depending on the chosen load balancer or Traffic
 	// Director
-	// for more information.
+	// configuration.
+	// Refer to
+	// Load balancing features for more information.
 	//
 	// Must be set to GRPC when the backend service is referenced by a URL
 	// map
@@ -1184,21 +1226,21 @@ type BackendServiceCdnPolicy struct {
 	// The CacheKeyPolicy for this CdnPolicy.
 	CacheKeyPolicy *CacheKeyPolicy `json:"cacheKeyPolicy,omitempty"`
 	// Specifies the cache setting for all responses from this backend.
-	// The possible values are:USE_ORIGIN_HEADERS Requires the origin to set
-	// valid caching
+	// The possible values are:
+	// USE_ORIGIN_HEADERS Requires the origin to set valid caching
 	// headers to cache content. Responses without these headers will not
 	// be
 	// cached at Google's edge, and will require a full trip to the origin
 	// on
 	// every request, potentially impacting performance and increasing load
 	// on
-	// the origin server.FORCE_CACHE_ALL Cache all content, ignoring any
-	// "private",
+	// the origin server.
+	// FORCE_CACHE_ALL Cache all content, ignoring any "private",
 	// "no-store" or "no-cache" directives in Cache-Control response
 	// headers.
 	// Warning: this may result in Cloud CDN caching private,
-	// per-user (user identifiable) content.CACHE_ALL_STATIC Automatically
-	// cache static content,
+	// per-user (user identifiable) content.
+	// CACHE_ALL_STATIC Automatically cache static content,
 	// including common image formats, media (video and audio), and web
 	// assets
 	// (JavaScript and CSS). Requests and responses that are marked
@@ -2802,19 +2844,59 @@ type ForwardingRule struct {
 	// Output only. [Output Only]. The extensions that are attached to this
 	// ForwardingRule.
 	AttachedExtensions []*ForwardingRuleAttachedExtension `json:"attachedExtensions,omitempty"`
-	// [Output Only] Specifies the availability group of the forwarding
-	// rule. This
+	// Output only. [Output Only] Specifies the load balancing availability
+	// group, one of the
+	// two that collectively provide high availability.
+	//
+	// Specifies the availability group of the forwarding rule. This
 	// field is for use by global external passthrough load balancers
 	// (load
-	// balancing scheme EXTERNAL_PASSTHROUGH) and is set for the child
-	// forwarding
-	// rules only.
+	// balancing scheme EXTERNAL_PASSTHROUGH) and is set for the
+	// child forwarding rules only. The possible values are:
+	//
+	//    - AVAILABILITY_GROUP0: Set for the child forwarding rule
+	//    that is programmed on the AVAILABILITY_GROUP0 load balancing
+	//    stack. The child forwarding rule has the same IP protocol, port,
+	// and
+	//    backend service settings as the parent forwarding rule, but has
+	// only one of
+	//    the two IP addresses of the parent forwarding rule, the one with
+	// the
+	//    purpose PASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP0.
+	//    - AVAILABILITY_GROUP1: Set for the child forwarding rule
+	//    that is programmed on the AVAILABILITY_GROUP1 load balancing
+	//    stack. The child forwarding rule has the same IP protocol, port
+	// and backend
+	//    service settings as the parent forwarding rule, but has only one
+	// of the two
+	//    IP addresses of the parent forwarding rule, the one with the
+	// purposePASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP1.
+	//
+	//
+	//
+	// For each global external Passthrough Network Load Balancer forwarding
+	// rule
+	// (a parent forwarding rule) that you create, Google Cloud generates
+	// two
+	// output-only child forwarding rules, one forAVAILABILITY_GROUP0 and
+	// one forAVAILABILITY_GROUP1.
 	AvailabilityGroup string `json:"availabilityGroup,omitempty"`
 	// Identifies the backend service to which the forwarding rule sends
 	// traffic.
-	// Required for internal and external passthrough Network Load
-	// Balancers;
-	// must be omitted for all other load balancer types.
+	//
+	// It is a required field for the following load balancers:
+	//
+	//    - Internal passthrough Network Load Balancers
+	//    - Backend service-based regional external passthrough Network
+	// Load
+	//    Balancers
+	//    - Global external passthrough Network Load Balancers
+	//
+	//
+	//
+	// It cannot be set by other load balancer types and protocol
+	// forwarding
+	// rules.
 	BackendService string `json:"backendService,omitempty"`
 	// Output only. [Output Only] The URL for the corresponding base
 	// forwarding rule. By base
@@ -2827,15 +2909,19 @@ type ForwardingRule struct {
 	// sourceIPRanges
 	// specified.
 	BaseForwardingRule string `json:"baseForwardingRule,omitempty"`
-	// Output only. [Output Only] Applicable only to the parent forwarding
-	// rule of global
+	// Output only. [Output Only] The resource URLs for the child forwarding
+	// rules.
+	//
+	// Applicable only to the parent forwarding rule of global
 	// external passthrough load balancers. This field contains the list of
 	// child
 	// forwarding rule URLs associated with the parent forwarding rule: one
 	// for
 	// each availability group. AVAILABILITY_GROUP0 will be the first
 	// element, and
-	// AVAILABILITY_GROUP1 will be the second element.
+	// AVAILABILITY_GROUP1 will be the second element. Refer to
+	// theavailabilityGroup field for further details. It cannot be set
+	// by any other forwarding rules.
 	ChildForwardingRules []string `json:"childForwardingRules,omitempty"`
 	// Output only. [Output Only] Creation timestamp inRFC3339
 	// text format.
@@ -2939,6 +3025,9 @@ type ForwardingRule struct {
 	//
 	//
 	//
+	// The IP address can only be set at creation. Once set, it cannot be
+	// updated.
+	//
 	// The forwarding rule's target or backendService,
 	// and in most cases, also the loadBalancingScheme, determine the
 	// type of IP address that you can use. For detailed information,
@@ -2950,7 +3039,98 @@ type ForwardingRule struct {
 	//
 	// When reading an IPAddress, the API always returns the IP
 	// address number.
-	IPAddress   string   `json:"IPAddress,omitempty"`
+	//
+	// When creating a global external Passthrough Network Load
+	// Balancer
+	// forwarding rule (a parent forwarding rule), you must use
+	// theIPAddresses field, but the Google Cloud generated child
+	// forwarding rules set the IPAddress field instead. Refer to
+	// theavailabilityGroup field for further details.
+	IPAddress string `json:"IPAddress,omitempty"`
+	// IP addresses for which this forwarding rule accepts traffic. All
+	// IP
+	// addresses must have the same IP version, IPv4 or IPv6. When a client
+	// sends
+	// traffic that matches one of the specified IP addresses, protocol and
+	// ports,
+	// the forwarding rule directs the traffic to the
+	// referencedbackendService. All IP addresses are served by the same set
+	// of
+	// backends, and they share the target capacities specified in the
+	// backend
+	// service fairly.
+	//
+	// Global external Passthrough Network Load Balancer requires two IP
+	// addresses
+	// for each forwarding rule to provide high availability when both
+	// IP
+	// addresses are used to serve client requests. The two IP addresses
+	// must come
+	// from global IP pools that belong to two distinct Availability
+	// Groups, represented by the
+	// purposePASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP0
+	// andPASSTHROUGH_LOAD_BALANCER_AVAILABILITY_GROUP1. TheIPAddresses
+	// field specifies zero, one, or two IP addresses:
+	//
+	//    - If omitted, Google Cloud assigns two ephemeral IP addresses, one
+	// from
+	//    each Availability Group.
+	//    - If you specify one IP address that references an existing static
+	// IP
+	//    address resource from one Availability Group, Google Cloud assigns
+	// an
+	//    ephemeral IP address from the other Availability Group.
+	//    - If you specify two IP addresses that reference existing static
+	// IP
+	//    address resources, they are required to be from different
+	// Availability
+	//    Groups.
+	//
+	//
+	//
+	// For global external Passthrough Network Load Balancer, each IP
+	// address can be one of the following:
+	//
+	//    - A static or ephemeral IPv4 address from a Google-owned IP pool.
+	//    - A static IPv4 address from a global public delegated prefix.
+	//    - A static or ephemeral IPv6 /96 prefix from a Google-owned IP
+	// pool.
+	//
+	//
+	//
+	// For global external Passthrough Network Load Balancer, the two IP
+	// addresses
+	// can be of different types. One IP address can be from a BYOIP prefix
+	// while
+	// the other is from a Google-owned IP pool. One IP address can be
+	// static
+	// while the other is ephemeral. However, both IP addresses must have
+	// the same
+	// IP version, IPv4 or IPv6.
+	//
+	// The IP addresses can only be set at creation and cannot be
+	// updated.
+	//
+	// When creating a global external Passthrough Network Load
+	// Balancer
+	// forwarding rule (a parent forwarding rule), you must use
+	// theIPAddresses field, but the Google Cloud-generated child
+	// forwarding rules set the IPAddress field instead. Refer to
+	// theavailabilityGroup field for further details.
+	//
+	// Refer to the IPAddress field for the formats that can be used
+	// to specify IP addresses while creating a forwarding rule.
+	//
+	// Because Passthrough Network Load Balancers do not terminate or
+	// translate
+	// traffic, the backend stack types must be compatible with the
+	// forwarding
+	// rule IP version:
+	//
+	//    - If the forwarding rule IP version is IPv4, backends should be
+	//    configured as dual-stack or IPv4-only.
+	//    - If the forwarding rule IP version is IPv6, backends should be
+	//    configured as dual-stack or IPv6-only.
 	IPAddresses []string `json:"IPAddresses,omitempty"`
 	// The IP protocol to which this rule applies.
 	//
@@ -3022,8 +3202,8 @@ type ForwardingRule struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// Specifies the forwarding rule type.
 	//
-	// For more information about forwarding rules, refer to
-	// Forwarding rule concepts.
+	// For more information, refer to
+	// Forwarding rule product and scheme table.
 	LoadBalancingScheme string `json:"loadBalancingScheme,omitempty"`
 	// Opaque filter criteria used by load balancer to restrict
 	// routing
@@ -3073,6 +3253,19 @@ type ForwardingRule struct {
 	// APIs, the forwarding rule name must be a 1-20 characters string
 	// with
 	// lowercase letters and numbers and must start with a letter.
+	//
+	// For global external Passthrough Network Load Balancer forwarding
+	// rules, the
+	// forwarding rule name must be 1-43 characters long. For each global
+	// external
+	// Passthrough Network Load Balancer forwarding rule (a parent
+	// forwarding
+	// rule) that you create, Google Cloud generates two output-only
+	// child
+	// forwarding rules that are named by concatenating the parent
+	// forwarding rule
+	// name with the `-ag0` and `-ag1` suffixes, respectively. Refer to
+	// theavailabilityGroup field for further details.
 	Name string `json:"name,omitempty"`
 	// This field is not used for global external load balancing.
 	//
@@ -3109,8 +3302,11 @@ type ForwardingRule struct {
 	// not use
 	// this field. Once set, this field is not mutable.
 	NoAutomateDnsZone bool `json:"noAutomateDnsZone,omitempty"`
-	// Output only. [Output Only] Applicable only to the child forwarding
-	// rules of global external
+	// Output only. [Output Only] The resource URL for the parent forwarding
+	// rule.
+	//
+	// Applicable only to the child forwarding rules of global
+	// external
 	// passthrough load balancers. This field contains the URL of the
 	// parent
 	// forwarding rule.
@@ -3140,8 +3336,9 @@ type ForwardingRule struct {
 	//
 	// For external forwarding rules, two or more forwarding rules cannot
 	// use the
-	// same [IPAddress, IPProtocol] pair, and cannot have
-	// overlappingportRanges.
+	// same [IPAddress, IPProtocol] pair (specified inIPAddress,
+	// IPAddresses, IPProtocol
+	// fields) if they have overlapping portRanges.
 	//
 	// For internal forwarding rules within the same VPC network, two or
 	// more
@@ -3174,8 +3371,9 @@ type ForwardingRule struct {
 	//
 	// For external forwarding rules, two or more forwarding rules cannot
 	// use the
-	// same [IPAddress, IPProtocol] pair if they share at least one
-	// port number.
+	// same [IPAddress, IPProtocol] pair (specified inIPAddress,
+	// IPAddresses, IPProtocol
+	// fields) if they share at least one port number.
 	//
 	// For internal forwarding rules within the same VPC network, two or
 	// more
@@ -3279,6 +3477,17 @@ type ForwardingRule struct {
 	//      -  For Private Service Connect forwarding rules that forward
 	// traffic to managed services, the target must be a service attachment.
 	// The target is not mutable once set as a service attachment.
+	//
+	//
+	//
+	// The following load balancers cannot set the target field (they should
+	// set the backendService field instead):
+	//
+	//    - Internal passthrough Network Load Balancers
+	//    - Backend service-based regional external passthrough Network
+	// Load
+	//    Balancers
+	//    - Global external passthrough Network Load Balancers
 	Target                   string `json:"target,omitempty"`
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
@@ -5774,7 +5983,8 @@ type RbacPolicy struct {
 
 // RegexRewrite is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type RegexRewrite struct {
-	// The regular expression used to match against the URL path.
+	// Required. The regular expression used to match against the URL
+	// path.
 	// It uses RE2 syntax with the following constraints:
 	//
 	//
@@ -5799,8 +6009,8 @@ type RegexRewrite struct {
 	//             - Digits range
 	//             - Symbols listed in characters allowed for ranges
 	PathPattern string `json:"pathPattern,omitempty"`
-	// Required when path pattern is specified. Used to rewrite matching
-	// parts of
+	// Required. Required when path pattern is specified. Used to rewrite
+	// matching parts of
 	// the path.
 	PathSubstitution string   `json:"pathSubstitution,omitempty"`
 	ForceSendFields  []string `json:"-"`
