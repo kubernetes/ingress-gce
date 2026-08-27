@@ -164,6 +164,7 @@ func TestRetryOnSyncError(t *testing.T) {
 	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to start syncer: %v", err)
 	}
+	defer syncerTester.syncer.Stop()
 
 	if err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) {
 		// In 5 seconds, syncer should be able to retry 3 times.

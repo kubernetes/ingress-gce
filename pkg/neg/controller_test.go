@@ -534,7 +534,7 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
 	defer func() {
-		stopChan <- struct{}{}
+		close(stopChan)
 		controller.stop()
 	}()
 	ctx := context.Background()
@@ -575,7 +575,7 @@ func TestEnqueueNodeWhenProviderIDPopulated(t *testing.T) {
 	// start the informer directly, without starting the entire controller.
 	go testContext.NodeInformer.Run(stopChan)
 	defer func() {
-		stopChan <- struct{}{}
+		close(stopChan)
 		controller.stop()
 	}()
 	ctx := context.Background()
@@ -1596,7 +1596,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			// start the informer directly, without starting the entire controller.
 			go testContext.EndpointSliceInformer.Run(stopChan)
 			defer func() {
-				stopChan <- struct{}{}
+				close(stopChan)
 				controller.stop()
 			}()
 			ctx := context.Background()
@@ -2576,7 +2576,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 	stopChan := make(chan struct{}, 1)
 	go testContext.NodeInformer.Run(stopChan)
 	defer func() {
-		stopChan <- struct{}{}
+		close(stopChan)
 	}()
 	if !cache.WaitForCacheSync(stopChan, testContext.NodeInformer.HasSynced) {
 		t.Fatal("timed out waiting for node informer to sync")
