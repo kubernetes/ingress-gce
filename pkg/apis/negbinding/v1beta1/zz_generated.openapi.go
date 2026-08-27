@@ -224,8 +224,7 @@ func schema_pkg_apis_negbinding_v1beta1_NetworkEndpointGroupBindingSpec(ref comm
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.SpecNegRef"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.SpecNegRef"),
 									},
 								},
 							},
@@ -268,8 +267,7 @@ func schema_pkg_apis_negbinding_v1beta1_NetworkEndpointGroupBindingStatus(ref co
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.Condition"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.Condition"),
 									},
 								},
 							},
@@ -290,8 +288,7 @@ func schema_pkg_apis_negbinding_v1beta1_NetworkEndpointGroupBindingStatus(ref co
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.StatusNegRef"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1.StatusNegRef"),
 									},
 								},
 							},
@@ -342,9 +339,8 @@ func schema_pkg_apis_negbinding_v1beta1_SpecNegRef(ref common.ReferenceCallback)
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Type:   []string{"string"},
+										Format: "",
 									},
 								},
 							},

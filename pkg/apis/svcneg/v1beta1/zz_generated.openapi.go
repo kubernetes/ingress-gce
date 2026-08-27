@@ -213,8 +213,7 @@ func schema_pkg_apis_svcneg_v1beta1_ServiceNetworkEndpointGroupStatus(ref common
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.NegObjectReference"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.NegObjectReference"),
 									},
 								},
 							},
@@ -235,8 +234,7 @@ func schema_pkg_apis_svcneg_v1beta1_ServiceNetworkEndpointGroupStatus(ref common
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.Condition"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.Condition"),
 									},
 								},
 							},

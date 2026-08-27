@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	github.com/ashanbrown/forbidigo v1.6.0
 	github.com/golangci/golangci-lint v1.64.8
-	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
+	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
 )
 
 require (

@@ -96,9 +96,8 @@ func schema_pkg_apis_serviceattachment_v1beta1_ConsumerProject(ref common.Refere
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Type:   []string{"string"},
+										Format: "",
 									},
 								},
 							},
@@ -116,9 +115,8 @@ func schema_pkg_apis_serviceattachment_v1beta1_ConsumerProject(ref common.Refere
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Type:   []string{"string"},
+										Format: "",
 									},
 								},
 							},
@@ -204,9 +202,8 @@ func schema_pkg_apis_serviceattachment_v1beta1_ServiceAttachmentSpec(ref common.
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Type:   []string{"string"},
+										Format: "",
 									},
 								},
 							},
@@ -245,8 +242,7 @@ func schema_pkg_apis_serviceattachment_v1beta1_ServiceAttachmentSpec(ref common.
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ConsumerProject"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ConsumerProject"),
 									},
 								},
 							},
@@ -264,9 +260,8 @@ func schema_pkg_apis_serviceattachment_v1beta1_ServiceAttachmentSpec(ref common.
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Type:   []string{"string"},
+										Format: "",
 									},
 								},
 							},
@@ -314,8 +309,7 @@ func schema_pkg_apis_serviceattachment_v1beta1_ServiceAttachmentStatus(ref commo
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: map[string]interface{}{},
-										Ref:     ref("k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ConsumerForwardingRule"),
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ConsumerForwardingRule"),
 									},
 								},
 							},
