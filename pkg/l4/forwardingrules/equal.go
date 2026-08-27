@@ -52,7 +52,8 @@ func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
 		fr1.Subnetwork == fr2.Subnetwork &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
+		fr1.NetworkTier == fr2.NetworkTier &&
+		equalResourcePaths(fr1.IpCollection, fr2.IpCollection), nil
 }
 
 // equalPorts compares two port ranges or slices of ports. Before comparison,

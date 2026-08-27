@@ -3439,3 +3439,89 @@ func TestEnsureInternalLoadBalancer_L4LBConfigLogging(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureInternalLoadBalancerIPCollectionError(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{
+			desc:       "IPv4 ILB service with ip-collection-v6",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+		},
+		{
+			desc:       "IPv6-only ILB service with ip-collection-v6",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
+		},
+		{
+			desc:       "Dual-stack ILB service with ip-collection-v6",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeNames := []string{"test-node-1"}
+			vals := gce.DefaultTestClusterValues()
+			fakeGCE := getFakeGCECloud(vals)
+
+			key := meta.RegionalKey("", fakeGCE.Region())
+			subnetToCreate := &compute.Subnetwork{
+				Ipv6AccessType: subnetInternalIPv6AccessType,
+				StackType:      "IPV4_IPV6",
+			}
+			if err := fakeGCE.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, subnetToCreate); err != nil {
+				t.Fatalf("Failed to create mock cluster subnet: %v", err)
+			}
+
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+			if svc.Annotations == nil {
+				svc.Annotations = make(map[string]string)
+			}
+			svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
+
+			l4Params := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				NetworkResolver:  network.NewFakeResolver(network.DefaultNetwork(fakeGCE)),
+				DualStackEnabled: true,
+			}
+			l4 := NewL4Handler(l4Params, klog.TODO())
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Expected no fatal error for unsupported annotation, but got %v", result.Error)
+			}
+
+			fakeRecorder := l4.recorder.(*record.FakeRecorder)
+			warningFound := false
+			for len(fakeRecorder.Events) > 0 {
+				event := <-fakeRecorder.Events
+				if strings.Contains(event, "Warning IPCollectionV6Error") {
+					warningFound = true
+					if !strings.Contains(event, "not supported for Internal LoadBalancers") {
+						t.Errorf("Expected warning to mention not supported for Internal LoadBalancers, got: %s", event)
+					}
+					if !strings.Contains(event, annotations.CustomSubnetAnnotationKey) {
+						t.Errorf("Expected warning to suggest %s annotation, got: %s", annotations.CustomSubnetAnnotationKey, event)
+					}
+					break
+				}
+			}
+			if !warningFound {
+				t.Errorf("Expected IPCollectionV6Error warning event, but got none")
+			}
+		})
+	}
+}

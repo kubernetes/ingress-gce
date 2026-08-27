@@ -230,3 +230,23 @@ func IsUnsupportedProtocolError(err error) bool {
 	var unsupportedProtocolErr *UnsupportedProtocolError
 	return errors.As(err, &unsupportedProtocolErr)
 }
+
+// BackendNotAttachedError is an error returned when service NEGs are not attached to the load balancer backend service.
+type BackendNotAttachedError struct {
+	bsName string
+}
+
+func (e *BackendNotAttachedError) Error() string {
+	return fmt.Sprintf("the service NEGs are not attached to the load balancer (backend service: %s)", e.bsName)
+}
+
+// NewBackendNotAttachedError creates a new BackendNotAttachedError.
+func NewBackendNotAttachedError(bsName string) *BackendNotAttachedError {
+	return &BackendNotAttachedError{bsName: bsName}
+}
+
+// IsBackendNotAttachedError checks if wrapped error is a BackendNotAttachedError.
+func IsBackendNotAttachedError(err error) bool {
+	var backendNotAttachedErr *BackendNotAttachedError
+	return errors.As(err, &backendNotAttachedErr)
+}

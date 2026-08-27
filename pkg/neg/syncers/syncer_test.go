@@ -160,10 +160,11 @@ func TestRetryOnSyncError(t *testing.T) {
 	syncerTester.mu.Lock()
 	syncerTester.syncError = true
 	syncerTester.mu.Unlock()
+	syncerTester.syncer.(*syncer).backoff = backoff.NewExponentialBackoffHandler(maxRetry, 0, 0)
 	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to start syncer: %v", err)
 	}
-	syncerTester.syncer.(*syncer).backoff = backoff.NewExponentialBackoffHandler(maxRetry, 0, 0)
+	defer syncerTester.syncer.Stop()
 
 	if err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) {
 		// In 5 seconds, syncer should be able to retry 3 times.

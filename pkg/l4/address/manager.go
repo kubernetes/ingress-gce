@@ -28,6 +28,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
@@ -59,19 +60,25 @@ const (
 
 // Original file in https://github.com/kubernetes/legacy-cloud-providers/blob/6aa80146c33550e908aed072618bd7f9998837f6/gce/gce_address_manager.go
 type Manager struct {
-	svc         gce.CloudAddressService
-	name        string
-	serviceName string
-	addressName string
-	targetIP    string
-	addressType cloud.LbScheme
-	region      string
-	subnetURL   string
-	tryRelease  bool
-	networkTier cloud.NetworkTier
-	ipVersion   IPVersion
+	svc          gce.CloudAddressService
+	name         string
+	serviceName  string
+	addressName  string
+	targetIP     string
+	addressType  cloud.LbScheme
+	region       string
+	subnetURL    string
+	tryRelease   bool
+	networkTier  cloud.NetworkTier
+	ipVersion    IPVersion
+	ipCollection string
 
 	frLogger klog.Logger
+}
+
+// SetIPCollection sets the ipCollection for the manager.
+func (m *Manager) SetIPCollection(ipCollection string) {
+	m.ipCollection = ipCollection
 }
 
 func NewManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, addressName, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier, ipVersion IPVersion, frLogger klog.Logger) *Manager {
@@ -265,11 +272,12 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	// Try reserving the IP with controller-owned address name
 	// If am.targetIP is an empty string, a new IP will be created.
 	newAddr := &compute.Address{
-		Name:        m.name,
-		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, m.serviceName),
-		Address:     m.targetIP,
-		AddressType: string(m.addressType),
-		Subnetwork:  m.subnetURL,
+		Name:         m.name,
+		Description:  fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, m.serviceName),
+		Address:      m.targetIP,
+		AddressType:  string(m.addressType),
+		Subnetwork:   m.subnetURL,
+		IpCollection: m.ipCollection,
 	}
 	// NetworkTier is supported only for External IP Address
 	if m.addressType == cloud.SchemeExternal {
@@ -390,6 +398,17 @@ func (m *Manager) validateAddress(addr *compute.Address) error {
 	}
 	if addr.NetworkTier != m.networkTier.ToGCEValue() {
 		return l4utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", m.name), m.networkTier.ToGCEValue(), addr.NetworkTier)
+	}
+	if flags.F.EnableBYOIPv6 {
+		// 1. If the Service specifies an explicit IP collection, any address MUST match it.
+		if m.ipCollection != "" && m.ipCollection != addr.IpCollection {
+			return fmt.Errorf("ipCollection mismatch, expected %q, actual: %q", m.ipCollection, addr.IpCollection)
+		}
+		// 2. If the Service omits IP collection AND omits static address (ephemeral),
+		// do not reuse a leftover PDP ephemeral address so we revert to a Google IP.
+		if m.ipCollection == "" && m.targetIP == "" && addr.IpCollection != "" {
+			return fmt.Errorf("ipCollection mismatch for ephemeral address, expected empty collection (Google IP), actual: %q", addr.IpCollection)
+		}
 	}
 	return nil
 }

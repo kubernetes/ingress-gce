@@ -300,3 +300,62 @@ func TestUnsupportedProtocolError(t *testing.T) {
 		})
 	}
 }
+
+func TestBackendNotAttachedError(t *testing.T) {
+	customErr := NewBackendNotAttachedError("test-backend-service")
+
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			desc: "direct error",
+			err:  customErr,
+			want: true,
+		},
+		{
+			desc: "wrapped in fmt.Errorf",
+			err:  fmt.Errorf("wrapped: %w", customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError",
+			err:  NewUserError(customErr),
+			want: true,
+		},
+		{
+			desc: "wrapped in UserError and then fmt.Errorf",
+			err:  fmt.Errorf("wrapped: %w", NewUserError(customErr)),
+			want: true,
+		},
+		{
+			desc: "joined with other errors",
+			err:  errors.Join(errors.New("generic error"), customErr),
+			want: true,
+		},
+		{
+			desc: "joined and wrapped in UserError",
+			err:  NewUserError(errors.Join(errors.New("generic error"), customErr)),
+			want: true,
+		},
+		{
+			desc: "other error",
+			err:  errors.New("other error"),
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsBackendNotAttachedError(tc.err); got != tc.want {
+				t.Errorf("IsBackendNotAttachedError() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
