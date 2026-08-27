@@ -53,7 +53,7 @@ if [[ -z "${IMAGE_TAG:-}" ]]; then
   IMAGE_TAG=$(git rev-parse --short HEAD)-$(date +%Y%m%dT%H%M%S)
 fi
 
-KO_GLBC_IMAGE=$(go run github.com/google/ko@v0.12.0 build --tags ${IMAGE_TAG} --base-import-paths --push=true ./cmd/glbc/)
+KO_GLBC_IMAGE=$(go run github.com/google/ko@v0.17.1 build --tags ${IMAGE_TAG} --base-import-paths --push=true ./cmd/glbc/)
 # remove the sha from the image name, it does not work with gce registry per example
 export GCE_GLBC_IMAGE=$(echo $KO_GLBC_IMAGE | cut -d\@ -f1)
 echo "GCE_GLBC_IMAGE=${GCE_GLBC_IMAGE}"
