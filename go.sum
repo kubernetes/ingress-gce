@@ -26,6 +26,8 @@ github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24 h1:sHglBQTwgx+rW
 github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24/go.mod h1:4UJr5HIiMZrwgkSPdsjy2uOQExX/WEILpIrO9UPGuXs=
 github.com/GaijinEntertainment/go-exhaustruct/v3 v3.3.1 h1:Sz1JIXEcSfhz7fUi7xHnhpIE0thVASYjvosApmHuD2k=
 github.com/GaijinEntertainment/go-exhaustruct/v3 v3.3.1/go.mod h1:n/LSCXNuIYqVfBlVXyHfMQkZDdp1/mmxfSjADd3z1Zg=
+github.com/GoogleCloudPlatform/gke-enterprise-mt v1.0.2 h1:gVKcFYRsOhCcsKSH7fdw8mtVmXObAWCXiwT+gnwWxck=
+github.com/GoogleCloudPlatform/gke-enterprise-mt v1.0.2/go.mod h1:HwtDGGDJtBYxZiWpC1TxIPvkvmI57gi53+Z/ltUvevI=
 github.com/GoogleCloudPlatform/gke-networking-api v0.2.4 h1:Ki2Uk1KFSmgnR4NTd+ix60dq2iLZsE4GPuIh0/bCFjc=
 github.com/GoogleCloudPlatform/gke-networking-api v0.2.4/go.mod h1:jC8/IazDeY3D4zTcEsZK6WiwbmqSTYjGNTZqXucxVVU=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v1.35.0 h1:SvXmA79s+vlNlViAh6r+1rNODTOfkmZ7tIUEoTBNvC8=
