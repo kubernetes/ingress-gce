@@ -843,6 +843,13 @@ message EnvoyFilter {
       // `NETWORK_FILTER`. If the named filter is not found, this operation
       // has no effect.
       REPLACE = 7;
+
+      // Merge the provided config with the generated config using
+      // proto merge semantics, similar to the `MERGE` operation.
+      // However, when merging list fields, this operation replaces
+      // the entire existing list with the provided list, instead of
+      // appending to it.
+      MERGE_AND_REPLACE_LIST = 8;
     }
 
     // Determines how the patch should be applied.

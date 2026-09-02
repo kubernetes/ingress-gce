@@ -810,9 +810,14 @@ type LoadBalancerSettings struct {
 	//	*LoadBalancerSettings_Simple
 	//	*LoadBalancerSettings_ConsistentHash
 	LbPolicy isLoadBalancerSettings_LbPolicy `protobuf_oneof:"lb_policy"`
-	// Locality load balancer settings, this will override mesh-wide settings in entirety, meaning no merging would be performed
+	// Locality load balancer settings. This will override mesh-wide settings in entirety, meaning no merging would be performed
 	// between this object and the object one in MeshConfig
+	// Only one of locality_lb_setting and zone_aware_lb_setting can be set.
 	LocalityLbSetting *LocalityLoadBalancerSetting `protobuf:"bytes,3,opt,name=locality_lb_setting,json=localityLbSetting,proto3" json:"locality_lb_setting,omitempty"`
+	// Zone Aware load balancer settings. This will override mesh-wide settings in entirety, meaning no merging would be performed
+	// between this object and the object one in MeshConfig.
+	// Only one of locality_lb_setting and zone_aware_lb_setting can be set.
+	ZoneAwareLbSetting *ZoneAwareLoadBalancerSetting `protobuf:"bytes,6,opt,name=zone_aware_lb_setting,json=zoneAwareLbSetting,proto3" json:"zone_aware_lb_setting,omitempty"`
 	// Deprecated: use `warmup` instead.
 	WarmupDurationSecs *duration.Duration `protobuf:"bytes,4,opt,name=warmup_duration_secs,json=warmupDurationSecs,proto3" json:"warmup_duration_secs,omitempty"`
 	// Represents the warmup configuration of Service. If set, the newly created endpoint of service
@@ -890,6 +895,13 @@ func (x *LoadBalancerSettings) GetLocalityLbSetting() *LocalityLoadBalancerSetti
 	return nil
 }
 
+func (x *LoadBalancerSettings) GetZoneAwareLbSetting() *ZoneAwareLoadBalancerSetting {
+	if x != nil {
+		return x.ZoneAwareLbSetting
+	}
+	return nil
+}
+
 func (x *LoadBalancerSettings) GetWarmupDurationSecs() *duration.Duration {
 	if x != nil {
 		return x.WarmupDurationSecs
@@ -909,10 +921,12 @@ type isLoadBalancerSettings_LbPolicy interface {
 }
 
 type LoadBalancerSettings_Simple struct {
+	// Standard load balancing algorithms that require no tuning.
 	Simple LoadBalancerSettings_SimpleLB `protobuf:"varint,1,opt,name=simple,proto3,enum=istio.networking.v1alpha3.LoadBalancerSettings_SimpleLB,oneof"`
 }
 
 type LoadBalancerSettings_ConsistentHash struct {
+	// Consistent Hash-based load balancing can be used to provide soft session affinity based on HTTP headers, cookies or other properties.
 	ConsistentHash *LoadBalancerSettings_ConsistentHashLB `protobuf:"bytes,2,opt,name=consistent_hash,json=consistentHash,proto3,oneof"`
 }
 
@@ -1082,6 +1096,15 @@ func (x *ConnectionPoolSettings) GetHttp() *ConnectionPoolSettings_HTTPSettings 
 // detection](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/outlier)
 // for more details.
 //
+// **Note:** Istio's default mesh configuration enables locality load balancing
+// (`localityLbSetting.enabled: true`). As a result, configuring
+// `OutlierDetection` in a `DestinationRule` will automatically activate
+// locality-aware failover behavior — Envoy uses the outlier detection state to
+// determine when endpoints are unhealthy and should be failed over to the next
+// locality. To suppress this implicit failover, explicitly set
+// `localityLbSetting.enabled: false` in the `DestinationRule`'s load balancer
+// settings.
+//
 // The following rule sets a connection pool size of 100 HTTP1 connections
 // with no more than 10 req/connection to the "reviews" service. In addition,
 // it sets a limit of 1000 concurrent HTTP/2 requests and configures upstream
@@ -1182,8 +1205,22 @@ type OutlierDetection struct {
 	// disabled by setting it to 0%. The default is 0% as it's not typically
 	// applicable in k8s environments with few pods per service.
 	MinHealthPercent int32 `protobuf:"varint,5,opt,name=min_health_percent,json=minHealthPercent,proto3" json:"min_health_percent,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Specifies the HTTP response status codes that are treated as outlier
+	// detection errors. If specified, only responses with one of these status
+	// codes will be treated as errors by outlier detection. If not specified,
+	// only 5xx responses are treated as errors.
+	//
+	// Note: Host ejection is still driven by the `consecutive5xxErrors` and
+	// `consecutiveGatewayErrors` thresholds; this field only redefines which
+	// HTTP status codes are counted as errors toward those thresholds.
+	//
+	// Values must be in the range [100, 599].
+	//
+	// +protoc-gen-crd:list-value-validation:Minimum=100
+	// +protoc-gen-crd:list-value-validation:Maximum=599
+	OutlierDetectionHttpErrorCodes []uint32 `protobuf:"varint,10,rep,packed,name=outlier_detection_http_error_codes,json=outlierDetectionHttpErrorCodes,proto3" json:"outlier_detection_http_error_codes,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
 }
 
 func (x *OutlierDetection) Reset() {
@@ -1278,6 +1315,13 @@ func (x *OutlierDetection) GetMinHealthPercent() int32 {
 		return x.MinHealthPercent
 	}
 	return 0
+}
+
+func (x *OutlierDetection) GetOutlierDetectionHttpErrorCodes() []uint32 {
+	if x != nil {
+		return x.OutlierDetectionHttpErrorCodes
+	}
+	return nil
 }
 
 // SSL/TLS related settings for upstream connections. See Envoy's [TLS
@@ -1691,6 +1735,253 @@ func (x *LocalityLoadBalancerSetting) GetEnabled() *wrappers.BoolValue {
 	return nil
 }
 
+// Zone Aware Load Balancer automatically routes traffic to endpoints in the same
+// availability zone as the downstream proxy, reducing cross-zone latency and
+// inter-zone data transfer costs. Unlike
+// [LocalityLoadBalancerSetting](#LocalityLoadBalancerSetting), which requires
+// explicitly specifying traffic weights per locality, Zone Aware Load Balancer
+// automatically calculates routing percentages based on the relative number of
+// upstream endpoints in each zone — no manual distribution configuration is
+// needed.
+//
+// When the local zone has proportionally fewer endpoints than the share of
+// traffic it would need to absorb, Envoy automatically overflows the excess to
+// other zones rather than overloading local endpoints.
+//
+// Additionally Zone Aware Load Balancer always partitions endpoints by region: the proxy's own region
+// forms the highest-priority tier and Envoy's automatic zone balancing operates
+// only among the endpoints within that region. Endpoints in other regions form
+// lower-priority failover tiers that receive traffic only when the local region is
+// unhealthy or runs out of capacity. The `failover` and `failoverPriority` fields
+// only influence how those lower tiers are ordered; the regional partitioning
+// itself is always applied whenever zone-aware load balancing is enabled.
+//
+// For proxies to activate Zone Aware Load Balancer all of the following conditions are needed:
+//
+//   - The downstream proxy is configured with  `ISTIO_META_ENABLE_SELF_DISCOVERY=true`
+//     (set via `proxyMetadata`).
+//   - The upstream cluster spans more than one zone.
+//   - The upstream cluster has at least `minClusterSize` hosts (default 6) in the local region.
+//   - There is at least one healthy endpoint in the local zone.
+//
+// If any of these conditions are not met, Envoy falls back to the configured load balancing policy
+// (e.g. round-robin or least-request) across all endpoints in the local region.
+//
+// For additional details on the algorithm, refer to Envoy's
+// [Zone Aware Routing](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/zone_aware)
+// documentation.
+//
+// Note: Zone Aware Load Balancer is not supported on Ambient mode.
+//
+// The following example enables zone-aware load balancing for the ratings service:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: DestinationRule
+// metadata:
+//
+//	name: ratings-zone-aware
+//
+// spec:
+//
+//	host: ratings.prod.svc.cluster.local
+//	trafficPolicy:
+//	  loadBalancer:
+//	    simple: ROUND_ROBIN
+//	    zoneAwareLbSetting:
+//	      enabled: true
+//
+// ```
+//
+// The following example adds a cross-region failover policy so that when all
+// endpoints in `us-east` become unhealthy, traffic fails over to `eu-west`
+// instead of any region globally:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: DestinationRule
+// metadata:
+//
+//	name: ratings-zone-aware-failover
+//
+// spec:
+//
+//	host: ratings.prod.svc.cluster.local
+//	trafficPolicy:
+//	  loadBalancer:
+//	    simple: LEAST_REQUEST
+//	    zoneAwareLbSetting:
+//	      enabled: true
+//	      failover:
+//	        - from: us-east
+//	          to: eu-west
+//	        - from: us-west
+//	          to: us-east
+//	  outlierDetection:
+//	    consecutive5xxErrors: 5
+//	    interval: 30s
+//	    baseEjectionTime: 30s
+//
+// ```
+type ZoneAwareLoadBalancerSetting struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Enable zone aware load balancing. This is DestinationRule-level and will
+	// override mesh-wide settings in entirety, meaning no merging is performed
+	// with MeshConfig.
+	Enabled *wrappers.BoolValue `protobuf:"bytes,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// Optional. Explicitly specifies the region traffic will land on when the endpoints
+	// in the local region become unhealthy. Regional partitioning is always
+	// applied; this field only customizes the ordering of the cross-region tiers.
+	// It may be used on its own, or together with `failoverPriority`, in which case
+	// it orders the regional tiers applied on top of the label-based priorities.
+	// For this to be effective consider one of the following:
+	// - Use together with `OutlierDetection` to detect unhealthy endpoints in the local zone so that traffic fails over to other zones according to the specified priority.
+	// - Enable `PILOT_SEND_UNHEALTHY_ENDPOINTS` to allow Envoy to know when endpoints in the local zone are unhealthy and failover according to the specified priority.
+	Failover []*ZoneAwareLoadBalancerSetting_Failover `protobuf:"bytes,2,rep,name=failover,proto3" json:"failover,omitempty"`
+	// failoverPriority is an ordered list of labels used to sort endpoints for
+	// priority-based load balancing. This supports traffic failover across
+	// different groups of endpoints and complements the automatic zone-level
+	// routing by allowing label-based priority tiers on top of it.
+	//
+	// Regional partitioning is always applied in addition to these labels: within
+	// each tier produced by `failoverPriority`, endpoints in the proxy's own region
+	// are preferred over endpoints in other regions (ordered by `failover` when it
+	// is also set). Because region-, zone-, and subzone-level routing are all handled
+	// automatically, `failoverPriority` must not include the
+	// `topology.kubernetes.io/region`, `topology.kubernetes.io/zone`, or
+	// `topology.istio.io/subzone` labels.
+	//
+	// Two kinds of labels can be specified:
+	//
+	//   - Specify only label keys `[key1, key2, key3]`, istio would compare the label values of client with endpoints.
+	//     Suppose there are total N label keys `[key1, key2, key3, ...keyN]` specified:
+	//
+	//     1. Endpoints matching all N labels with the client proxy have priority P(0) i.e. the highest priority.
+	//     2. Endpoints matching the first N-1 labels with the client proxy have priority P(1) i.e. second highest priority.
+	//     3. By extension of this logic, endpoints matching only the first label with the client proxy has priority P(N-1) i.e. second lowest priority.
+	//     4. All the other endpoints have priority P(N) i.e. lowest priority.
+	//
+	//   - Specify labels with key and value `[key1=value1, key2=value2, key3=value3]`, istio would compare the labels with endpoints.
+	//     Suppose there are total N labels `[key1=value1, key2=value2, key3=value3, ...keyN=valueN]` specified:
+	//
+	//     1. Endpoints matching all N labels have priority P(0) i.e. the highest priority.
+	//     2. Endpoints matching the first N-1 labels have priority P(1) i.e. second highest priority.
+	//     3. By extension of this logic, endpoints matching only the first label has priority P(N-1) i.e. second lowest priority.
+	//     4. All the other endpoints have priority P(N) i.e. lowest priority.
+	//
+	// Note: For a label to be considered for match, the previous labels must match, i.e. nth label would be considered matched only if first n-1 labels match.
+	//
+	// It can be any label specified on both client and server workloads.
+	// The following labels which have special semantic meaning are also supported:
+	//
+	//   - `topology.istio.io/network` is used to match the network metadata of an endpoint, which can be specified by pod/namespace label `topology.istio.io/network`, sidecar env `ISTIO_META_NETWORK` or MeshNetworks.
+	//   - `topology.istio.io/cluster` is used to match the clusterID of an endpoint, which can be specified by pod label `topology.istio.io/cluster` or pod env `ISTIO_META_CLUSTER_ID`.
+	//   - `topology.kubernetes.io/region` is used to match the region metadata of an endpoint, which maps to Kubernetes node label `topology.kubernetes.io/region` or the deprecated label `failure-domain.beta.kubernetes.io/region`.
+	//   - `topology.kubernetes.io/zone` is used to match the zone metadata of an endpoint, which maps to Kubernetes node label `topology.kubernetes.io/zone` or the deprecated label `failure-domain.beta.kubernetes.io/zone`.
+	//   - `kubernetes.io/hostname` is used to match the current node of an endpoint, which maps to Kubernetes node label `kubernetes.io/hostname`.
+	//
+	// The below topology config indicates the following priority levels:
+	//
+	// ```yaml
+	// failoverPriority:
+	// - "topology.istio.io/network"
+	// - "topology.kubernetes.io/region"
+	// - "topology.kubernetes.io/zone"
+	// ```
+	//
+	// 1. endpoints match same [network, region, zone] label with the client proxy have the highest priority.
+	// 2. endpoints have same [network, region] label but different [zone] label with the client proxy have the second highest priority.
+	// 3. endpoints have same [network] but different [region] labels with the client proxy have the third highest priority.
+	// 4. all the other endpoints have the same lowest priority.
+	//
+	// Suppose a service associated endpoints reside in multi clusters, the below example represents:
+	// 1. endpoints in `clusterA` and has `version=v1` label have P(0) priority.
+	// 2. endpoints not in `clusterA` but has `version=v1` label have P(1) priority.
+	// 3. all the other endpoints have P(2) priority.
+	//
+	// ```yaml
+	// failoverPriority:
+	// - "version=v1"
+	// - "topology.istio.io/cluster=clusterA"
+	// ```
+	//
+	// Optional. May be combined with `failover` (which then orders the regional
+	// tiers applied on top of these label-based priorities).
+	// For this to be effective consider one of the following:
+	// - Use together with `OutlierDetection` to detect unhealthy endpoints in the local zone so that traffic fails over to other zones according to the specified priority.
+	// - Enable `PILOT_SEND_UNHEALTHY_ENDPOINTS` to allow Envoy to know when endpoints in the local zone are unhealthy and failover according to the specified priority.
+	FailoverPriority []string `protobuf:"bytes,3,rep,name=failover_priority,json=failoverPriority,proto3" json:"failover_priority,omitempty"`
+	// Minimum number of hosts in the upstream cluster's local region required for zone-aware
+	// load balancing to be enabled. If the total number of upstream hosts in the local region falls below
+	// this value, zone-aware load balancing is disabled for this cluster regardless of
+	// other settings. This guards against zone-skew issues that can occur with
+	// very small clusters where the uneven distribution of hosts across zones
+	// would produce poor load balancing results.
+	// If not specified, the default is 6.
+	// +kubebuilder:validation:Minimum=1
+	MinClusterSize *wrappers.UInt32Value `protobuf:"bytes,4,opt,name=min_cluster_size,json=minClusterSize,proto3" json:"min_cluster_size,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ZoneAwareLoadBalancerSetting) Reset() {
+	*x = ZoneAwareLoadBalancerSetting{}
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ZoneAwareLoadBalancerSetting) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ZoneAwareLoadBalancerSetting) ProtoMessage() {}
+
+func (x *ZoneAwareLoadBalancerSetting) ProtoReflect() protoreflect.Message {
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ZoneAwareLoadBalancerSetting.ProtoReflect.Descriptor instead.
+func (*ZoneAwareLoadBalancerSetting) Descriptor() ([]byte, []int) {
+	return file_networking_v1alpha3_destination_rule_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ZoneAwareLoadBalancerSetting) GetEnabled() *wrappers.BoolValue {
+	if x != nil {
+		return x.Enabled
+	}
+	return nil
+}
+
+func (x *ZoneAwareLoadBalancerSetting) GetFailover() []*ZoneAwareLoadBalancerSetting_Failover {
+	if x != nil {
+		return x.Failover
+	}
+	return nil
+}
+
+func (x *ZoneAwareLoadBalancerSetting) GetFailoverPriority() []string {
+	if x != nil {
+		return x.FailoverPriority
+	}
+	return nil
+}
+
+func (x *ZoneAwareLoadBalancerSetting) GetMinClusterSize() *wrappers.UInt32Value {
+	if x != nil {
+		return x.MinClusterSize
+	}
+	return nil
+}
+
 // Traffic policies that apply to specific ports of the service
 type TrafficPolicy_PortTrafficPolicy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1711,7 +2002,7 @@ type TrafficPolicy_PortTrafficPolicy struct {
 
 func (x *TrafficPolicy_PortTrafficPolicy) Reset() {
 	*x = TrafficPolicy_PortTrafficPolicy{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[9]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1723,7 +2014,7 @@ func (x *TrafficPolicy_PortTrafficPolicy) String() string {
 func (*TrafficPolicy_PortTrafficPolicy) ProtoMessage() {}
 
 func (x *TrafficPolicy_PortTrafficPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[9]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1796,7 +2087,7 @@ type TrafficPolicy_TunnelSettings struct {
 
 func (x *TrafficPolicy_TunnelSettings) Reset() {
 	*x = TrafficPolicy_TunnelSettings{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[10]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1808,7 +2099,7 @@ func (x *TrafficPolicy_TunnelSettings) String() string {
 func (*TrafficPolicy_TunnelSettings) ProtoMessage() {}
 
 func (x *TrafficPolicy_TunnelSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[10]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1856,7 +2147,7 @@ type TrafficPolicy_ProxyProtocol struct {
 
 func (x *TrafficPolicy_ProxyProtocol) Reset() {
 	*x = TrafficPolicy_ProxyProtocol{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[11]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1868,7 +2159,7 @@ func (x *TrafficPolicy_ProxyProtocol) String() string {
 func (*TrafficPolicy_ProxyProtocol) ProtoMessage() {}
 
 func (x *TrafficPolicy_ProxyProtocol) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[11]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1908,13 +2199,28 @@ type TrafficPolicy_RetryBudget struct {
 	//
 	// Defaults to 3.
 	MinRetryConcurrency uint32 `protobuf:"varint,2,opt,name=min_retry_concurrency,json=minRetryConcurrency,proto3" json:"min_retry_concurrency,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Specifies the duration in which requests will be considered when calculating
+	// the budget for retries. This parameter alters the way in which the retry budget
+	// is calculated, overriding the default behavior when specified.
+	//
+	// By default, when budget_interval is set to 0ms, only presently active
+	// and pending requests are considered when calculating the retry budget.
+	//
+	// When a non-zero budget_interval is specified, new requests are
+	// considered for the duration of budget_interval when calculating
+	// the retry budget.
+	//
+	// Defaults to 0ms.
+	//
+	// +protoc-gen-crd:duration-validation:none
+	BudgetInterval *duration.Duration `protobuf:"bytes,3,opt,name=budget_interval,json=budgetInterval,proto3" json:"budget_interval,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *TrafficPolicy_RetryBudget) Reset() {
 	*x = TrafficPolicy_RetryBudget{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[12]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1926,7 +2232,7 @@ func (x *TrafficPolicy_RetryBudget) String() string {
 func (*TrafficPolicy_RetryBudget) ProtoMessage() {}
 
 func (x *TrafficPolicy_RetryBudget) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[12]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1954,6 +2260,13 @@ func (x *TrafficPolicy_RetryBudget) GetMinRetryConcurrency() uint32 {
 		return x.MinRetryConcurrency
 	}
 	return 0
+}
+
+func (x *TrafficPolicy_RetryBudget) GetBudgetInterval() *duration.Duration {
+	if x != nil {
+		return x.BudgetInterval
+	}
+	return nil
 }
 
 // Consistent Hash-based load balancing can be used to provide soft
@@ -2004,7 +2317,7 @@ type LoadBalancerSettings_ConsistentHashLB struct {
 
 func (x *LoadBalancerSettings_ConsistentHashLB) Reset() {
 	*x = LoadBalancerSettings_ConsistentHashLB{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[14]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2016,7 +2329,7 @@ func (x *LoadBalancerSettings_ConsistentHashLB) String() string {
 func (*LoadBalancerSettings_ConsistentHashLB) ProtoMessage() {}
 
 func (x *LoadBalancerSettings_ConsistentHashLB) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[14]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2179,7 +2492,7 @@ type LoadBalancerSettings_ConsistentHashLB_RingHash struct {
 
 func (x *LoadBalancerSettings_ConsistentHashLB_RingHash) Reset() {
 	*x = LoadBalancerSettings_ConsistentHashLB_RingHash{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[15]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2504,7 @@ func (x *LoadBalancerSettings_ConsistentHashLB_RingHash) String() string {
 func (*LoadBalancerSettings_ConsistentHashLB_RingHash) ProtoMessage() {}
 
 func (x *LoadBalancerSettings_ConsistentHashLB_RingHash) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[15]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2228,7 +2541,7 @@ type LoadBalancerSettings_ConsistentHashLB_MagLev struct {
 
 func (x *LoadBalancerSettings_ConsistentHashLB_MagLev) Reset() {
 	*x = LoadBalancerSettings_ConsistentHashLB_MagLev{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[16]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2240,7 +2553,7 @@ func (x *LoadBalancerSettings_ConsistentHashLB_MagLev) String() string {
 func (*LoadBalancerSettings_ConsistentHashLB_MagLev) ProtoMessage() {}
 
 func (x *LoadBalancerSettings_ConsistentHashLB_MagLev) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[16]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2284,7 +2597,7 @@ type LoadBalancerSettings_ConsistentHashLB_HTTPCookie struct {
 
 func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie) Reset() {
 	*x = LoadBalancerSettings_ConsistentHashLB_HTTPCookie{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[17]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2296,7 +2609,7 @@ func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie) String() string {
 func (*LoadBalancerSettings_ConsistentHashLB_HTTPCookie) ProtoMessage() {}
 
 func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[17]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2666,7 @@ type LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute struct {
 
 func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute) Reset() {
 	*x = LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[18]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2365,7 +2678,7 @@ func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute) String() st
 func (*LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute) ProtoMessage() {}
 
 func (x *LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[18]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2409,14 +2722,24 @@ type ConnectionPoolSettings_TCPSettings struct {
 	// was established. If not set, there is no max duration. When `maxConnectionDuration`
 	// is reached the connection will be closed. Duration must be at least 1ms.
 	MaxConnectionDuration *duration.Duration `protobuf:"bytes,4,opt,name=max_connection_duration,json=maxConnectionDuration,proto3" json:"max_connection_duration,omitempty"`
-	// The idle timeout for TCP connections.
-	// The idle timeout is defined as the period in which there are no bytes sent or received on either
-	// the upstream or downstream connection.
+	// The idle timeout for TCP connections. This is applied to the outbound connections to the upstream service.
+	// The idle timeout is defined as the period in which there are no bytes sent or received on the
+	// upstream connection.
 	// If not set, the default idle timeout is 1 hour. If set to 0s, the timeout will be disabled.
 	// Idle timeout is not configured per each cluster individually when weighted destinations are used,
 	// because idleTimeout is a property of a listener, not a cluster. In that case, idleTimeout
 	// specified in a destination rule for the first weighted route is configured in the listener,
 	// which means also for all weighted routes.
+	// To set the idle timeout for downstream (inbound) connections, use the
+	// `ISTIO_META_IDLE_TIMEOUT` field in the proxy configuration (e.g., via the `proxy.istio.io/config`
+	// annotation) which applies to all inbound connections.
+	// ```
+	// proxy.istio.io/config: |-
+	//
+	//	proxyMetadata:
+	//	   ISTIO_META_IDLE_TIMEOUT: "100s"
+	//
+	// ```
 	// +protoc-gen-crd:duration-validation:none
 	IdleTimeout   *duration.Duration `protobuf:"bytes,5,opt,name=idle_timeout,json=idleTimeout,proto3" json:"idle_timeout,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2425,7 +2748,7 @@ type ConnectionPoolSettings_TCPSettings struct {
 
 func (x *ConnectionPoolSettings_TCPSettings) Reset() {
 	*x = ConnectionPoolSettings_TCPSettings{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[19]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2437,7 +2760,7 @@ func (x *ConnectionPoolSettings_TCPSettings) String() string {
 func (*ConnectionPoolSettings_TCPSettings) ProtoMessage() {}
 
 func (x *ConnectionPoolSettings_TCPSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[19]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2524,13 +2847,15 @@ type ConnectionPoolSettings_HTTPSettings struct {
 	// The maximum number of concurrent streams allowed for a peer on one HTTP/2 connection.
 	// Defaults to 2^31-1.
 	MaxConcurrentStreams int32 `protobuf:"varint,8,opt,name=max_concurrent_streams,json=maxConcurrentStreams,proto3" json:"max_concurrent_streams,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Configure HTTP/2 PING frames for upstream connections.
+	Http2KeepAlive *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive `protobuf:"bytes,9,opt,name=http2_keep_alive,json=http2KeepAlive,proto3" json:"http2_keep_alive,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ConnectionPoolSettings_HTTPSettings) Reset() {
 	*x = ConnectionPoolSettings_HTTPSettings{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[20]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2542,7 +2867,7 @@ func (x *ConnectionPoolSettings_HTTPSettings) String() string {
 func (*ConnectionPoolSettings_HTTPSettings) ProtoMessage() {}
 
 func (x *ConnectionPoolSettings_HTTPSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[20]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2614,6 +2939,13 @@ func (x *ConnectionPoolSettings_HTTPSettings) GetMaxConcurrentStreams() int32 {
 	return 0
 }
 
+func (x *ConnectionPoolSettings_HTTPSettings) GetHttp2KeepAlive() *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive {
+	if x != nil {
+		return x.Http2KeepAlive
+	}
+	return nil
+}
+
 // TCP keepalive.
 type ConnectionPoolSettings_TCPSettings_TcpKeepalive struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2635,7 +2967,7 @@ type ConnectionPoolSettings_TCPSettings_TcpKeepalive struct {
 
 func (x *ConnectionPoolSettings_TCPSettings_TcpKeepalive) Reset() {
 	*x = ConnectionPoolSettings_TCPSettings_TcpKeepalive{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[21]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2647,7 +2979,7 @@ func (x *ConnectionPoolSettings_TCPSettings_TcpKeepalive) String() string {
 func (*ConnectionPoolSettings_TCPSettings_TcpKeepalive) ProtoMessage() {}
 
 func (x *ConnectionPoolSettings_TCPSettings_TcpKeepalive) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[21]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2684,6 +3016,63 @@ func (x *ConnectionPoolSettings_TCPSettings_TcpKeepalive) GetInterval() *duratio
 	return nil
 }
 
+// Settings for HTTP/2 PING frames.
+type ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Send HTTP/2 PING frames at this interval. Required when
+	// `http2KeepAlive` is set.
+	Interval *duration.Duration `protobuf:"bytes,1,opt,name=interval,proto3" json:"interval,omitempty"`
+	// How long to wait for a response to an HTTP/2 PING frame before
+	// closing the connection. Required when `http2KeepAlive` is set.
+	Timeout       *duration.Duration `protobuf:"bytes,2,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) Reset() {
+	*x = ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive{}
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) ProtoMessage() {}
+
+func (x *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) ProtoReflect() protoreflect.Message {
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive.ProtoReflect.Descriptor instead.
+func (*ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) Descriptor() ([]byte, []int) {
+	return file_networking_v1alpha3_destination_rule_proto_rawDescGZIP(), []int{5, 1, 0}
+}
+
+func (x *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) GetInterval() *duration.Duration {
+	if x != nil {
+		return x.Interval
+	}
+	return nil
+}
+
+func (x *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) GetTimeout() *duration.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
 // Describes how traffic originating in the 'from' zone or sub-zone is
 // distributed over a set of 'to' zones. Syntax for specifying a zone is
 // {region}/{zone}/{sub-zone} and terminal wildcards are allowed on any
@@ -2708,7 +3097,7 @@ type LocalityLoadBalancerSetting_Distribute struct {
 
 func (x *LocalityLoadBalancerSetting_Distribute) Reset() {
 	*x = LocalityLoadBalancerSetting_Distribute{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[22]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2720,7 +3109,7 @@ func (x *LocalityLoadBalancerSetting_Distribute) String() string {
 func (*LocalityLoadBalancerSetting_Distribute) ProtoMessage() {}
 
 func (x *LocalityLoadBalancerSetting_Distribute) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[22]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2770,7 +3159,7 @@ type LocalityLoadBalancerSetting_Failover struct {
 
 func (x *LocalityLoadBalancerSetting_Failover) Reset() {
 	*x = LocalityLoadBalancerSetting_Failover{}
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[23]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2782,7 +3171,7 @@ func (x *LocalityLoadBalancerSetting_Failover) String() string {
 func (*LocalityLoadBalancerSetting_Failover) ProtoMessage() {}
 
 func (x *LocalityLoadBalancerSetting_Failover) ProtoReflect() protoreflect.Message {
-	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[23]
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2812,6 +3201,68 @@ func (x *LocalityLoadBalancerSetting_Failover) GetTo() string {
 	return ""
 }
 
+// Specify the traffic failover policy across regions. Since zone and sub-zone
+// failover is supported by default this only needs to be specified for
+// regions when the operator needs to constrain traffic failover so that
+// the default behavior of failing over to any endpoint globally does not
+// apply. This is useful when failing over traffic across regions would not
+// improve service health or may need to be restricted for other reasons
+// like regulatory controls.
+type ZoneAwareLoadBalancerSetting_Failover struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Originating region.
+	From string `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
+	// Destination region the traffic will fail over to when endpoints in
+	// the 'from' region becomes unhealthy.
+	To            string `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ZoneAwareLoadBalancerSetting_Failover) Reset() {
+	*x = ZoneAwareLoadBalancerSetting_Failover{}
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ZoneAwareLoadBalancerSetting_Failover) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ZoneAwareLoadBalancerSetting_Failover) ProtoMessage() {}
+
+func (x *ZoneAwareLoadBalancerSetting_Failover) ProtoReflect() protoreflect.Message {
+	mi := &file_networking_v1alpha3_destination_rule_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ZoneAwareLoadBalancerSetting_Failover.ProtoReflect.Descriptor instead.
+func (*ZoneAwareLoadBalancerSetting_Failover) Descriptor() ([]byte, []int) {
+	return file_networking_v1alpha3_destination_rule_proto_rawDescGZIP(), []int{9, 0}
+}
+
+func (x *ZoneAwareLoadBalancerSetting_Failover) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *ZoneAwareLoadBalancerSetting_Failover) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
 var File_networking_v1alpha3_destination_rule_proto protoreflect.FileDescriptor
 
 const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
@@ -2822,7 +3273,7 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\x0etraffic_policy\x18\x02 \x01(\v2(.istio.networking.v1alpha3.TrafficPolicyR\rtrafficPolicy\x12;\n" +
 	"\asubsets\x18\x03 \x03(\v2!.istio.networking.v1alpha3.SubsetR\asubsets\x12\x1b\n" +
 	"\texport_to\x18\x04 \x03(\tR\bexportTo\x12Q\n" +
-	"\x11workload_selector\x18\x05 \x01(\v2$.istio.type.v1beta1.WorkloadSelectorR\x10workloadSelector\"\xed\v\n" +
+	"\x11workload_selector\x18\x05 \x01(\v2$.istio.type.v1beta1.WorkloadSelectorR\x10workloadSelector\"\xb2\f\n" +
 	"\rTrafficPolicy\x12T\n" +
 	"\rload_balancer\x18\x01 \x01(\v2/.istio.networking.v1alpha3.LoadBalancerSettingsR\floadBalancer\x12Z\n" +
 	"\x0fconnection_pool\x18\x02 \x01(\v21.istio.networking.v1alpha3.ConnectionPoolSettingsR\x0econnectionPool\x12X\n" +
@@ -2848,21 +3299,23 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\x0e2>.istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.VERSIONR\aversion\"\x19\n" +
 	"\aVERSION\x12\x06\n" +
 	"\x02V1\x10\x00\x12\x06\n" +
-	"\x02V2\x10\x01\x1ay\n" +
+	"\x02V2\x10\x01\x1a\xbd\x01\n" +
 	"\vRetryBudget\x126\n" +
 	"\apercent\x18\x01 \x01(\v2\x1c.google.protobuf.DoubleValueR\apercent\x122\n" +
-	"\x15min_retry_concurrency\x18\x02 \x01(\rR\x13minRetryConcurrency\"\xf5\x01\n" +
+	"\x15min_retry_concurrency\x18\x02 \x01(\rR\x13minRetryConcurrency\x12B\n" +
+	"\x0fbudget_interval\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x0ebudgetInterval\"\xf5\x01\n" +
 	"\x06Subset\x12\x18\n" +
 	"\x04name\x18\x01 \x01(\tB\x04\xe2A\x01\x02R\x04name\x12E\n" +
 	"\x06labels\x18\x02 \x03(\v2-.istio.networking.v1alpha3.Subset.LabelsEntryR\x06labels\x12O\n" +
 	"\x0etraffic_policy\x18\x03 \x01(\v2(.istio.networking.v1alpha3.TrafficPolicyR\rtrafficPolicy\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\f\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\f\n" +
 	"\x14LoadBalancerSettings\x12R\n" +
 	"\x06simple\x18\x01 \x01(\x0e28.istio.networking.v1alpha3.LoadBalancerSettings.SimpleLBH\x00R\x06simple\x12k\n" +
 	"\x0fconsistent_hash\x18\x02 \x01(\v2@.istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLBH\x00R\x0econsistentHash\x12f\n" +
-	"\x13locality_lb_setting\x18\x03 \x01(\v26.istio.networking.v1alpha3.LocalityLoadBalancerSettingR\x11localityLbSetting\x12K\n" +
+	"\x13locality_lb_setting\x18\x03 \x01(\v26.istio.networking.v1alpha3.LocalityLoadBalancerSettingR\x11localityLbSetting\x12j\n" +
+	"\x15zone_aware_lb_setting\x18\x06 \x01(\v27.istio.networking.v1alpha3.ZoneAwareLoadBalancerSettingR\x12zoneAwareLbSetting\x12K\n" +
 	"\x14warmup_duration_secs\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x12warmupDurationSecs\x12F\n" +
 	"\x06warmup\x18\x05 \x01(\v2..istio.networking.v1alpha3.WarmupConfigurationR\x06warmup\x1a\xab\a\n" +
 	"\x10ConsistentHashLB\x12*\n" +
@@ -2908,8 +3361,7 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\x0fminimum_percent\x18\x02 \x01(\v2\x1c.google.protobuf.DoubleValueR\x0eminimumPercent\x12<\n" +
 	"\n" +
 	"aggression\x18\x03 \x01(\v2\x1c.google.protobuf.DoubleValueR\n" +
-	"aggression\"\x88\n" +
-	"\n" +
+	"aggression\"\x8a\f\n" +
 	"\x16ConnectionPoolSettings\x12O\n" +
 	"\x03tcp\x18\x01 \x01(\v2=.istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettingsR\x03tcp\x12R\n" +
 	"\x04http\x18\x02 \x01(\v2>.istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettingsR\x04http\x1a\x8b\x04\n" +
@@ -2922,7 +3374,7 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\fTcpKeepalive\x12\x16\n" +
 	"\x06probes\x18\x01 \x01(\rR\x06probes\x12-\n" +
 	"\x04time\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x04time\x125\n" +
-	"\binterval\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\binterval\x1a\xba\x04\n" +
+	"\binterval\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\binterval\x1a\xbc\x06\n" +
 	"\fHTTPSettings\x12;\n" +
 	"\x1ahttp1_max_pending_requests\x18\x01 \x01(\x05R\x17http1MaxPendingRequests\x12,\n" +
 	"\x12http2_max_requests\x18\x02 \x01(\x05R\x10http2MaxRequests\x12=\n" +
@@ -2932,11 +3384,15 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\fidle_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\vidleTimeout\x12z\n" +
 	"\x11h2_upgrade_policy\x18\x06 \x01(\x0e2N.istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.H2UpgradePolicyR\x0fh2UpgradePolicy\x12.\n" +
 	"\x13use_client_protocol\x18\a \x01(\bR\x11useClientProtocol\x124\n" +
-	"\x16max_concurrent_streams\x18\b \x01(\x05R\x14maxConcurrentStreams\"?\n" +
+	"\x16max_concurrent_streams\x18\b \x01(\x05R\x14maxConcurrentStreams\x12|\n" +
+	"\x10http2_keep_alive\x18\t \x01(\v2R.istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.ConnectionKeepaliveR\x0ehttp2KeepAlive\x1a\x81\x01\n" +
+	"\x13ConnectionKeepalive\x125\n" +
+	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\binterval\x123\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"?\n" +
 	"\x0fH2UpgradePolicy\x12\v\n" +
 	"\aDEFAULT\x10\x00\x12\x12\n" +
 	"\x0eDO_NOT_UPGRADE\x10\x01\x12\v\n" +
-	"\aUPGRADE\x10\x02\"\x8a\x05\n" +
+	"\aUPGRADE\x10\x02\"\xd6\x05\n" +
 	"\x10OutlierDetection\x121\n" +
 	"\x12consecutive_errors\x18\x01 \x01(\x05B\x02\x18\x01R\x11consecutiveErrors\x12J\n" +
 	"\"split_external_local_origin_errors\x18\b \x01(\bR\x1esplitExternalLocalOriginErrors\x12g\n" +
@@ -2946,7 +3402,9 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\binterval\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\binterval\x12G\n" +
 	"\x12base_ejection_time\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x10baseEjectionTime\x120\n" +
 	"\x14max_ejection_percent\x18\x04 \x01(\x05R\x12maxEjectionPercent\x12,\n" +
-	"\x12min_health_percent\x18\x05 \x01(\x05R\x10minHealthPercent\"\xe4\x03\n" +
+	"\x12min_health_percent\x18\x05 \x01(\x05R\x10minHealthPercent\x12J\n" +
+	"\"outlier_detection_http_error_codes\x18\n" +
+	" \x03(\rR\x1eoutlierDetectionHttpErrorCodes\"\xe4\x03\n" +
 	"\x11ClientTLSSettings\x12H\n" +
 	"\x04mode\x18\x01 \x01(\x0e24.istio.networking.v1alpha3.ClientTLSSettings.TLSmodeR\x04mode\x12-\n" +
 	"\x12client_certificate\x18\x02 \x01(\tR\x11clientCertificate\x12\x1f\n" +
@@ -2981,6 +3439,14 @@ const file_networking_v1alpha3_destination_rule_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\rR\x05value:\x028\x01\x1a.\n" +
 	"\bFailover\x12\x12\n" +
 	"\x04from\x18\x01 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x02 \x01(\tR\x02to\"\xd7\x02\n" +
+	"\x1cZoneAwareLoadBalancerSetting\x124\n" +
+	"\aenabled\x18\x01 \x01(\v2\x1a.google.protobuf.BoolValueR\aenabled\x12\\\n" +
+	"\bfailover\x18\x02 \x03(\v2@.istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.FailoverR\bfailover\x12+\n" +
+	"\x11failover_priority\x18\x03 \x03(\tR\x10failoverPriority\x12F\n" +
+	"\x10min_cluster_size\x18\x04 \x01(\v2\x1c.google.protobuf.UInt32ValueR\x0eminClusterSize\x1a.\n" +
+	"\bFailover\x12\x12\n" +
+	"\x04from\x18\x01 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x02 \x01(\tR\x02toB\"Z istio.io/api/networking/v1alpha3b\x06proto3"
 
 var (
@@ -2996,7 +3462,7 @@ func file_networking_v1alpha3_destination_rule_proto_rawDescGZIP() []byte {
 }
 
 var file_networking_v1alpha3_destination_rule_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_networking_v1alpha3_destination_rule_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_networking_v1alpha3_destination_rule_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_networking_v1alpha3_destination_rule_proto_goTypes = []any{
 	(TrafficPolicy_ProxyProtocol_VERSION)(0),                           // 0: istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.VERSION
 	(LoadBalancerSettings_SimpleLB)(0),                                 // 1: istio.networking.v1alpha3.LoadBalancerSettings.SimpleLB
@@ -3011,89 +3477,100 @@ var file_networking_v1alpha3_destination_rule_proto_goTypes = []any{
 	(*OutlierDetection)(nil),                                           // 10: istio.networking.v1alpha3.OutlierDetection
 	(*ClientTLSSettings)(nil),                                          // 11: istio.networking.v1alpha3.ClientTLSSettings
 	(*LocalityLoadBalancerSetting)(nil),                                // 12: istio.networking.v1alpha3.LocalityLoadBalancerSetting
-	(*TrafficPolicy_PortTrafficPolicy)(nil),                            // 13: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy
-	(*TrafficPolicy_TunnelSettings)(nil),                               // 14: istio.networking.v1alpha3.TrafficPolicy.TunnelSettings
-	(*TrafficPolicy_ProxyProtocol)(nil),                                // 15: istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol
-	(*TrafficPolicy_RetryBudget)(nil),                                  // 16: istio.networking.v1alpha3.TrafficPolicy.RetryBudget
-	nil,                                                                // 17: istio.networking.v1alpha3.Subset.LabelsEntry
-	(*LoadBalancerSettings_ConsistentHashLB)(nil),                      // 18: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB
-	(*LoadBalancerSettings_ConsistentHashLB_RingHash)(nil),             // 19: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.RingHash
-	(*LoadBalancerSettings_ConsistentHashLB_MagLev)(nil),               // 20: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.MagLev
-	(*LoadBalancerSettings_ConsistentHashLB_HTTPCookie)(nil),           // 21: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie
-	(*LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute)(nil), // 22: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.Attribute
-	(*ConnectionPoolSettings_TCPSettings)(nil),                         // 23: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings
-	(*ConnectionPoolSettings_HTTPSettings)(nil),                        // 24: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings
-	(*ConnectionPoolSettings_TCPSettings_TcpKeepalive)(nil),            // 25: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive
-	(*LocalityLoadBalancerSetting_Distribute)(nil),                     // 26: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute
-	(*LocalityLoadBalancerSetting_Failover)(nil),                       // 27: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Failover
-	nil,                              // 28: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.ToEntry
-	(*v1beta1.WorkloadSelector)(nil), // 29: istio.type.v1beta1.WorkloadSelector
-	(*duration.Duration)(nil),        // 30: google.protobuf.Duration
-	(*wrappers.DoubleValue)(nil),     // 31: google.protobuf.DoubleValue
-	(*wrappers.UInt32Value)(nil),     // 32: google.protobuf.UInt32Value
-	(*wrappers.BoolValue)(nil),       // 33: google.protobuf.BoolValue
-	(*PortSelector)(nil),             // 34: istio.networking.v1alpha3.PortSelector
+	(*ZoneAwareLoadBalancerSetting)(nil),                               // 13: istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting
+	(*TrafficPolicy_PortTrafficPolicy)(nil),                            // 14: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy
+	(*TrafficPolicy_TunnelSettings)(nil),                               // 15: istio.networking.v1alpha3.TrafficPolicy.TunnelSettings
+	(*TrafficPolicy_ProxyProtocol)(nil),                                // 16: istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol
+	(*TrafficPolicy_RetryBudget)(nil),                                  // 17: istio.networking.v1alpha3.TrafficPolicy.RetryBudget
+	nil,                                                                // 18: istio.networking.v1alpha3.Subset.LabelsEntry
+	(*LoadBalancerSettings_ConsistentHashLB)(nil),                      // 19: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB
+	(*LoadBalancerSettings_ConsistentHashLB_RingHash)(nil),             // 20: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.RingHash
+	(*LoadBalancerSettings_ConsistentHashLB_MagLev)(nil),               // 21: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.MagLev
+	(*LoadBalancerSettings_ConsistentHashLB_HTTPCookie)(nil),           // 22: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie
+	(*LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute)(nil), // 23: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.Attribute
+	(*ConnectionPoolSettings_TCPSettings)(nil),                         // 24: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings
+	(*ConnectionPoolSettings_HTTPSettings)(nil),                        // 25: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings
+	(*ConnectionPoolSettings_TCPSettings_TcpKeepalive)(nil),            // 26: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive
+	(*ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive)(nil),    // 27: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.ConnectionKeepalive
+	(*LocalityLoadBalancerSetting_Distribute)(nil),                     // 28: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute
+	(*LocalityLoadBalancerSetting_Failover)(nil),                       // 29: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Failover
+	nil, // 30: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.ToEntry
+	(*ZoneAwareLoadBalancerSetting_Failover)(nil), // 31: istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.Failover
+	(*v1beta1.WorkloadSelector)(nil),              // 32: istio.type.v1beta1.WorkloadSelector
+	(*duration.Duration)(nil),                     // 33: google.protobuf.Duration
+	(*wrappers.DoubleValue)(nil),                  // 34: google.protobuf.DoubleValue
+	(*wrappers.UInt32Value)(nil),                  // 35: google.protobuf.UInt32Value
+	(*wrappers.BoolValue)(nil),                    // 36: google.protobuf.BoolValue
+	(*PortSelector)(nil),                          // 37: istio.networking.v1alpha3.PortSelector
 }
 var file_networking_v1alpha3_destination_rule_proto_depIdxs = []int32{
 	5,  // 0: istio.networking.v1alpha3.DestinationRule.traffic_policy:type_name -> istio.networking.v1alpha3.TrafficPolicy
 	6,  // 1: istio.networking.v1alpha3.DestinationRule.subsets:type_name -> istio.networking.v1alpha3.Subset
-	29, // 2: istio.networking.v1alpha3.DestinationRule.workload_selector:type_name -> istio.type.v1beta1.WorkloadSelector
+	32, // 2: istio.networking.v1alpha3.DestinationRule.workload_selector:type_name -> istio.type.v1beta1.WorkloadSelector
 	7,  // 3: istio.networking.v1alpha3.TrafficPolicy.load_balancer:type_name -> istio.networking.v1alpha3.LoadBalancerSettings
 	9,  // 4: istio.networking.v1alpha3.TrafficPolicy.connection_pool:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings
 	10, // 5: istio.networking.v1alpha3.TrafficPolicy.outlier_detection:type_name -> istio.networking.v1alpha3.OutlierDetection
 	11, // 6: istio.networking.v1alpha3.TrafficPolicy.tls:type_name -> istio.networking.v1alpha3.ClientTLSSettings
-	13, // 7: istio.networking.v1alpha3.TrafficPolicy.port_level_settings:type_name -> istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy
-	14, // 8: istio.networking.v1alpha3.TrafficPolicy.tunnel:type_name -> istio.networking.v1alpha3.TrafficPolicy.TunnelSettings
-	15, // 9: istio.networking.v1alpha3.TrafficPolicy.proxy_protocol:type_name -> istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol
-	16, // 10: istio.networking.v1alpha3.TrafficPolicy.retry_budget:type_name -> istio.networking.v1alpha3.TrafficPolicy.RetryBudget
-	17, // 11: istio.networking.v1alpha3.Subset.labels:type_name -> istio.networking.v1alpha3.Subset.LabelsEntry
+	14, // 7: istio.networking.v1alpha3.TrafficPolicy.port_level_settings:type_name -> istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy
+	15, // 8: istio.networking.v1alpha3.TrafficPolicy.tunnel:type_name -> istio.networking.v1alpha3.TrafficPolicy.TunnelSettings
+	16, // 9: istio.networking.v1alpha3.TrafficPolicy.proxy_protocol:type_name -> istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol
+	17, // 10: istio.networking.v1alpha3.TrafficPolicy.retry_budget:type_name -> istio.networking.v1alpha3.TrafficPolicy.RetryBudget
+	18, // 11: istio.networking.v1alpha3.Subset.labels:type_name -> istio.networking.v1alpha3.Subset.LabelsEntry
 	5,  // 12: istio.networking.v1alpha3.Subset.traffic_policy:type_name -> istio.networking.v1alpha3.TrafficPolicy
 	1,  // 13: istio.networking.v1alpha3.LoadBalancerSettings.simple:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.SimpleLB
-	18, // 14: istio.networking.v1alpha3.LoadBalancerSettings.consistent_hash:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB
+	19, // 14: istio.networking.v1alpha3.LoadBalancerSettings.consistent_hash:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB
 	12, // 15: istio.networking.v1alpha3.LoadBalancerSettings.locality_lb_setting:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting
-	30, // 16: istio.networking.v1alpha3.LoadBalancerSettings.warmup_duration_secs:type_name -> google.protobuf.Duration
-	8,  // 17: istio.networking.v1alpha3.LoadBalancerSettings.warmup:type_name -> istio.networking.v1alpha3.WarmupConfiguration
-	30, // 18: istio.networking.v1alpha3.WarmupConfiguration.duration:type_name -> google.protobuf.Duration
-	31, // 19: istio.networking.v1alpha3.WarmupConfiguration.minimum_percent:type_name -> google.protobuf.DoubleValue
-	31, // 20: istio.networking.v1alpha3.WarmupConfiguration.aggression:type_name -> google.protobuf.DoubleValue
-	23, // 21: istio.networking.v1alpha3.ConnectionPoolSettings.tcp:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings
-	24, // 22: istio.networking.v1alpha3.ConnectionPoolSettings.http:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings
-	32, // 23: istio.networking.v1alpha3.OutlierDetection.consecutive_local_origin_failures:type_name -> google.protobuf.UInt32Value
-	32, // 24: istio.networking.v1alpha3.OutlierDetection.consecutive_gateway_errors:type_name -> google.protobuf.UInt32Value
-	32, // 25: istio.networking.v1alpha3.OutlierDetection.consecutive_5xx_errors:type_name -> google.protobuf.UInt32Value
-	30, // 26: istio.networking.v1alpha3.OutlierDetection.interval:type_name -> google.protobuf.Duration
-	30, // 27: istio.networking.v1alpha3.OutlierDetection.base_ejection_time:type_name -> google.protobuf.Duration
-	3,  // 28: istio.networking.v1alpha3.ClientTLSSettings.mode:type_name -> istio.networking.v1alpha3.ClientTLSSettings.TLSmode
-	33, // 29: istio.networking.v1alpha3.ClientTLSSettings.insecure_skip_verify:type_name -> google.protobuf.BoolValue
-	26, // 30: istio.networking.v1alpha3.LocalityLoadBalancerSetting.distribute:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute
-	27, // 31: istio.networking.v1alpha3.LocalityLoadBalancerSetting.failover:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Failover
-	33, // 32: istio.networking.v1alpha3.LocalityLoadBalancerSetting.enabled:type_name -> google.protobuf.BoolValue
-	34, // 33: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.port:type_name -> istio.networking.v1alpha3.PortSelector
-	7,  // 34: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.load_balancer:type_name -> istio.networking.v1alpha3.LoadBalancerSettings
-	9,  // 35: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.connection_pool:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings
-	10, // 36: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.outlier_detection:type_name -> istio.networking.v1alpha3.OutlierDetection
-	11, // 37: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.tls:type_name -> istio.networking.v1alpha3.ClientTLSSettings
-	0,  // 38: istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.version:type_name -> istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.VERSION
-	31, // 39: istio.networking.v1alpha3.TrafficPolicy.RetryBudget.percent:type_name -> google.protobuf.DoubleValue
-	21, // 40: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.http_cookie:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie
-	19, // 41: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.ring_hash:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.RingHash
-	20, // 42: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.maglev:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.MagLev
-	30, // 43: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.ttl:type_name -> google.protobuf.Duration
-	22, // 44: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.attributes:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.Attribute
-	30, // 45: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.connect_timeout:type_name -> google.protobuf.Duration
-	25, // 46: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.tcp_keepalive:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive
-	30, // 47: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.max_connection_duration:type_name -> google.protobuf.Duration
-	30, // 48: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.idle_timeout:type_name -> google.protobuf.Duration
-	30, // 49: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.idle_timeout:type_name -> google.protobuf.Duration
-	2,  // 50: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.h2_upgrade_policy:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.H2UpgradePolicy
-	30, // 51: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive.time:type_name -> google.protobuf.Duration
-	30, // 52: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive.interval:type_name -> google.protobuf.Duration
-	28, // 53: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.to:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.ToEntry
-	54, // [54:54] is the sub-list for method output_type
-	54, // [54:54] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	13, // 16: istio.networking.v1alpha3.LoadBalancerSettings.zone_aware_lb_setting:type_name -> istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting
+	33, // 17: istio.networking.v1alpha3.LoadBalancerSettings.warmup_duration_secs:type_name -> google.protobuf.Duration
+	8,  // 18: istio.networking.v1alpha3.LoadBalancerSettings.warmup:type_name -> istio.networking.v1alpha3.WarmupConfiguration
+	33, // 19: istio.networking.v1alpha3.WarmupConfiguration.duration:type_name -> google.protobuf.Duration
+	34, // 20: istio.networking.v1alpha3.WarmupConfiguration.minimum_percent:type_name -> google.protobuf.DoubleValue
+	34, // 21: istio.networking.v1alpha3.WarmupConfiguration.aggression:type_name -> google.protobuf.DoubleValue
+	24, // 22: istio.networking.v1alpha3.ConnectionPoolSettings.tcp:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings
+	25, // 23: istio.networking.v1alpha3.ConnectionPoolSettings.http:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings
+	35, // 24: istio.networking.v1alpha3.OutlierDetection.consecutive_local_origin_failures:type_name -> google.protobuf.UInt32Value
+	35, // 25: istio.networking.v1alpha3.OutlierDetection.consecutive_gateway_errors:type_name -> google.protobuf.UInt32Value
+	35, // 26: istio.networking.v1alpha3.OutlierDetection.consecutive_5xx_errors:type_name -> google.protobuf.UInt32Value
+	33, // 27: istio.networking.v1alpha3.OutlierDetection.interval:type_name -> google.protobuf.Duration
+	33, // 28: istio.networking.v1alpha3.OutlierDetection.base_ejection_time:type_name -> google.protobuf.Duration
+	3,  // 29: istio.networking.v1alpha3.ClientTLSSettings.mode:type_name -> istio.networking.v1alpha3.ClientTLSSettings.TLSmode
+	36, // 30: istio.networking.v1alpha3.ClientTLSSettings.insecure_skip_verify:type_name -> google.protobuf.BoolValue
+	28, // 31: istio.networking.v1alpha3.LocalityLoadBalancerSetting.distribute:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute
+	29, // 32: istio.networking.v1alpha3.LocalityLoadBalancerSetting.failover:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Failover
+	36, // 33: istio.networking.v1alpha3.LocalityLoadBalancerSetting.enabled:type_name -> google.protobuf.BoolValue
+	36, // 34: istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.enabled:type_name -> google.protobuf.BoolValue
+	31, // 35: istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.failover:type_name -> istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.Failover
+	35, // 36: istio.networking.v1alpha3.ZoneAwareLoadBalancerSetting.min_cluster_size:type_name -> google.protobuf.UInt32Value
+	37, // 37: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.port:type_name -> istio.networking.v1alpha3.PortSelector
+	7,  // 38: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.load_balancer:type_name -> istio.networking.v1alpha3.LoadBalancerSettings
+	9,  // 39: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.connection_pool:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings
+	10, // 40: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.outlier_detection:type_name -> istio.networking.v1alpha3.OutlierDetection
+	11, // 41: istio.networking.v1alpha3.TrafficPolicy.PortTrafficPolicy.tls:type_name -> istio.networking.v1alpha3.ClientTLSSettings
+	0,  // 42: istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.version:type_name -> istio.networking.v1alpha3.TrafficPolicy.ProxyProtocol.VERSION
+	34, // 43: istio.networking.v1alpha3.TrafficPolicy.RetryBudget.percent:type_name -> google.protobuf.DoubleValue
+	33, // 44: istio.networking.v1alpha3.TrafficPolicy.RetryBudget.budget_interval:type_name -> google.protobuf.Duration
+	22, // 45: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.http_cookie:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie
+	20, // 46: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.ring_hash:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.RingHash
+	21, // 47: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.maglev:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.MagLev
+	33, // 48: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.ttl:type_name -> google.protobuf.Duration
+	23, // 49: istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.attributes:type_name -> istio.networking.v1alpha3.LoadBalancerSettings.ConsistentHashLB.HTTPCookie.Attribute
+	33, // 50: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.connect_timeout:type_name -> google.protobuf.Duration
+	26, // 51: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.tcp_keepalive:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive
+	33, // 52: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.max_connection_duration:type_name -> google.protobuf.Duration
+	33, // 53: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.idle_timeout:type_name -> google.protobuf.Duration
+	33, // 54: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.idle_timeout:type_name -> google.protobuf.Duration
+	2,  // 55: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.h2_upgrade_policy:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.H2UpgradePolicy
+	27, // 56: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.http2_keep_alive:type_name -> istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.ConnectionKeepalive
+	33, // 57: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive.time:type_name -> google.protobuf.Duration
+	33, // 58: istio.networking.v1alpha3.ConnectionPoolSettings.TCPSettings.TcpKeepalive.interval:type_name -> google.protobuf.Duration
+	33, // 59: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.ConnectionKeepalive.interval:type_name -> google.protobuf.Duration
+	33, // 60: istio.networking.v1alpha3.ConnectionPoolSettings.HTTPSettings.ConnectionKeepalive.timeout:type_name -> google.protobuf.Duration
+	30, // 61: istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.to:type_name -> istio.networking.v1alpha3.LocalityLoadBalancerSetting.Distribute.ToEntry
+	62, // [62:62] is the sub-list for method output_type
+	62, // [62:62] is the sub-list for method input_type
+	62, // [62:62] is the sub-list for extension type_name
+	62, // [62:62] is the sub-list for extension extendee
+	0,  // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_networking_v1alpha3_destination_rule_proto_init() }
@@ -3106,7 +3583,7 @@ func file_networking_v1alpha3_destination_rule_proto_init() {
 		(*LoadBalancerSettings_Simple)(nil),
 		(*LoadBalancerSettings_ConsistentHash)(nil),
 	}
-	file_networking_v1alpha3_destination_rule_proto_msgTypes[14].OneofWrappers = []any{
+	file_networking_v1alpha3_destination_rule_proto_msgTypes[15].OneofWrappers = []any{
 		(*LoadBalancerSettings_ConsistentHashLB_HttpHeaderName)(nil),
 		(*LoadBalancerSettings_ConsistentHashLB_HttpCookie)(nil),
 		(*LoadBalancerSettings_ConsistentHashLB_UseSourceIp)(nil),
@@ -3120,7 +3597,7 @@ func file_networking_v1alpha3_destination_rule_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_networking_v1alpha3_destination_rule_proto_rawDesc), len(file_networking_v1alpha3_destination_rule_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   25,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

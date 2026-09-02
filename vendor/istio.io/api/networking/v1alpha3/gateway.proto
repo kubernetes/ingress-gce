@@ -193,6 +193,7 @@ syntax = "proto3";
 package istio.networking.v1alpha3;
 
 import "google/api/field_behavior.proto";
+import "google/protobuf/wrappers.proto";
 
 option go_package = "istio.io/api/networking/v1alpha3";
 
@@ -512,8 +513,6 @@ message ServerTLSSettings {
   // A list of alternate names to verify the subject identity in the
   // certificate presented by the client.
   // Requires TLS mode to be set to `MUTUAL`.
-  // When multiple certificates are provided via `credential_names` or `tls_certificates`,
-  // the subject alternate names are validated against the selected certificate.
   repeated string subject_alt_names = 6;
 
   // An optional list of base64-encoded SHA-256 hashes of the SPKIs of
@@ -579,4 +578,13 @@ message ServerTLSSettings {
   // * `AES256-SHA`
   // * `DES-CBC3-SHA`
   repeated string cipher_suites = 9;
+
+  // Optional: If set to true, the proxy will try to validate the certificate, but even if the
+  // validation fails, it will allow the connection through.
+  //
+  // It's needed to implement Gateway API AllowInsecureFallback feature. The different between
+  // AllowInsecureFallback and not verifying client certificate at all is that Gateway is able
+  // to pass the client certificate to the backend in the x-forwarded-client-cert HTTP header and
+  // backend can verify the certificate.
+  google.protobuf.BoolValue insecure_skip_verify = 17;
 }

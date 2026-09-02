@@ -716,6 +716,12 @@ const (
 	// `NETWORK_FILTER`. If the named filter is not found, this operation
 	// has no effect.
 	EnvoyFilter_Patch_REPLACE EnvoyFilter_Patch_Operation = 7
+	// Merge the provided config with the generated config using
+	// proto merge semantics, similar to the `MERGE` operation.
+	// However, when merging list fields, this operation replaces
+	// the entire existing list with the provided list, instead of
+	// appending to it.
+	EnvoyFilter_Patch_MERGE_AND_REPLACE_LIST EnvoyFilter_Patch_Operation = 8
 )
 
 // Enum value maps for EnvoyFilter_Patch_Operation.
@@ -729,16 +735,18 @@ var (
 		5: "INSERT_AFTER",
 		6: "INSERT_FIRST",
 		7: "REPLACE",
+		8: "MERGE_AND_REPLACE_LIST",
 	}
 	EnvoyFilter_Patch_Operation_value = map[string]int32{
-		"INVALID":       0,
-		"MERGE":         1,
-		"ADD":           2,
-		"REMOVE":        3,
-		"INSERT_BEFORE": 4,
-		"INSERT_AFTER":  5,
-		"INSERT_FIRST":  6,
-		"REPLACE":       7,
+		"INVALID":                0,
+		"MERGE":                  1,
+		"ADD":                    2,
+		"REMOVE":                 3,
+		"INSERT_BEFORE":          4,
+		"INSERT_AFTER":           5,
+		"INSERT_FIRST":           6,
+		"REPLACE":                7,
+		"MERGE_AND_REPLACE_LIST": 8,
 	}
 )
 
@@ -2173,7 +2181,7 @@ var File_networking_v1alpha3_envoy_filter_proto protoreflect.FileDescriptor
 
 const file_networking_v1alpha3_envoy_filter_proto_rawDesc = "" +
 	"\n" +
-	"&networking/v1alpha3/envoy_filter.proto\x12\x19istio.networking.v1alpha3\x1a\x1cgoogle/protobuf/struct.proto\x1a!networking/v1alpha3/sidecar.proto\x1a\x1btype/v1beta1/selector.proto\"\xa8\x1f\n" +
+	"&networking/v1alpha3/envoy_filter.proto\x12\x19istio.networking.v1alpha3\x1a\x1cgoogle/protobuf/struct.proto\x1a!networking/v1alpha3/sidecar.proto\x1a\x1btype/v1beta1/selector.proto\"\xc5\x1f\n" +
 	"\vEnvoyFilter\x12X\n" +
 	"\x11workload_selector\x18\x03 \x01(\v2+.istio.networking.v1alpha3.WorkloadSelectorR\x10workloadSelector\x12I\n" +
 	"\n" +
@@ -2248,11 +2256,11 @@ const file_networking_v1alpha3_envoy_filter_proto_rawDesc = "" +
 	"\n" +
 	"sub_filter\x18\x02 \x01(\v2O.istio.networking.v1alpha3.EnvoyFilter.WaypointMatch.FilterMatch.SubFilterMatchR\tsubFilter\x1a$\n" +
 	"\x0eSubFilterMatch\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x1a\xa8\x03\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x1a\xc5\x03\n" +
 	"\x05Patch\x12T\n" +
 	"\toperation\x18\x01 \x01(\x0e26.istio.networking.v1alpha3.EnvoyFilter.Patch.OperationR\toperation\x12-\n" +
 	"\x05value\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05value\x12[\n" +
-	"\ffilter_class\x18\x03 \x01(\x0e28.istio.networking.v1alpha3.EnvoyFilter.Patch.FilterClassR\vfilterClass\"|\n" +
+	"\ffilter_class\x18\x03 \x01(\x0e28.istio.networking.v1alpha3.EnvoyFilter.Patch.FilterClassR\vfilterClass\"\x98\x01\n" +
 	"\tOperation\x12\v\n" +
 	"\aINVALID\x10\x00\x12\t\n" +
 	"\x05MERGE\x10\x01\x12\a\n" +
@@ -2262,7 +2270,8 @@ const file_networking_v1alpha3_envoy_filter_proto_rawDesc = "" +
 	"\rINSERT_BEFORE\x10\x04\x12\x10\n" +
 	"\fINSERT_AFTER\x10\x05\x12\x10\n" +
 	"\fINSERT_FIRST\x10\x06\x12\v\n" +
-	"\aREPLACE\x10\a\"?\n" +
+	"\aREPLACE\x10\a\x12\x1a\n" +
+	"\x16MERGE_AND_REPLACE_LIST\x10\b\"?\n" +
 	"\vFilterClass\x12\x0f\n" +
 	"\vUNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05AUTHN\x10\x01\x12\t\n" +

@@ -303,6 +303,21 @@ message TrafficPolicy {
     // Defaults to 3.
     //
     uint32 min_retry_concurrency = 2;
+    // Specifies the duration in which requests will be considered when calculating
+    // the budget for retries. This parameter alters the way in which the retry budget
+    // is calculated, overriding the default behavior when specified.
+    //
+    // By default, when budget_interval is set to 0ms, only presently active
+    // and pending requests are considered when calculating the retry budget.
+    //
+    // When a non-zero budget_interval is specified, new requests are
+    // considered for the duration of budget_interval when calculating
+    // the retry budget.
+    //
+    // Defaults to 0ms.
+    //
+    // +protoc-gen-crd:duration-validation:none
+    google.protobuf.Duration budget_interval = 3;
   }
 
   // Specifies a limit on concurrent retries in relation to the number of active requests.
@@ -529,13 +544,22 @@ message LoadBalancerSettings {
 
   // Upstream load balancing policy.
   oneof lb_policy {
+    // Standard load balancing algorithms that require no tuning.
     SimpleLB simple = 1;
+
+    // Consistent Hash-based load balancing can be used to provide soft session affinity based on HTTP headers, cookies or other properties.
     ConsistentHashLB consistent_hash = 2;
   }
 
-  // Locality load balancer settings, this will override mesh-wide settings in entirety, meaning no merging would be performed
+  // Locality load balancer settings. This will override mesh-wide settings in entirety, meaning no merging would be performed
   // between this object and the object one in MeshConfig
+  // Only one of locality_lb_setting and zone_aware_lb_setting can be set.
   LocalityLoadBalancerSetting locality_lb_setting = 3;
+
+  // Zone Aware load balancer settings. This will override mesh-wide settings in entirety, meaning no merging would be performed
+  // between this object and the object one in MeshConfig.
+  // Only one of locality_lb_setting and zone_aware_lb_setting can be set.
+  ZoneAwareLoadBalancerSetting zone_aware_lb_setting = 6;
 
   // Deprecated: use `warmup` instead.
   google.protobuf.Duration warmup_duration_secs = 4;
@@ -630,14 +654,22 @@ message ConnectionPoolSettings {
     // is reached the connection will be closed. Duration must be at least 1ms.
     google.protobuf.Duration max_connection_duration = 4;
 
-    // The idle timeout for TCP connections.
-    // The idle timeout is defined as the period in which there are no bytes sent or received on either
-    // the upstream or downstream connection.
+    // The idle timeout for TCP connections. This is applied to the outbound connections to the upstream service.
+    // The idle timeout is defined as the period in which there are no bytes sent or received on the
+    // upstream connection.
     // If not set, the default idle timeout is 1 hour. If set to 0s, the timeout will be disabled.
     // Idle timeout is not configured per each cluster individually when weighted destinations are used,
     // because idleTimeout is a property of a listener, not a cluster. In that case, idleTimeout
     // specified in a destination rule for the first weighted route is configured in the listener,
     // which means also for all weighted routes.
+    // To set the idle timeout for downstream (inbound) connections, use the
+    // `ISTIO_META_IDLE_TIMEOUT` field in the proxy configuration (e.g., via the `proxy.istio.io/config`
+    // annotation) which applies to all inbound connections.
+    // ```
+    // proxy.istio.io/config: |-
+    //    proxyMetadata:
+    //       ISTIO_META_IDLE_TIMEOUT: "100s"
+    // ```
     // +protoc-gen-crd:duration-validation:none
     google.protobuf.Duration idle_timeout = 5;
   }
@@ -695,6 +727,20 @@ message ConnectionPoolSettings {
     // The maximum number of concurrent streams allowed for a peer on one HTTP/2 connection.
     // Defaults to 2^31-1.
     int32 max_concurrent_streams = 8;
+
+    // Settings for HTTP/2 PING frames.
+    message ConnectionKeepalive {
+      // Send HTTP/2 PING frames at this interval. Required when
+      // `http2KeepAlive` is set.
+      google.protobuf.Duration interval = 1;
+
+      // How long to wait for a response to an HTTP/2 PING frame before
+      // closing the connection. Required when `http2KeepAlive` is set.
+      google.protobuf.Duration timeout = 2;
+    }
+
+    // Configure HTTP/2 PING frames for upstream connections.
+    ConnectionKeepalive http2_keep_alive = 9;
   }
 
   // Settings common to both HTTP and TCP upstream connections.
@@ -712,6 +758,15 @@ message ConnectionPoolSettings {
 // consecutive errors metric. See Envoy's [outlier
 // detection](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/outlier)
 // for more details.
+//
+// **Note:** Istio's default mesh configuration enables locality load balancing
+// (`localityLbSetting.enabled: true`). As a result, configuring
+// `OutlierDetection` in a `DestinationRule` will automatically activate
+// locality-aware failover behavior — Envoy uses the outlier detection state to
+// determine when endpoints are unhealthy and should be failed over to the next
+// locality. To suppress this implicit failover, explicitly set
+// `localityLbSetting.enabled: false` in the `DestinationRule`'s load balancer
+// settings.
 //
 // The following rule sets a connection pool size of 100 HTTP1 connections
 // with no more than 10 req/connection to the "reviews" service. In addition,
@@ -815,6 +870,21 @@ message OutlierDetection {
   // disabled by setting it to 0%. The default is 0% as it's not typically
   // applicable in k8s environments with few pods per service.
   int32 min_health_percent = 5;
+
+  // Specifies the HTTP response status codes that are treated as outlier
+  // detection errors. If specified, only responses with one of these status
+  // codes will be treated as errors by outlier detection. If not specified,
+  // only 5xx responses are treated as errors.
+  //
+  // Note: Host ejection is still driven by the `consecutive5xxErrors` and
+  // `consecutiveGatewayErrors` thresholds; this field only redefines which
+  // HTTP status codes are counted as errors toward those thresholds.
+  //
+  // Values must be in the range [100, 599].
+  //
+  // +protoc-gen-crd:list-value-validation:Minimum=100
+  // +protoc-gen-crd:list-value-validation:Maximum=599
+  repeated uint32 outlier_detection_http_error_codes = 10;
 }
 
 // SSL/TLS related settings for upstream connections. See Envoy's [TLS
@@ -1120,4 +1190,201 @@ message LocalityLoadBalancerSetting {
   // Enable locality load balancing. This is DestinationRule-level and will override mesh-wide settings in entirety.
   // e.g. true means that turn on locality load balancing for this DestinationRule no matter what mesh-wide settings is.
   google.protobuf.BoolValue enabled = 3;
+}
+
+// Zone Aware Load Balancer automatically routes traffic to endpoints in the same
+// availability zone as the downstream proxy, reducing cross-zone latency and
+// inter-zone data transfer costs. Unlike
+// [LocalityLoadBalancerSetting](#LocalityLoadBalancerSetting), which requires
+// explicitly specifying traffic weights per locality, Zone Aware Load Balancer
+// automatically calculates routing percentages based on the relative number of
+// upstream endpoints in each zone — no manual distribution configuration is
+// needed.
+//
+// When the local zone has proportionally fewer endpoints than the share of
+// traffic it would need to absorb, Envoy automatically overflows the excess to
+// other zones rather than overloading local endpoints.
+//
+// Additionally Zone Aware Load Balancer always partitions endpoints by region: the proxy's own region
+// forms the highest-priority tier and Envoy's automatic zone balancing operates
+// only among the endpoints within that region. Endpoints in other regions form
+// lower-priority failover tiers that receive traffic only when the local region is
+// unhealthy or runs out of capacity. The `failover` and `failoverPriority` fields
+// only influence how those lower tiers are ordered; the regional partitioning
+// itself is always applied whenever zone-aware load balancing is enabled.
+//
+// For proxies to activate Zone Aware Load Balancer all of the following conditions are needed:
+//
+// - The downstream proxy is configured with  `ISTIO_META_ENABLE_SELF_DISCOVERY=true`
+//    (set via `proxyMetadata`).
+// - The upstream cluster spans more than one zone.
+// - The upstream cluster has at least `minClusterSize` hosts (default 6) in the local region.
+// - There is at least one healthy endpoint in the local zone.
+//
+// If any of these conditions are not met, Envoy falls back to the configured load balancing policy
+// (e.g. round-robin or least-request) across all endpoints in the local region.
+//
+// For additional details on the algorithm, refer to Envoy's
+// [Zone Aware Routing](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/zone_aware)
+// documentation.
+//
+// Note: Zone Aware Load Balancer is not supported on Ambient mode.
+//
+// The following example enables zone-aware load balancing for the ratings service:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: DestinationRule
+// metadata:
+//   name: ratings-zone-aware
+// spec:
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     loadBalancer:
+//       simple: ROUND_ROBIN
+//       zoneAwareLbSetting:
+//         enabled: true
+// ```
+//
+// The following example adds a cross-region failover policy so that when all
+// endpoints in `us-east` become unhealthy, traffic fails over to `eu-west`
+// instead of any region globally:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: DestinationRule
+// metadata:
+//   name: ratings-zone-aware-failover
+// spec:
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     loadBalancer:
+//       simple: LEAST_REQUEST
+//       zoneAwareLbSetting:
+//         enabled: true
+//         failover:
+//           - from: us-east
+//             to: eu-west
+//           - from: us-west
+//             to: us-east
+//     outlierDetection:
+//       consecutive5xxErrors: 5
+//       interval: 30s
+//       baseEjectionTime: 30s
+// ```
+//
+message ZoneAwareLoadBalancerSetting {
+  // Enable zone aware load balancing. This is DestinationRule-level and will
+  // override mesh-wide settings in entirety, meaning no merging is performed
+  // with MeshConfig.
+  google.protobuf.BoolValue enabled = 1;
+
+  // Specify the traffic failover policy across regions. Since zone and sub-zone
+  // failover is supported by default this only needs to be specified for
+  // regions when the operator needs to constrain traffic failover so that
+  // the default behavior of failing over to any endpoint globally does not
+  // apply. This is useful when failing over traffic across regions would not
+  // improve service health or may need to be restricted for other reasons
+  // like regulatory controls.
+  message Failover {
+    // Originating region.
+    string from = 1;
+
+    // Destination region the traffic will fail over to when endpoints in
+    // the 'from' region becomes unhealthy.
+    string to = 2;
+  }
+
+  // Optional. Explicitly specifies the region traffic will land on when the endpoints
+  // in the local region become unhealthy. Regional partitioning is always
+  // applied; this field only customizes the ordering of the cross-region tiers.
+  // It may be used on its own, or together with `failoverPriority`, in which case
+  // it orders the regional tiers applied on top of the label-based priorities.
+  // For this to be effective consider one of the following:
+  // - Use together with `OutlierDetection` to detect unhealthy endpoints in the local zone so that traffic fails over to other zones according to the specified priority.
+  // - Enable `PILOT_SEND_UNHEALTHY_ENDPOINTS` to allow Envoy to know when endpoints in the local zone are unhealthy and failover according to the specified priority.
+  repeated Failover failover = 2;
+
+  // failoverPriority is an ordered list of labels used to sort endpoints for
+  // priority-based load balancing. This supports traffic failover across
+  // different groups of endpoints and complements the automatic zone-level
+  // routing by allowing label-based priority tiers on top of it.
+  //
+  // Regional partitioning is always applied in addition to these labels: within
+  // each tier produced by `failoverPriority`, endpoints in the proxy's own region
+  // are preferred over endpoints in other regions (ordered by `failover` when it
+  // is also set). Because region-, zone-, and subzone-level routing are all handled
+  // automatically, `failoverPriority` must not include the
+  // `topology.kubernetes.io/region`, `topology.kubernetes.io/zone`, or
+  // `topology.istio.io/subzone` labels.
+  //
+  // Two kinds of labels can be specified:
+  // - Specify only label keys `[key1, key2, key3]`, istio would compare the label values of client with endpoints.
+  //   Suppose there are total N label keys `[key1, key2, key3, ...keyN]` specified:
+  //
+  //   1. Endpoints matching all N labels with the client proxy have priority P(0) i.e. the highest priority.
+  //   2. Endpoints matching the first N-1 labels with the client proxy have priority P(1) i.e. second highest priority.
+  //   3. By extension of this logic, endpoints matching only the first label with the client proxy has priority P(N-1) i.e. second lowest priority.
+  //   4. All the other endpoints have priority P(N) i.e. lowest priority.
+  //
+  // - Specify labels with key and value `[key1=value1, key2=value2, key3=value3]`, istio would compare the labels with endpoints.
+  //   Suppose there are total N labels `[key1=value1, key2=value2, key3=value3, ...keyN=valueN]` specified:
+  //
+  //   1. Endpoints matching all N labels have priority P(0) i.e. the highest priority.
+  //   2. Endpoints matching the first N-1 labels have priority P(1) i.e. second highest priority.
+  //   3. By extension of this logic, endpoints matching only the first label has priority P(N-1) i.e. second lowest priority.
+  //   4. All the other endpoints have priority P(N) i.e. lowest priority.
+  //
+  // Note: For a label to be considered for match, the previous labels must match, i.e. nth label would be considered matched only if first n-1 labels match.
+  //
+  // It can be any label specified on both client and server workloads.
+  // The following labels which have special semantic meaning are also supported:
+  //
+  //   - `topology.istio.io/network` is used to match the network metadata of an endpoint, which can be specified by pod/namespace label `topology.istio.io/network`, sidecar env `ISTIO_META_NETWORK` or MeshNetworks.
+  //   - `topology.istio.io/cluster` is used to match the clusterID of an endpoint, which can be specified by pod label `topology.istio.io/cluster` or pod env `ISTIO_META_CLUSTER_ID`.
+  //   - `topology.kubernetes.io/region` is used to match the region metadata of an endpoint, which maps to Kubernetes node label `topology.kubernetes.io/region` or the deprecated label `failure-domain.beta.kubernetes.io/region`.
+  //   - `topology.kubernetes.io/zone` is used to match the zone metadata of an endpoint, which maps to Kubernetes node label `topology.kubernetes.io/zone` or the deprecated label `failure-domain.beta.kubernetes.io/zone`.
+  //   - `kubernetes.io/hostname` is used to match the current node of an endpoint, which maps to Kubernetes node label `kubernetes.io/hostname`.
+  //
+  // The below topology config indicates the following priority levels:
+  //
+  // ```yaml
+  // failoverPriority:
+  // - "topology.istio.io/network"
+  // - "topology.kubernetes.io/region"
+  // - "topology.kubernetes.io/zone"
+  // ```
+  //
+  // 1. endpoints match same [network, region, zone] label with the client proxy have the highest priority.
+  // 2. endpoints have same [network, region] label but different [zone] label with the client proxy have the second highest priority.
+  // 3. endpoints have same [network] but different [region] labels with the client proxy have the third highest priority.
+  // 4. all the other endpoints have the same lowest priority.
+  //
+  // Suppose a service associated endpoints reside in multi clusters, the below example represents:
+  // 1. endpoints in `clusterA` and has `version=v1` label have P(0) priority.
+  // 2. endpoints not in `clusterA` but has `version=v1` label have P(1) priority.
+  // 3. all the other endpoints have P(2) priority.
+  //
+  // ```yaml
+  // failoverPriority:
+  // - "version=v1"
+  // - "topology.istio.io/cluster=clusterA"
+  // ```
+  //
+  // Optional. May be combined with `failover` (which then orders the regional
+  // tiers applied on top of these label-based priorities).
+  // For this to be effective consider one of the following:
+  // - Use together with `OutlierDetection` to detect unhealthy endpoints in the local zone so that traffic fails over to other zones according to the specified priority.
+  // - Enable `PILOT_SEND_UNHEALTHY_ENDPOINTS` to allow Envoy to know when endpoints in the local zone are unhealthy and failover according to the specified priority.
+  repeated string failover_priority = 3;
+
+  // Minimum number of hosts in the upstream cluster's local region required for zone-aware
+  // load balancing to be enabled. If the total number of upstream hosts in the local region falls below
+  // this value, zone-aware load balancing is disabled for this cluster regardless of
+  // other settings. This guards against zone-skew issues that can occur with
+  // very small clusters where the uneven distribution of hosts across zones
+  // would produce poor load balancing results.
+  // If not specified, the default is 6.
+  // +kubebuilder:validation:Minimum=1
+  google.protobuf.UInt32Value min_cluster_size = 4;
 }

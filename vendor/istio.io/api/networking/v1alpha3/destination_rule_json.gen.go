@@ -204,6 +204,17 @@ func (this *ConnectionPoolSettings_HTTPSettings) UnmarshalJSON(b []byte) error {
 	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 
+// MarshalJSON is a custom marshaler for ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive
+func (this *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) MarshalJSON() ([]byte, error) {
+	str, err := DestinationRuleMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive
+func (this *ConnectionPoolSettings_HTTPSettings_ConnectionKeepalive) UnmarshalJSON(b []byte) error {
+	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
 // MarshalJSON is a custom marshaler for OutlierDetection
 func (this *OutlierDetection) MarshalJSON() ([]byte, error) {
 	str, err := DestinationRuleMarshaler.MarshalToString(this)
@@ -256,6 +267,28 @@ func (this *LocalityLoadBalancerSetting_Failover) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON is a custom unmarshaler for LocalityLoadBalancerSetting_Failover
 func (this *LocalityLoadBalancerSetting_Failover) UnmarshalJSON(b []byte) error {
+	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
+// MarshalJSON is a custom marshaler for ZoneAwareLoadBalancerSetting
+func (this *ZoneAwareLoadBalancerSetting) MarshalJSON() ([]byte, error) {
+	str, err := DestinationRuleMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for ZoneAwareLoadBalancerSetting
+func (this *ZoneAwareLoadBalancerSetting) UnmarshalJSON(b []byte) error {
+	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
+// MarshalJSON is a custom marshaler for ZoneAwareLoadBalancerSetting_Failover
+func (this *ZoneAwareLoadBalancerSetting_Failover) MarshalJSON() ([]byte, error) {
+	str, err := DestinationRuleMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for ZoneAwareLoadBalancerSetting_Failover
+func (this *ZoneAwareLoadBalancerSetting_Failover) UnmarshalJSON(b []byte) error {
 	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 

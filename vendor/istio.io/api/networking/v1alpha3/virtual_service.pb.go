@@ -2021,11 +2021,40 @@ func (x *TLSMatchAttributes) GetSourceNamespace() string {
 //	...
 //
 // ```
+//
+// The following rule redirects requests with a path prefix of /foo to the
+// authority foo.example.com, stripping the /foo prefix from the path:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: VirtualService
+// metadata:
+//
+//	name: foo-redirect
+//
+// spec:
+//
+//	hosts:
+//	- example.com
+//	http:
+//	- match:
+//	  - uri:
+//	      prefix: /foo/
+//	  redirect:
+//	    authority: foo.example.com
+//	    prefix_rewrite: /
+//
+// ```
+//
+// With this rule, a request to example.com/foo/bar is redirected to
+// foo.example.com/bar.
 type HTTPRedirect struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// On a redirect, overwrite the Path portion of the URL with this
 	// value. Note that the entire path will be replaced, irrespective of the
 	// request URI being matched as an exact path or prefix.
+	//
+	// Mutually exclusive with prefix_rewrite.
 	Uri string `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
 	// On a redirect, overwrite the Authority/Host portion of the URL with
 	// this value.
@@ -2042,7 +2071,17 @@ type HTTPRedirect struct {
 	Scheme string `protobuf:"bytes,6,opt,name=scheme,proto3" json:"scheme,omitempty"`
 	// On a redirect, Specifies the HTTP status code to use in the redirect
 	// response. The default response code is MOVED_PERMANENTLY (301).
-	RedirectCode  uint32 `protobuf:"varint,3,opt,name=redirect_code,json=redirectCode,proto3" json:"redirect_code,omitempty"`
+	RedirectCode uint32 `protobuf:"varint,3,opt,name=redirect_code,json=redirectCode,proto3" json:"redirect_code,omitempty"`
+	// On a redirect, replace the matched prefix with this value. The route match
+	// must use a prefix match type. The matched prefix is stripped from the path
+	// and this value is prepended.
+	//
+	// Examples (route prefix match: /foo):
+	// - prefix_rewrite: /bar → /foo/baz becomes /bar/baz
+	// - prefix_rewrite: /   → /foo/baz becomes //baz (use /foo/ match to get /baz)
+	//
+	// Mutually exclusive with uri.
+	PrefixRewrite string `protobuf:"bytes,7,opt,name=prefix_rewrite,json=prefixRewrite,proto3" json:"prefix_rewrite,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2128,6 +2167,13 @@ func (x *HTTPRedirect) GetRedirectCode() uint32 {
 		return x.RedirectCode
 	}
 	return 0
+}
+
+func (x *HTTPRedirect) GetPrefixRewrite() string {
+	if x != nil {
+		return x.PrefixRewrite
+	}
+	return ""
 }
 
 type isHTTPRedirect_RedirectPort interface {
@@ -3622,7 +3668,7 @@ const file_networking_v1alpha3_virtual_service_proto_rawDesc = "" +
 	"\x10source_namespace\x18\a \x01(\tR\x0fsourceNamespace\x1a?\n" +
 	"\x11SourceLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05R\rsource_subnet\"\xcf\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05R\rsource_subnet\"\xf6\x02\n" +
 	"\fHTTPRedirect\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\x12\x1c\n" +
 	"\tauthority\x18\x02 \x01(\tR\tauthority\x12\x14\n" +
@@ -3630,7 +3676,8 @@ const file_networking_v1alpha3_virtual_service_proto_rawDesc = "" +
 	"\vderive_port\x18\x05 \x01(\x0e2=.istio.networking.v1alpha3.HTTPRedirect.RedirectPortSelectionH\x00R\n" +
 	"derivePort\x12\x16\n" +
 	"\x06scheme\x18\x06 \x01(\tR\x06scheme\x12#\n" +
-	"\rredirect_code\x18\x03 \x01(\rR\fredirectCode\"I\n" +
+	"\rredirect_code\x18\x03 \x01(\rR\fredirectCode\x12%\n" +
+	"\x0eprefix_rewrite\x18\a \x01(\tR\rprefixRewrite\"I\n" +
 	"\x15RedirectPortSelection\x12\x19\n" +
 	"\x15FROM_PROTOCOL_DEFAULT\x10\x00\x12\x15\n" +
 	"\x11FROM_REQUEST_PORT\x10\x01B\x0f\n" +
