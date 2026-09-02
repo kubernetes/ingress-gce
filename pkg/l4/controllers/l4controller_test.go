@@ -17,6 +17,8 @@ limitations under the License.
 package controllers
 
 import (
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	context2 "context"
 	"fmt"
 	"net/http"
@@ -1050,7 +1052,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	l4c := NewILBController(ctx, stopCh, klog.TODO())
+	l4c := NewILBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	l4c.hasSynced = func() bool { return true }
 	return l4c, stopCh
 }

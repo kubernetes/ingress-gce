@@ -26,10 +26,16 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
+	"slices"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -43,7 +49,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
-	"slices"
 )
 
 const (
@@ -105,23 +110,25 @@ type parsedForwardingRule struct {
 
 // StandaloneNEGLBController manages services with CustomNegLoadBalancerClass.
 type StandaloneNEGLBController struct {
-	ctx       *ccontext.ControllerContext
-	svcQueue  utils.TaskQueue
-	logger    klog.Logger
-	namer     namer.L4ResourcesNamer
-	stopCh    <-chan struct{}
-	hasSynced func() bool
+	ctx              *ccontext.ControllerContext
+	svcQueue         utils.TaskQueue
+	logger           klog.Logger
+	namer            namer.L4ResourcesNamer
+	stopCh           <-chan struct{}
+	hasSynced        func() bool
+	consistencyStore consistency.ConsistencyStore
 }
 
 // NewStandaloneNEGLBController creates a new instance of StandaloneNEGLBController.
-func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *StandaloneNEGLBController {
+func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger, consistencyStore consistency.ConsistencyStore) *StandaloneNEGLBController {
 	logger = logger.WithName("StandaloneNEGLBController")
 	lc := &StandaloneNEGLBController{
-		ctx:       ctx,
-		stopCh:    stopCh,
-		namer:     ctx.L4Namer,
-		hasSynced: ctx.HasSynced,
-		logger:    logger,
+		consistencyStore: consistencyStore,
+		ctx:              ctx,
+		stopCh:           stopCh,
+		namer:            ctx.L4Namer,
+		hasSynced:        ctx.HasSynced,
+		logger:           logger,
 	}
 	lc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, lc.syncWrapper, logger)
 
@@ -438,7 +445,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		svcLogger.V(4).Info("Service has no forwarding rule reference; skipping")
 		cond := NewConditionExternalIPProgrammedFalse(NoForwardingRuleRef)
-		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		svc, err = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +466,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			reason = NoForwardingRuleRef
 		}
 		cond := NewConditionExternalIPProgrammedFalse(reason)
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		var clearErr error
+		svc, clearErr = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if len(errs) > 0 {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule: %v", errors.Join(errs...))
 			allErrs := append([]error{clearErr}, errs...)
@@ -530,7 +538,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			firstErr = errs[0]
 		}
 		cond := NewConditionExternalIPProgrammedFalse(classifyError(firstErr))
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		var clearErr error
+		svc, clearErr = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		allErrs := append([]error{clearErr}, errs...)
 		return schemes, joinMaybeUserErrors(allErrs...)
 	}
@@ -549,7 +558,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 	cond := NewConditionExternalIPProgrammedTrue(ips)
 
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
+	if svc, err = lc.updateServiceStatus(svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
 		return schemes, err
 	}
 
@@ -593,7 +602,8 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 	}
 
 	conditionsToRemove := []string{ExternalIPProgrammed}
-	return updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger)
+	_, err := lc.updateServiceStatus(svc, newStatus, nil, conditionsToRemove, svcLogger)
+	return err
 }
 
 func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes sets.Set[string], syncErr error, start time.Time) {
@@ -675,4 +685,12 @@ func messageForReason(reason lbConditionReason) string {
 	default:
 		return "An unexpected error occurred while programming external IPs"
 	}
+}
+
+func (lc *StandaloneNEGLBController) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := updateServiceStatus(lc.ctx, svc, newStatus, newConditions, conditionsToRemove, svcLogger)
+	if err == nil {
+		lc.consistencyStore.WroteAt(types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, svc.UID, schema.GroupResource{Resource: "services"}, newSvc.ResourceVersion)
+	}
+	return newSvc, err
 }

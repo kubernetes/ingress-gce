@@ -73,20 +73,18 @@ func MergePatchBytes(old, cur interface{}) ([]byte, error) {
 
 // PatchServiceObjectMetadata patches the given service's metadata based on new
 // service metadata.
-func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata metav1.ObjectMeta) error {
+func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata metav1.ObjectMeta) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.ObjectMeta = newObjectMetadata
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }
 
 // PatchServiceLoadBalancerStatus patches the given service's LoadBalancerStatus
 // based on new service's load-balancer status.
-func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) error {
+func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.Status.LoadBalancer = newStatus
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }
 
 // PatchProviderConfigObjectMetadata patches the given ProviderConfig's metadata based on new metadata.
@@ -105,9 +103,8 @@ func PatchProviderConfigObjectMetadata(client providerconfigclient.Interface, pc
 
 // PatchServiceStatus patches the given service's ServiceStatus
 // based on new service's status.
-func PatchServiceStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.ServiceStatus) error {
+func PatchServiceStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.ServiceStatus) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.Status = newStatus
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }

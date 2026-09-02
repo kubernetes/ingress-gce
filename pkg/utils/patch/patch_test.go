@@ -183,7 +183,7 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceObjectMetadata(coreClient, tc.svc, expectSvc.ObjectMeta)
+			_, err := PatchServiceObjectMetadata(coreClient, tc.svc, expectSvc.ObjectMeta)
 			if err != nil {
 				t.Fatalf("PatchServiceObjectMetadata(%s) = %v, want nil", svcKey, err)
 			}
@@ -237,7 +237,7 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
+			_, err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
 			if err != nil {
 				t.Fatalf("PatchServiceLoadBalancerStatus(%s) = %v, want nil", svcKey, err)
 			}

@@ -17,6 +17,8 @@ limitations under the License.
 package controllers
 
 import (
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	"bytes"
 	"context"
 	"errors"
@@ -1561,7 +1563,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				c.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
 			}
 
-			lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+			lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 
 			// Add service to informer
 			c.ServiceInformer.GetIndexer().Add(tc.svc)
@@ -1783,7 +1785,7 @@ func setupControllerContext(t *testing.T) (*fake.Clientset, *gce.Cloud, *Standal
 	}
 	c.L4Namer = l4Namer
 
-	lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+	lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	return kubeClient, fakeGCE, lc, stopCh
 }
 
