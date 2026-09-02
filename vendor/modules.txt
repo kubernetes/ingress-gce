@@ -2094,6 +2094,7 @@ k8s.io/component-base/metrics
 k8s.io/component-base/metrics/api/v1
 k8s.io/component-base/metrics/internal
 k8s.io/component-base/metrics/legacyregistry
+k8s.io/component-base/metrics/prometheus/clientgo/fifo
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
 # k8s.io/klog/v2 v2.140.0

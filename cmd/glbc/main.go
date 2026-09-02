@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	_ "k8s.io/component-base/metrics/prometheus/clientgo/fifo"
+
 	"context"
 	"encoding/json"
 	"fmt"
