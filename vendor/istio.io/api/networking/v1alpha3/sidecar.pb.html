@@ -79,6 +79,24 @@ spec:
     - &quot;prod-apis/*&quot;
     - &quot;istio-system/*&quot;
 </code></pre>
+<p>A host can be excluded by prefixing the namespace with <code>~</code>. Excluded hosts are
+subtracted from the imported hosts, letting a sidecar import broadly and then
+carve out a few namespaces or services. The example below imports every service
+in the mesh except those in the <code>prod-us2</code> namespace, the <code>foo.example.com</code>
+service in <code>prod-apis</code>, and the <code>bar.example.com</code> service in every namespace.</p>
+<pre><code class="language-yaml">apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: default
+  namespace: prod-us1
+spec:
+  egress:
+  - hosts:
+    - &quot;*/*&quot;
+    - &quot;~prod-us2/*&quot;
+    - &quot;~prod-apis/foo.example.com&quot;
+    - &quot;~/bar.example.com&quot;
+</code></pre>
 <p>The following example declares a <code>Sidecar</code> configuration in the
 <code>prod-us1</code> namespace for all pods with labels <code>app: ratings</code>
 belonging to the <code>ratings.prod-us1</code> service.  The workload accepts
@@ -573,6 +591,13 @@ Istio will configure the sidecar to be able to reach every service in the
 mesh that is exported to the sidecar&rsquo;s namespace. The value <code>~/*</code> can be used
 to completely trim the configuration for sidecars that simply receive traffic
 and respond, but make no outbound connections of their own.</p>
+<p>A host may also be excluded by prefixing the <code>namespace</code> with <code>~</code>. An
+exclusion entry follows the exact same <code>namespace/dnsName</code> convention as an
+inclusion entry, so <code>~prod-us2/*</code> excludes every host in the <code>prod-us2</code>
+namespace. Note that a bare <code>~</code> namespace is treated as the wildcard
+namespace <code>*</code>, so <code>~/dnsName</code> (and <code>~/*</code>) selects across all namespaces.
+Excluded hosts are subtracted from the set of imported hosts, so a host is
+exposed only when it is imported by some entry and not excluded by any entry.</p>
 <p>NOTE: Only services and configuration artifacts exported to the sidecar&rsquo;s
 namespace (e.g., <code>exportTo</code> value of <code>*</code>) can be referenced.
 Private configurations (e.g., <code>exportTo</code> set to <code>.</code>) will

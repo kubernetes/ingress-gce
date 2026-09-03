@@ -1132,6 +1132,17 @@ has no effect.</p>
 
 </td>
 </tr>
+<tr id="EnvoyFilter-Patch-Operation-MERGE_AND_REPLACE_LIST">
+<td><code><a href="#EnvoyFilter-Patch-Operation-MERGE_AND_REPLACE_LIST">MERGE_AND_REPLACE_LIST</a></code></td>
+<td>
+<p>Merge the provided config with the generated config using
+proto merge semantics, similar to the <code>MERGE</code> operation.
+However, when merging list fields, this operation replaces
+the entire existing list with the provided list, instead of
+appending to it.</p>
+
+</td>
+</tr>
 </tbody>
 </table>
 </section>

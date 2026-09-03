@@ -198,6 +198,7 @@
 package v1alpha3
 
 import (
+	wrappers "github.com/golang/protobuf/ptypes/wrappers"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -795,8 +796,6 @@ type ServerTLSSettings struct {
 	// A list of alternate names to verify the subject identity in the
 	// certificate presented by the client.
 	// Requires TLS mode to be set to `MUTUAL`.
-	// When multiple certificates are provided via `credential_names` or `tls_certificates`,
-	// the subject alternate names are validated against the selected certificate.
 	SubjectAltNames []string `protobuf:"bytes,6,rep,name=subject_alt_names,json=subjectAltNames,proto3" json:"subject_alt_names,omitempty"`
 	// An optional list of base64-encoded SHA-256 hashes of the SPKIs of
 	// authorized client certificates.
@@ -838,9 +837,17 @@ type ServerTLSSettings struct {
 	// * `AES128-SHA`
 	// * `AES256-SHA`
 	// * `DES-CBC3-SHA`
-	CipherSuites  []string `protobuf:"bytes,9,rep,name=cipher_suites,json=cipherSuites,proto3" json:"cipher_suites,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CipherSuites []string `protobuf:"bytes,9,rep,name=cipher_suites,json=cipherSuites,proto3" json:"cipher_suites,omitempty"`
+	// Optional: If set to true, the proxy will try to validate the certificate, but even if the
+	// validation fails, it will allow the connection through.
+	//
+	// It's needed to implement Gateway API AllowInsecureFallback feature. The different between
+	// AllowInsecureFallback and not verifying client certificate at all is that Gateway is able
+	// to pass the client certificate to the backend in the x-forwarded-client-cert HTTP header and
+	// backend can verify the certificate.
+	InsecureSkipVerify *wrappers.BoolValue `protobuf:"bytes,17,opt,name=insecure_skip_verify,json=insecureSkipVerify,proto3" json:"insecure_skip_verify,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ServerTLSSettings) Reset() {
@@ -985,6 +992,13 @@ func (x *ServerTLSSettings) GetCipherSuites() []string {
 	return nil
 }
 
+func (x *ServerTLSSettings) GetInsecureSkipVerify() *wrappers.BoolValue {
+	if x != nil {
+		return x.InsecureSkipVerify
+	}
+	return nil
+}
+
 // TLSCertificate describes the server's TLS certificate.
 type ServerTLSSettings_TLSCertificate struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1059,7 +1073,7 @@ var File_networking_v1alpha3_gateway_proto protoreflect.FileDescriptor
 
 const file_networking_v1alpha3_gateway_proto_rawDesc = "" +
 	"\n" +
-	"!networking/v1alpha3/gateway.proto\x12\x19istio.networking.v1alpha3\x1a\x1fgoogle/api/field_behavior.proto\"\xd1\x01\n" +
+	"!networking/v1alpha3/gateway.proto\x12\x19istio.networking.v1alpha3\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\xd1\x01\n" +
 	"\aGateway\x12;\n" +
 	"\aservers\x18\x01 \x03(\v2!.istio.networking.v1alpha3.ServerR\aservers\x12L\n" +
 	"\bselector\x18\x02 \x03(\v20.istio.networking.v1alpha3.Gateway.SelectorEntryR\bselector\x1a;\n" +
@@ -1078,7 +1092,8 @@ const file_networking_v1alpha3_gateway_proto_rawDesc = "" +
 	"\bprotocol\x18\x02 \x01(\tB\x04\xe2A\x01\x02R\bprotocol\x12\x18\n" +
 	"\x04name\x18\x03 \x01(\tB\x04\xe2A\x01\x02R\x04name\x12#\n" +
 	"\vtarget_port\x18\x04 \x01(\rB\x02\x18\x01R\n" +
-	"targetPort\"\xee\t\n" +
+	"targetPort\"\xbc\n" +
+	"\n" +
 	"\x11ServerTLSSettings\x12%\n" +
 	"\x0ehttps_redirect\x18\x01 \x01(\bR\rhttpsRedirect\x12H\n" +
 	"\x04mode\x18\x02 \x01(\x0e24.istio.networking.v1alpha3.ServerTLSSettings.TLSmodeR\x04mode\x12-\n" +
@@ -1097,7 +1112,8 @@ const file_networking_v1alpha3_gateway_proto_rawDesc = "" +
 	"\x17verify_certificate_hash\x18\f \x03(\tR\x15verifyCertificateHash\x12j\n" +
 	"\x14min_protocol_version\x18\a \x01(\x0e28.istio.networking.v1alpha3.ServerTLSSettings.TLSProtocolR\x12minProtocolVersion\x12j\n" +
 	"\x14max_protocol_version\x18\b \x01(\x0e28.istio.networking.v1alpha3.ServerTLSSettings.TLSProtocolR\x12maxProtocolVersion\x12#\n" +
-	"\rcipher_suites\x18\t \x03(\tR\fcipherSuites\x1a\x89\x01\n" +
+	"\rcipher_suites\x18\t \x03(\tR\fcipherSuites\x12L\n" +
+	"\x14insecure_skip_verify\x18\x11 \x01(\v2\x1a.google.protobuf.BoolValueR\x12insecureSkipVerify\x1a\x89\x01\n" +
 	"\x0eTLSCertificate\x12-\n" +
 	"\x12server_certificate\x18\x01 \x01(\tR\x11serverCertificate\x12\x1f\n" +
 	"\vprivate_key\x18\x02 \x01(\tR\n" +
@@ -1142,6 +1158,7 @@ var file_networking_v1alpha3_gateway_proto_goTypes = []any{
 	(*ServerTLSSettings)(nil),                // 5: istio.networking.v1alpha3.ServerTLSSettings
 	nil,                                      // 6: istio.networking.v1alpha3.Gateway.SelectorEntry
 	(*ServerTLSSettings_TLSCertificate)(nil), // 7: istio.networking.v1alpha3.ServerTLSSettings.TLSCertificate
+	(*wrappers.BoolValue)(nil),               // 8: google.protobuf.BoolValue
 }
 var file_networking_v1alpha3_gateway_proto_depIdxs = []int32{
 	3, // 0: istio.networking.v1alpha3.Gateway.servers:type_name -> istio.networking.v1alpha3.Server
@@ -1152,11 +1169,12 @@ var file_networking_v1alpha3_gateway_proto_depIdxs = []int32{
 	7, // 5: istio.networking.v1alpha3.ServerTLSSettings.tls_certificates:type_name -> istio.networking.v1alpha3.ServerTLSSettings.TLSCertificate
 	1, // 6: istio.networking.v1alpha3.ServerTLSSettings.min_protocol_version:type_name -> istio.networking.v1alpha3.ServerTLSSettings.TLSProtocol
 	1, // 7: istio.networking.v1alpha3.ServerTLSSettings.max_protocol_version:type_name -> istio.networking.v1alpha3.ServerTLSSettings.TLSProtocol
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	8, // 8: istio.networking.v1alpha3.ServerTLSSettings.insecure_skip_verify:type_name -> google.protobuf.BoolValue
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_networking_v1alpha3_gateway_proto_init() }

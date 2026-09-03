@@ -541,9 +541,7 @@ This is mainly used for specifying RSA and ECDSA certificates for the same serve
 <td>
 <p>A list of alternate names to verify the subject identity in the
 certificate presented by the client.
-Requires TLS mode to be set to <code>MUTUAL</code>.
-When multiple certificates are provided via <code>credential_names</code> or <code>tls_certificates</code>,
-the subject alternate names are validated against the selected certificate.</p>
+Requires TLS mode to be set to <code>MUTUAL</code>.</p>
 
 </td>
 </tr>
@@ -621,6 +619,20 @@ The supported list of ciphers are:</p>
 <li><code>AES256-SHA</code></li>
 <li><code>DES-CBC3-SHA</code></li>
 </ul>
+
+</td>
+</tr>
+<tr id="ServerTLSSettings-insecure_skip_verify">
+<td><div class="field"><div class="name"><code><a href="#ServerTLSSettings-insecure_skip_verify">insecureSkipVerify</a></code></div>
+<div class="type"><a href="https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#boolvalue">BoolValue</a></div>
+</div></td>
+<td>
+<p>If set to true, the proxy will try to validate the certificate, but even if the
+validation fails, it will allow the connection through.</p>
+<p>It&rsquo;s needed to implement Gateway API AllowInsecureFallback feature. The different between
+AllowInsecureFallback and not verifying client certificate at all is that Gateway is able
+to pass the client certificate to the backend in the x-forwarded-client-cert HTTP header and
+backend can verify the certificate.</p>
 
 </td>
 </tr>

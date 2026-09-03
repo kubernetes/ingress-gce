@@ -103,6 +103,27 @@ syntax = "proto3";
 //     - "istio-system/*"
 // ```
 //
+// A host can be excluded by prefixing the namespace with `~`. Excluded hosts are
+// subtracted from the imported hosts, letting a sidecar import broadly and then
+// carve out a few namespaces or services. The example below imports every service
+// in the mesh except those in the `prod-us2` namespace, the `foo.example.com`
+// service in `prod-apis`, and the `bar.example.com` service in every namespace.
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: Sidecar
+// metadata:
+//   name: default
+//   namespace: prod-us1
+// spec:
+//   egress:
+//   - hosts:
+//     - "*/*"
+//     - "~prod-us2/*"
+//     - "~prod-apis/foo.example.com"
+//     - "~/bar.example.com"
+// ```
+//
 // The following example declares a `Sidecar` configuration in the
 // `prod-us1` namespace for all pods with labels `app: ratings`
 // belonging to the `ratings.prod-us1` service.  The workload accepts
@@ -526,6 +547,14 @@ message IstioEgressListener {
   // mesh that is exported to the sidecar's namespace. The value `~/*` can be used
   // to completely trim the configuration for sidecars that simply receive traffic
   // and respond, but make no outbound connections of their own.
+  //
+  // A host may also be excluded by prefixing the `namespace` with `~`. An
+  // exclusion entry follows the exact same `namespace/dnsName` convention as an
+  // inclusion entry, so `~prod-us2/*` excludes every host in the `prod-us2`
+  // namespace. Note that a bare `~` namespace is treated as the wildcard
+  // namespace `*`, so `~/dnsName` (and `~/*`) selects across all namespaces.
+  // Excluded hosts are subtracted from the set of imported hosts, so a host is
+  // exposed only when it is imported by some entry and not excluded by any entry.
   //
   // NOTE: Only services and configuration artifacts exported to the sidecar's
   // namespace (e.g., `exportTo` value of `*`) can be referenced.
