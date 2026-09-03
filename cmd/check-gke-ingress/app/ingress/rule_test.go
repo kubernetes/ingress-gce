@@ -870,3 +870,88 @@ func TestCheckFunctions(t *testing.T) {
 		}
 	}
 }
+
+func TestRunChecksDeduplicatesRepeatedServiceReferences(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	beClient := fakebeconfig.NewSimpleClientset()
+	feClient := fakefeconfig.NewSimpleClientset()
+
+	ingress := networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ingress-1",
+			Namespace: "test",
+		},
+		Spec: networkingv1.IngressSpec{
+			DefaultBackend: &networkingv1.IngressBackend{
+				Service: &networkingv1.IngressServiceBackend{
+					Name: "svc-1",
+				},
+			},
+			Rules: []networkingv1.IngressRule{
+				{
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "svc-1",
+										},
+									},
+								},
+								{
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "svc-1",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	client.NetworkingV1().Ingresses("test").Create(context.TODO(), &ingress, metav1.CreateOptions{})
+
+	client.CoreV1().Services("test").Create(context.TODO(), &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-1",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"beconfig-1","ports":{"80":"beconfig-1"}}`,
+			},
+		},
+	}, metav1.CreateOptions{})
+
+	beClient.CloudV1().BackendConfigs("test").Create(context.TODO(), &beconfigv1.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "beconfig-1",
+			Namespace: "test",
+		},
+	}, metav1.CreateOptions{})
+
+	result := CheckAllIngresses("test", client, beClient, feClient)
+	if len(result.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(result.Resources))
+	}
+
+	checkCounts := map[string]int{}
+	for _, check := range result.Resources[0].Checks {
+		checkCounts[check.Name]++
+	}
+
+	for _, checkName := range []string{
+		ServiceExistenceCheck,
+		BackendConfigAnnotationCheck,
+		AppProtocolAnnotationCheck,
+		L7ILBNegAnnotationCheck,
+		BackendConfigExistenceCheck,
+		HealthCheckTimeoutCheck,
+	} {
+		if diff := cmp.Diff(1, checkCounts[checkName]); diff != "" {
+			t.Errorf("expected check %s to appear once (-want +got):\n%s", checkName, diff)
+		}
+	}
+}
