@@ -113,7 +113,8 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
 	svcLogger.V(2).Info("Adding finalizer to service", "finalizerKey", key)
-	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	_, err := patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	return err
 }
 
 // EnsureDeleteServiceFinalizer patches the service to remove finalizer.
@@ -128,7 +129,8 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
 	svcLogger.V(2).Info("Removing finalizer from service", "finalizerKey", key)
-	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	_, err := patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	return err
 }
 
 // EnsureServiceDeleteFinalizers patches the service to ensure the specified finalizers are not present in the service finalizers list.
@@ -152,5 +154,6 @@ func EnsureServiceDeleteFinalizers(service *corev1.Service, ensureRemoveKeys []s
 	}
 
 	svcLogger.V(2).Info("Removing finalizers from service", "finalizerKeys", ensureRemoveKeys)
-	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	_, err := patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
+	return err
 }

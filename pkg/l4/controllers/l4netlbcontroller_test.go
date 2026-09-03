@@ -17,6 +17,8 @@ limitations under the License.
 package controllers
 
 import (
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	"context"
 	"errors"
 	"fmt"
@@ -359,7 +361,7 @@ func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode boo
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	lc := NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc := NewL4NetLBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	lc.hasSynced = func() bool { return true }
 	return lc
 }

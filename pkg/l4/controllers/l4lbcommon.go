@@ -74,31 +74,31 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
 	svcLogger.V(3).Info("Updating annotations of service")
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		svcLogger.V(3).Info("Service annotations not changed, skipping patch for service")
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) (*v1.Service, error) {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
@@ -165,7 +165,7 @@ func conditionsEqual(l, r []metav1.Condition) bool {
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) (*v1.Service, error) {
 	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions), "conditionsToRemove", conditionsToRemove)
 
 	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, conditionsToRemove)
@@ -182,7 +182,7 @@ func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newSta
 		})
 	}
 	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
-	return nil
+	return svc, nil
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE

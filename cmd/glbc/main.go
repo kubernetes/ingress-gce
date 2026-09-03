@@ -19,6 +19,9 @@ package main
 import (
 	_ "k8s.io/component-base/metrics/prometheus/clientgo/fifo"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -652,7 +655,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4Controller {
-		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger)
+		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger, consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{schema.GroupResource{Resource: "services"}: ctx.ServiceInformer.(consistency.LastSyncRVGetter)}))
 		systemHealth.AddHealthCheck(controllers.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
@@ -680,7 +683,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger)
+		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger, consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{schema.GroupResource{Resource: "services"}: ctx.ServiceInformer.(consistency.LastSyncRVGetter)}))
 		systemHealth.AddHealthCheck(controllers.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
@@ -688,7 +691,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4StandaloneNEGController {
-		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
+		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger, consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{schema.GroupResource{Resource: "services"}: ctx.ServiceInformer.(consistency.LastSyncRVGetter)}))
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")
 	}
