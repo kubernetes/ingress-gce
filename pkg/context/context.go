@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
+	"k8s.io/client-go/informers/internalinterfaces"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -173,8 +174,18 @@ func NewControllerContext(
 ) (*ControllerContext, error) {
 	logger = logger.WithName("ControllerContext")
 
-	podInformer := informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	nodeInformer := informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	informerName, err := cache.NewInformerName("ingress-gce")
+	if err != nil {
+		logger.Error(err, "Failed to create InformerName")
+	}
+	informerOptions := internalinterfaces.InformerOptions{
+		ResyncPeriod: config.ResyncPeriod,
+		Indexers:     utils.NewNamespaceIndexer(),
+		InformerName: informerName,
+	}
+
+	podInformer := informerv1.NewPodInformerWithOptions(kubeClient, config.Namespace, informerOptions)
+	nodeInformer := informerv1.NewNodeInformerWithOptions(kubeClient, informerOptions)
 
 	// Error in SetTransform() doesn't affect the correctness but the memory efficiency
 	if err := podInformer.SetTransform(preserveNeeded); err != nil {
@@ -200,8 +211,8 @@ func NewControllerContext(
 		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval, logger),
 		ControllerContextConfig: config,
 		L4Metrics:               l4metrics.NewCollector(flags.F.MetricsExportInterval, flags.F.L4NetLBProvisionDeadline, flags.F.EnableL4NetLBDualStack, flags.F.EnableL4ILBDualStack, logger),
-		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		IngressInformer:         informernetworking.NewIngressInformerWithOptions(kubeClient, config.Namespace, informerOptions),
+		ServiceInformer:         informerv1.NewServiceInformerWithOptions(kubeClient, config.Namespace, informerOptions),
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
