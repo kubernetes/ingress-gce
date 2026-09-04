@@ -210,7 +210,7 @@ func NewTransactionSyncer(
 	return syncer
 }
 
-func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo, l4LBType negtypes.L4LBType, negMetrics *metrics.NegMetrics) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, zoneGetter *zonegetter.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger, enableDualStackNEG bool, enableIPv6NodeNEGEndpoints bool, syncMetricsCollector *metricscollector.SyncerMetrics, networkInfo *network.NetworkInfo, l4LBType negtypes.L4LBType, negMetrics *metrics.NegMetrics) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
@@ -224,15 +224,17 @@ func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, 
 				LbType:                   l4LBType,
 				NegMetrics:               negMetrics,
 				IncludeDrainNodesL4Local: syncerKey.IncludeDrainNodesL4Local,
+				PopulateIPv6:             enableIPv6NodeNEGEndpoints,
 			}, logger)
 		default:
 			return NewClusterL4EndpointsCalculator(ClusterL4EndpointsCalculatorParams{
-				NodeLister:  nodeLister,
-				ZoneGetter:  zoneGetter,
-				SvcId:       serviceKey,
-				NetworkInfo: networkInfo,
-				LbType:      l4LBType,
-				NegMetrics:  negMetrics,
+				NodeLister:   nodeLister,
+				ZoneGetter:   zoneGetter,
+				SvcId:        serviceKey,
+				NetworkInfo:  networkInfo,
+				LbType:       l4LBType,
+				NegMetrics:   negMetrics,
+				PopulateIPv6: enableIPv6NodeNEGEndpoints,
 			}, logger)
 		}
 	}

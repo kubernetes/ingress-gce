@@ -570,6 +570,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		negtypes.L7Mode,
 		m.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negBindingName", syncerKey.NEGBindingName),
 		false,
+		false,
 		m.syncerMetrics,
 		networkInfo,
 		"",
