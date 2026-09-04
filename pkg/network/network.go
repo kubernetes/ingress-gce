@@ -27,7 +27,9 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
+	netutils "k8s.io/utils/net"
 )
 
 const (
@@ -214,23 +216,38 @@ func subnetworkURL(cloudProvider CloudNetworkProvider, subnetwork string) string
 	return cloud.SelfLink(meta.VersionGA, cloudProvider.NetworkProjectID(), "subnetworks", key)
 }
 
-// GetNodeIPForNetwork retrieves the IP of the interface of the node connected to the network.
+// GetNodeIPsForNetwork retrieves the IPv4 and IPv6 addresses of the interface of the node connected to the network.
 // The addresses come from the 'networking.gke.io/north-interfaces' annotation.
-func GetNodeIPForNetwork(node *apiv1.Node, network string) string {
+//
+// It returns at most one address per family. An address is returned only if it parses
+// as that family, and it is returned in the canonical RFC 5952 form. If several
+// addresses of the same family are present, the first one in iteration order wins.
+// Either return value may be "".
+func GetNodeIPsForNetwork(node *apiv1.Node, network string) (ipv4, ipv6 string) {
+	if node == nil {
+		return "", ""
+	}
 	northInterfacesAnnotation, ok := node.Annotations[networkv1.NorthInterfacesAnnotationKey]
 	if !ok || northInterfacesAnnotation == "" {
-		return ""
+		return "", ""
 	}
 	northInterfaces, err := networkv1.ParseNorthInterfacesAnnotation(northInterfacesAnnotation)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	for _, northInterface := range northInterfaces {
-		if northInterface.Network == network {
-			return northInterface.IpAddress
+		if northInterface.Network != network {
+			continue
+		}
+		if ipv4 == "" && netutils.IsIPv4String(northInterface.IpAddress) {
+			ipv4 = utils.CanonicalIP(northInterface.IpAddress)
+			continue
+		}
+		if ipv6 == "" && netutils.IsIPv6String(northInterface.IpAddress) {
+			ipv6 = utils.CanonicalIP(northInterface.IpAddress)
 		}
 	}
-	return ""
+	return ipv4, ipv6
 }
 
 type CloudNetworkProvider interface {
@@ -259,7 +276,11 @@ type NetworkInfo struct {
 // For non default networks the result is based on the data from
 // the 'networking.gke.io/north-interfaces' node annotation.
 func (ni *NetworkInfo) IsNodeConnected(node *apiv1.Node) bool {
-	return ni.IsDefault || GetNodeIPForNetwork(node, ni.K8sNetwork) != ""
+	if ni.IsDefault {
+		return true
+	}
+	ipv4, ipv6 := GetNodeIPsForNetwork(node, ni.K8sNetwork)
+	return ipv4 != "" || ipv6 != ""
 }
 
 // FakeNetworkResolver is an implementation of a Resolver that just returns a previously set NetworkInfo. To be used only in tests.

@@ -378,7 +378,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.ReadOnlyMode, "read-only-controllers", false, "When enabled, this flag runs the IG, NEG, L4 ILB, and L4 NetLB controllers in a read-only mode. This prevents them from executing any mutating API calls (e.g., create, update, delete), allowing you to safely observe controller behavior without modifying resources. The Ingress controller is exempt from this mode.")
 	flag.BoolVar(&F.EnableNEGsForIngress, "enable-negs-for-ingress", true, "Allow the NEG controller to create NEGs for Ingress services.")
 	flag.DurationVar(&F.L4ILBLegacyHeadStartTime, "prevent-legacy-race-l4-ilb", 0*time.Second, "Delay before processing new L4 ILB services without existing finalizers. This gives the legacy controller a head start to claim the service, preventing a race condition upon service creation.")
-	flag.BoolVar(&F.EnableIPv6NodeNEGEndpoints, "enable-ipv6-node-neg-endpoints", false, "Enable populating IPv6 addresses for Node IPs in GCE_VM_IP NEGs.")
+	flag.BoolVar(&F.EnableIPv6NodeNEGEndpoints, "enable-ipv6-node-neg-endpoints", false, "Enable populating IPv6 addresses for Node IPs in GCE_VM_IP NEGs. Requires --enable-dual-stack-neg, which gates reading those addresses back from GCE.")
 	flag.BoolVar(&F.EnableL4NEGDetachCancel, "enable-l4-neg-detach-cancel", false, "Enable cancelling NEG detach when endpoints need to be re-attached.")
 	flag.BoolVar(&F.EnablePSCReconcileConnections, "enable-psc-reconcile-connections", false, "Enable support for PSC ServiceAttachment reconcile connections field")
 	flag.BoolVar(&F.EnableL4NEGLocalIncludeDrainNodes, "enable-l4-neg-local-include-drain-nodes", false, "For L4 LB NEGs with externalTrafficPolicy=Local, keep nodes carrying the GKE drain label in the NEG as long as they still host a backing pod. Unready-node behavior is unchanged.")
@@ -407,6 +407,16 @@ func Validate() {
 
 	if F.EnableL3ForwardingRuleForNetLBMixedProtocol && !F.EnableL4NetLBMixedProtocol {
 		klog.Fatalf("The flag --enable-l3-default-forwarding-rule-for-netlb-mixed-protocol requires --enable-l4netlb-mixed-protocol to be true.")
+	}
+
+	// TODO(08volt): gate on a single flag in the future. Right now, getSubsetPerZone populates
+	// NetworkEndpoint.IPv6 for GCE_VM_IP NEGs based on EnableIPv6NodeNEGEndpoints, while
+	// retrieveExistingZoneNetworkEndpointMap reads it back based on EnableDualStackNEG.
+	// NetworkEndpoint is the key used to diff desired against observed endpoints, so with
+	// only the first flag set the desired endpoints never equal the observed ones and every sync
+	// detaches and re-attaches every node.
+	if F.EnableIPv6NodeNEGEndpoints && !F.EnableDualStackNEG {
+		klog.Fatalf("The flag --enable-ipv6-node-neg-endpoints requires --enable-dual-stack-neg to be true.")
 	}
 }
 
