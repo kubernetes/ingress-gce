@@ -459,66 +459,116 @@ func TestRefersGKENetworkParamSet(t *testing.T) {
 	}
 }
 
-func TestNodeIPForNetwork(t *testing.T) {
+func TestNodeIPsForNetwork(t *testing.T) {
 	cases := []struct {
-		desc    string
-		node    *apiv1.Node
-		network string
-		want    string
+		desc     string
+		node     *apiv1.Node
+		network  string
+		wantIPv4 string
+		wantIPv6 string
 	}{
+		{
+			desc:     "nil node",
+			network:  "test-network",
+			node:     nil,
+			wantIPv4: "",
+			wantIPv6: "",
+		},
 		{
 			desc:    "no annotation",
 			network: "test-network",
 			node: &apiv1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{}},
 			},
-			want: "",
+			wantIPv4: "",
+			wantIPv6: "",
 		},
 		{
-			desc:    "annotation that has the network",
+			desc:    "IPv4 only",
 			network: "test-network",
 			node: &apiv1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
 					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
-						{
-							Network:   "another-network",
-							IpAddress: "10.0.0.1",
-						},
-						{
-							Network:   "test-network",
-							IpAddress: "192.168.0.1",
-						},
+						{Network: "test-network", IpAddress: "192.168.0.1"},
 					}),
 				}},
 			},
-			want: "192.168.0.1",
+			wantIPv4: "192.168.0.1",
+			wantIPv6: "",
 		},
 		{
-			desc:    "annotation that does not have the network",
+			desc:    "IPv6 only",
 			network: "test-network",
 			node: &apiv1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
 					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
-						{
-							Network:   "another-network",
-							IpAddress: "10.0.0.1",
-						},
-						{
-							Network:   "other-network",
-							IpAddress: "192.168.0.1",
-						},
+						{Network: "test-network", IPv6Address: "2001:db8::1"},
 					}),
 				}},
 			},
-			want: "",
+			wantIPv4: "",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc:    "Dual stack",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{Network: "test-network", IpAddress: "192.168.0.1", IPv6Address: "2001:db8::1"},
+					}),
+				}},
+			},
+			wantIPv4: "192.168.0.1",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc:    "IPv6 address is returned in canonical form",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{Network: "test-network", IPv6Address: "2001:0DB8:0:0:0:0:0:1"},
+					}),
+				}},
+			},
+			wantIPv4: "",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc:    "IPv6 address in ipAddress is ignored",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{Network: "test-network", IpAddress: "2001:db8::1"},
+					}),
+				}},
+			},
+			wantIPv4: "",
+			wantIPv6: "",
+		},
+		{
+			desc:    "Multiple networks with dual-stack interfaces",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{Network: "other-network", IpAddress: "10.0.0.1", IPv6Address: "2001:db8:ffff::1"},
+						{Network: "test-network", IpAddress: "192.168.0.1", IPv6Address: "2001:db8::1"},
+					}),
+				}},
+			},
+			wantIPv4: "192.168.0.1",
+			wantIPv6: "2001:db8::1",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			got := GetNodeIPForNetwork(tc.node, tc.network)
-			if tc.want != got {
-				t.Errorf("GetNodeIPForNetwork(%+v, %q) wanted %v but got %v", tc.node, tc.network, tc.want, got)
+			gotIPv4, gotIPv6 := GetNodeIPsForNetwork(tc.node, tc.network)
+			if gotIPv4 != tc.wantIPv4 || gotIPv6 != tc.wantIPv6 {
+				t.Errorf("GetNodeIPsForNetwork(%+v, %q) = (%q, %q), want (%q, %q)", tc.node, tc.network, gotIPv4, gotIPv6, tc.wantIPv4, tc.wantIPv6)
 			}
 		})
 	}
@@ -570,6 +620,21 @@ func TestIsConnectedToNetwork(t *testing.T) {
 							Network:   "test-network",
 							IpAddress: "192.168.0.1",
 						},
+					}),
+				}},
+			},
+			want: true,
+		},
+		{
+			desc: "annotation that has the network with only an IPv6 address",
+			networkInfo: NetworkInfo{
+				IsDefault:  false,
+				K8sNetwork: "test-network",
+			},
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{Network: "test-network", IPv6Address: "2001:db8::1"},
 					}),
 				}},
 			},
