@@ -1,12 +1,14 @@
 package address
 
 import (
+	"errors"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -23,6 +25,9 @@ func IPv4ToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service,
 	// Get value from new annotation which support both IPv4 and IPv6
 	ipv4FromAnnotation, ipNameFromAnnotation, err := annotations.FromService(svc).IPv4AddressAnnotation(cloud)
 	if err != nil {
+		if errors.Is(err, annotations.ErrInvalidStaticIPName) {
+			return "", "", l4utils.NewUserError(err)
+		}
 		return "", "", err
 	}
 	if ipv4FromAnnotation != "" {
@@ -55,6 +60,9 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 	// Get value from new annotation which support both IPv4 and IPv6
 	ipv6AddressFromAnnotation, ipNameFromAnnotation, err := annotations.FromService(svc).IPv6AddressAnnotation(cloud)
 	if err != nil {
+		if errors.Is(err, annotations.ErrInvalidStaticIPName) {
+			return "", "", l4utils.NewUserError(err)
+		}
 		return "", "", err
 	}
 	if ipv6AddressFromAnnotation != "" {
