@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/GoogleCloudPlatform/gke-enterprise-mt v1.0.2
-	github.com/GoogleCloudPlatform/gke-networking-api v0.2.4
+	github.com/GoogleCloudPlatform/gke-networking-api v0.2.5
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.35.0
 	github.com/go-logr/logr v1.4.4
 	github.com/google/go-cmp v0.7.0

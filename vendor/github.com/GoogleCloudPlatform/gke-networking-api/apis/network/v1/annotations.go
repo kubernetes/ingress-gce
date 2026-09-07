@@ -179,8 +179,10 @@ type NodeNetwork struct {
 type NorthInterface struct {
 	// Name of the network an interface on node is connected to.
 	Network string `json:"network"`
-	// IP address of the interface.
-	IpAddress string `json:"ipAddress"`
+	// IpAddress is the IPv4 underlay/parent address of the interface on the node.
+	IpAddress string `json:"ipAddress,omitempty"`
+	// IPv6Address is the underlay/parent IPv6 address of the interface on the node.
+	IPv6Address string `json:"ipv6Address,omitempty"`
 }
 
 // InterfaceStatus holds information of a NIC of a pod.
