@@ -269,6 +269,14 @@ func TestBackendServiceDynamicForwarding(t *testing.T) {
 	}
 }
 
+func TestBackendServiceDynamicForwardingForwardProxy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceDynamicForwardingForwardProxy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwardingForwardProxy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceDynamicForwardingIpPortSelection(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceDynamicForwardingIpPortSelection{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceDynamicForwardingIpPortSelection{})
@@ -381,6 +389,14 @@ func TestBackendServiceNetworkPassThroughLbTrafficPolicyZonalAffinity(t *testing
 	}
 }
 
+func TestBackendServiceParams(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceParams{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceParams{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceReference(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceReference{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceReference{})
@@ -416,6 +432,30 @@ func TestBackendServiceUsedBy(t *testing.T) {
 func TestCacheKeyPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(CacheKeyPolicy{})
 	alphaType := reflect.TypeOf(computealpha.CacheKeyPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCachePolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CachePolicy{})
+	alphaType := reflect.TypeOf(computealpha.CachePolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCachePolicyCacheKeyPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CachePolicyCacheKeyPolicy{})
+	alphaType := reflect.TypeOf(computealpha.CachePolicyCacheKeyPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCachePolicyNegativeCachingPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CachePolicyNegativeCachingPolicy{})
+	alphaType := reflect.TypeOf(computealpha.CachePolicyNegativeCachingPolicy{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -582,6 +622,14 @@ func TestForwardingRuleToGA(t *testing.T) {
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("ForwardingRule.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
+func TestForwardingRuleAttachedExtension(t *testing.T) {
+	compositeType := reflect.TypeOf(ForwardingRuleAttachedExtension{})
+	alphaType := reflect.TypeOf(computealpha.ForwardingRuleAttachedExtension{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
 	}
 }
 
