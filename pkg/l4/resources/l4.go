@@ -397,8 +397,8 @@ func (l4 *L4) subnetName() string {
 		return customSubnetName
 	}
 
-	// If no custom subnet in annotation -- use cluster subnet.
-	clusterSubnetURL := l4.cloud.SubnetworkURL()
+	// If no custom subnet in annotation -- use service/cluster subnet.
+	clusterSubnetURL := l4.network.SubnetworkURL
 	splitURL := strings.Split(clusterSubnetURL, "/")
 	return splitURL[len(splitURL)-1]
 }
@@ -706,7 +706,7 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
 	if l4utils.NeedsIPv6(l4.Service) {
-		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse)
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, subnetworkURL, ipv6AddressToUse)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
 	}

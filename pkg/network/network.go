@@ -137,8 +137,8 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	if !exists {
 		return nil, l4utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
 	}
-	network := obj.(*networkv1.Network)
-	if network == nil {
+	network, ok := obj.(*networkv1.Network)
+	if !ok || network == nil {
 		return nil, fmt.Errorf("cannot convert to Network (%T)", obj)
 	}
 	svcLogger.Info("Found network for service", "network", network.Name)
