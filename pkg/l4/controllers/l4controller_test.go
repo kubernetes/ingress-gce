@@ -18,10 +18,14 @@ package controllers
 
 import (
 	context2 "context"
+	goerrors "errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
+
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
@@ -37,6 +41,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
@@ -1050,7 +1055,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	l4c := NewILBController(ctx, stopCh, klog.TODO())
+	l4c := NewILBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	l4c.hasSynced = func() bool { return true }
 	return l4c, stopCh
 }
@@ -1309,5 +1314,84 @@ func TestMultipleServicesProcessingWithLegacyHeadStartTime(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// fakeLastSyncRVGetter is a fake informer for consistency tests: it reports
+// a configurable last synced ResourceVersion.
+type fakeLastSyncRVGetter struct {
+	mu sync.Mutex
+	rv string
+}
+
+func (f *fakeLastSyncRVGetter) LastSyncResourceVersion() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.rv
+}
+
+func (f *fakeLastSyncRVGetter) setRV(rv string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rv = rv
+}
+
+// newTestConsistencyStore returns a real ConsistencyStore wired to a fake
+// service informer whose last synced ResourceVersion tests can control.
+func newTestConsistencyStore(rv string) (consistency.ConsistencyStore, *fakeLastSyncRVGetter) {
+	getter := &fakeLastSyncRVGetter{rv: rv}
+	store := consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{ServicesGroupResource: getter})
+	return store, getter
+}
+
+// TestILBSyncStallsUntilCacheIsConsistent verifies the ConsistencyStore
+// integration end to end: a successful sync records the ResourceVersions it
+// wrote, a subsequent sync stalls with a ConsistencyError while the informer
+// lags behind those writes, resumes once the informer catches up, and the
+// record is dropped when the service disappears.
+func TestILBSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	l4c, stopCh := newServiceController(t, newFakeGCE(), false)
+	defer close(stopCh)
+
+	store, getter := newTestConsistencyStore("100")
+	l4c.consistencyStore = store
+
+	svc := test.NewL4ILBService(false, 8080)
+	svc.ResourceVersion = "100"
+	svc.UID = "test-uid"
+	addILBService(l4c, svc)
+	addNEGAndSvcNegL4Controller(l4c, svc)
+	key := getKeyForSvc(svc, t)
+
+	// With a consistent cache the sync must succeed and record the writes
+	// it performs (finalizer, annotations, status; the fake client keeps
+	// ResourceVersion "100").
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) with consistent cache = %v, want nil", key, err)
+	}
+
+	// Informer behind the recorded writes: the sync must stall.
+	getter.setRV("99")
+	err := l4c.sync(key, klog.TODO())
+	var consistencyErr *consistency.ConsistencyError
+	if !goerrors.As(err, &consistencyErr) {
+		t.Fatalf("sync(%s) with stale cache = %v, want *consistency.ConsistencyError", key, err)
+	}
+
+	// Informer caught up: the sync must proceed again.
+	getter.setRV("100")
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after cache caught up = %v, want nil", key, err)
+	}
+
+	// A sync that finds the service gone must clear the record, so a
+	// stale cache no longer stalls this key.
+	deleteILBService(l4c, svc)
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) of deleted service = %v, want nil", key, err)
+	}
+	getter.setRV("99")
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after record cleared = %v, want nil", key, err)
 	}
 }
