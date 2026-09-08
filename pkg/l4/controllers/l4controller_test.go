@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -1050,7 +1052,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	l4c := NewILBController(ctx, stopCh, klog.TODO())
+	l4c := NewILBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	l4c.hasSynced = func() bool { return true }
 	return l4c, stopCh
 }
@@ -1309,5 +1311,58 @@ func TestMultipleServicesProcessingWithLegacyHeadStartTime(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestILBSyncStallsUntilCacheIsConsistent verifies the ConsistencyStore
+// integration end to end: a sync records the ResourceVersion its writes
+// return, the next sync stalls while the informer has not observed them,
+// resumes once it has, and the record is dropped when the informer observes
+// the deletion of the service.
+func TestILBSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	l4c, stopCh := newServiceController(t, newFakeGCE(), false)
+	defer close(stopCh)
+
+	// The informer has observed ResourceVersion 100.
+	store, getter := newTestConsistencyStore("100")
+	l4c.serviceConsistencyStore = store
+
+	svc := test.NewL4ILBService(false, 8080)
+	svc.ResourceVersion = "100"
+	svc.UID = "test-uid"
+	l4c.ctx.ServiceInformer.GetIndexer().Add(svc)
+	// The fake client does not assign ResourceVersions: a write returns the
+	// one the stored object has. Storing 150 stands for the version the
+	// writes of the sync produce, which the informer has not observed yet.
+	written := svc.DeepCopy()
+	written.ResourceVersion = "150"
+	if _, err := l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context2.TODO(), written, v1.CreateOptions{}); err != nil {
+		t.Fatalf("Create(%s/%s) = %v, want nil", svc.Namespace, svc.Name, err)
+	}
+	addNEGAndSvcNegL4Controller(l4c, svc)
+	key := getKeyForSvc(svc, t)
+
+	// Nothing is recorded yet, so the first sync proceeds; it records the
+	// writes it performs (finalizer, status, annotations).
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) before any write = %v, want nil", key, err)
+	}
+
+	if err := l4c.sync(key, klog.TODO()); !consistency.IsStall(err) {
+		t.Fatalf("sync(%s) before the informer observed the writes = %v, want a consistency stall", key, err)
+	}
+
+	getter.SetRV("150")
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the informer observed the writes = %v, want nil", key, err)
+	}
+
+	// The informer observing the deletion drops the record, so a lagging
+	// informer no longer stalls this key.
+	deleteILBService(l4c, svc)
+	clearServiceRecord(store, svc)
+	getter.SetRV("100")
+	if err := l4c.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the service was deleted = %v, want nil", key, err)
 	}
 }

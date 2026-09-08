@@ -17,14 +17,18 @@ limitations under the License.
 package utils
 
 import (
+	"bytes"
 	"errors"
-	"k8s.io/klog/v2"
 	"reflect"
-	"testing"
-
-	"k8s.io/client-go/tools/cache"
+	"strings"
 	"sync"
+	"testing"
 	"time"
+
+	"github.com/go-logr/logr/funcr"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+	"k8s.io/klog/v2"
 )
 
 func TestPeriodicTaskQueue(t *testing.T) {
@@ -141,6 +145,56 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 				if _, ok := synced.Load(key); !ok {
 					t.Errorf("Did not sync input key - %s.", key)
 				}
+			}
+		})
+	}
+}
+
+func TestLogRequeue(t *testing.T) {
+	t.Parallel()
+
+	stall := &consistency.ConsistencyError{Message: "informer cache is stale"}
+	failure := errors.New("quota exceeded")
+
+	for _, tc := range []struct {
+		name      string
+		err       error
+		wantError bool
+		wantSub   string
+	}{
+		{
+			name:      "stall_logged_at_info",
+			err:       stall,
+			wantError: false,
+			wantSub:   "Requeuing until the informer cache has observed the controller's writes",
+		},
+		{
+			name:      "failure_logged_as_error",
+			err:       failure,
+			wantError: true,
+			wantSub:   "Requeuing due to error",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			gotError := false
+			logger := funcr.New(func(prefix, args string) {
+				if strings.Contains(args, `"error"=`) {
+					gotError = true
+				}
+				buf.WriteString(prefix)
+				buf.WriteString(args)
+			}, funcr.Options{Verbosity: 2})
+
+			logRequeue(logger, tc.err, "key", "ns/svc")
+
+			if gotError != tc.wantError {
+				t.Errorf("logRequeue(%v) logged as error = %t, want %t; log: %s", tc.err, gotError, tc.wantError, buf.String())
+			}
+			if !strings.Contains(buf.String(), tc.wantSub) {
+				t.Errorf("logRequeue(%v) output = %q, want substring %q", tc.err, buf.String(), tc.wantSub)
 			}
 		})
 	}

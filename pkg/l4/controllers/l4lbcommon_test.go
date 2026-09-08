@@ -1,12 +1,26 @@
 package controllers
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
+	clientgofeatures "k8s.io/client-go/features"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
+	ingctx "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+	"k8s.io/klog/v2"
 )
 
 func TestFinalizerWasRemovedUnexpectedly(t *testing.T) {
@@ -444,5 +458,253 @@ func TestMergeConditions_Sorting(t *testing.T) {
 		if cond.Type != expectedOrder[i] {
 			t.Errorf("At index %d: got Type %q, expected %q", i, cond.Type, expectedOrder[i])
 		}
+	}
+}
+
+// newTestConsistencyStore returns a real ConsistencyStore for services, wired
+// to a fake informer store whose ResourceVersion the test controls.
+func newTestConsistencyStore(rv string) (consistency.ConsistencyStore, *consistency.FakeRVGetter) {
+	getter := consistency.NewFakeRVGetter(rv)
+	store := consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{servicesGroupResource: getter})
+	return store, getter
+}
+
+// TestClearServiceRecord covers the handler of the informer delete event:
+// the plain object, the tombstone an informer delivers when the final state
+// is unknown, and the UID that keeps a deletion event for an old incarnation
+// from dropping the record of a service recreated since.
+func TestClearServiceRecord(t *testing.T) {
+	svc := &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-svc", UID: "test-uid"}}
+	ref := serviceRef(svc.Namespace, svc.Name)
+
+	for _, tc := range []struct {
+		desc        string
+		deleted     interface{}
+		wantCleared bool
+	}{
+		{
+			desc:        "service",
+			deleted:     svc,
+			wantCleared: true,
+		},
+		{
+			desc:        "tombstone",
+			deleted:     cache.DeletedFinalStateUnknown{Key: "test-ns/test-svc", Obj: svc},
+			wantCleared: true,
+		},
+		{
+			desc:        "old incarnation",
+			deleted:     &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-svc", UID: "old-uid"}},
+			wantCleared: false,
+		},
+		{
+			desc:        "unexpected type",
+			deleted:     "not-a-service",
+			wantCleared: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			// A write at 150 that the informer, at 100, has not observed.
+			store, _ := newTestConsistencyStore("100")
+			store.WroteAt(ref, svc.UID, "150")
+
+			clearServiceRecord(store, tc.deleted)
+
+			if gotCleared := store.EnsureReady(ref) == nil; gotCleared != tc.wantCleared {
+				t.Errorf("clearServiceRecord(store, %T): record cleared = %t, want %t", tc.deleted, gotCleared, tc.wantCleared)
+			}
+		})
+	}
+}
+
+type fakeAtomicFIFOGates struct {
+	enabled bool
+}
+
+func (g fakeAtomicFIFOGates) Enabled(key clientgofeatures.Feature) bool {
+	if key == clientgofeatures.AtomicFIFO {
+		return g.enabled
+	}
+	return true
+}
+
+func TestNewServiceConsistencyStore_DisabledAndUnsupported(t *testing.T) {
+	informer := informers.NewSharedInformerFactory(fake.NewSimpleClientset(), 0).Core().V1().Services().Informer()
+
+	if store := NewServiceConsistencyStore(informer, false, klog.TODO()); !consistency.IsNoop(store) {
+		t.Errorf("NewServiceConsistencyStore(enabled=false) = %T, want no-op store", store)
+	}
+
+	orig := clientgofeatures.FeatureGates()
+	t.Cleanup(func() { clientgofeatures.ReplaceFeatureGates(orig) })
+	clientgofeatures.ReplaceFeatureGates(fakeAtomicFIFOGates{enabled: false})
+
+	if store := NewServiceConsistencyStore(informer, true, klog.TODO()); !consistency.IsNoop(store) {
+		t.Errorf("NewServiceConsistencyStore(enabled=true, AtomicFIFO=false) = %T, want no-op store", store)
+	}
+}
+
+func TestNewServiceConsistencyStore_ClearsRecordOnInformerDelete(t *testing.T) {
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "test-ns",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+		},
+	}
+	kubeClient := fake.NewSimpleClientset(svc)
+	factory := informers.NewSharedInformerFactory(kubeClient, 0)
+	serviceInformer := factory.Core().V1().Services().Informer()
+	store := NewServiceConsistencyStore(serviceInformer, true, klog.TODO())
+	if consistency.IsNoop(store) {
+		t.Fatalf("NewServiceConsistencyStore(enabled=true) returned no-op store, want real store")
+	}
+
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	factory.Start(stopCh)
+	if !cache.WaitForCacheSync(stopCh, serviceInformer.HasSynced) {
+		t.Fatal("failed to sync service informer")
+	}
+
+	// Wait until the initial Service is in the informer's indexer.
+	if err := wait.PollUntilContextTimeout(t.Context(), 10*time.Millisecond, 5*time.Second, true, func(context.Context) (bool, error) {
+		_, exists, err := serviceInformer.GetIndexer().GetByKey("test-ns/test-svc")
+		return exists, err
+	}); err != nil {
+		t.Fatalf("waiting for service in informer: %v", err)
+	}
+
+	// Record a write ahead of any ResourceVersion the fake watch reports.
+	ref := serviceRef(svc.Namespace, svc.Name)
+	store.WroteAt(ref, svc.UID, "999999")
+
+	// Deleting the Service through the client triggers the informer's
+	// DeleteFunc registered by NewServiceConsistencyStore, dropping the record.
+	if err := kubeClient.CoreV1().Services(svc.Namespace).Delete(t.Context(), svc.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("Delete(%s/%s) = %v, want nil", svc.Namespace, svc.Name, err)
+	}
+	if err := wait.PollUntilContextTimeout(t.Context(), 10*time.Millisecond, 5*time.Second, true, func(context.Context) (bool, error) {
+		return store.EnsureReady(ref) == nil, nil
+	}); err != nil {
+		t.Errorf("record for %v was not cleared by the informer delete handler: %v", ref, store.EnsureReady(ref))
+	}
+}
+
+func TestServiceWriteHelpersRecordInConsistencyStore(t *testing.T) {
+	t.Parallel()
+
+	baseSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "test-ns",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+			Finalizers:      []string{common.ILBFinalizerV2, common.NetLBFinalizerV2},
+			Annotations:     map[string]string{resources.L4ResourceAnnotationKeys[0]: "old-fw"},
+		},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		write func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error
+	}{
+		{
+			name: "patchServiceMetadata",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				meta := svc.ObjectMeta.DeepCopy()
+				meta.Annotations = map[string]string{"example.com/key": "val"}
+				return patchServiceMetadata(ctx, store, svc, *meta)
+			},
+		},
+		{
+			name: "updateL4ResourcesAnnotations",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				return updateL4ResourcesAnnotations(ctx, store, svc, map[string]string{resources.L4ResourceAnnotationKeys[0]: "new-fw"}, klog.TODO())
+			},
+		},
+		{
+			name: "deleteAnnotation",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				return deleteAnnotation(ctx, store, svc, resources.L4ResourceAnnotationKeys[0], klog.TODO())
+			},
+		},
+		{
+			name: "ensureServiceFinalizer",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				return ensureServiceFinalizer(ctx, store, svc, "gke.networking.io/new-finalizer", klog.TODO())
+			},
+		},
+		{
+			name: "ensureDeleteServiceFinalizer",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				return ensureDeleteServiceFinalizer(ctx, store, svc, common.ILBFinalizerV2, klog.TODO())
+			},
+		},
+		{
+			name: "ensureServiceDeleteFinalizers",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				return ensureServiceDeleteFinalizers(ctx, store, svc, []string{common.ILBFinalizerV2, common.NetLBFinalizerV2}, klog.TODO())
+			},
+		},
+		{
+			name: "updateServiceStatus",
+			write: func(ctx *ingctx.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service) error {
+				status := &v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{{IP: "10.0.0.1"}}}
+				return updateServiceStatus(ctx, store, svc, status, nil, nil, klog.TODO())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			stored := baseSvc.DeepCopy()
+			stored.ResourceVersion = "150"
+			ctx := &ingctx.ControllerContext{KubeClient: fake.NewSimpleClientset(stored)}
+			store, getter := newTestConsistencyStore("100")
+			ref := serviceRef(baseSvc.Namespace, baseSvc.Name)
+
+			if err := tc.write(ctx, store, baseSvc.DeepCopy()); err != nil {
+				t.Fatalf("%s() = %v, want nil", tc.name, err)
+			}
+			if err := store.EnsureReady(ref); !consistency.IsStall(err) {
+				t.Errorf("EnsureReady(%v) after %s() = %v, want a consistency stall at ResourceVersion 150", ref, tc.name, err)
+			}
+			getter.SetRV("150")
+			if err := store.EnsureReady(ref); err != nil {
+				t.Errorf("EnsureReady(%v) after informer caught up = %v, want nil", ref, err)
+			}
+		})
+	}
+}
+
+func TestServiceWriteHelpers_SkipFailedWrite(t *testing.T) {
+	t.Parallel()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "test-ns",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+		},
+	}
+	stored := svc.DeepCopy()
+	stored.ResourceVersion = "150"
+	kubeClient := fake.NewSimpleClientset(stored)
+	kubeClient.PrependReactor("patch", "services", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, stored, errors.New("apiserver unavailable")
+	})
+	ctx := &ingctx.ControllerContext{KubeClient: kubeClient}
+	store, _ := newTestConsistencyStore("100")
+
+	status := &v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{{IP: "10.0.0.1"}}}
+	if err := updateServiceStatus(ctx, store, svc, status, nil, nil, klog.TODO()); err == nil {
+		t.Fatal("updateServiceStatus() = nil, want reactor error")
+	}
+	ref := serviceRef(svc.Namespace, svc.Name)
+	if err := store.EnsureReady(ref); err != nil {
+		t.Errorf("EnsureReady(%v) after failed updateServiceStatus() = %v, want nil", ref, err)
 	}
 }

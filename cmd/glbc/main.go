@@ -645,8 +645,10 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go collectLockAvailabilityMetrics(l4LockName, flags.F.GKEClusterType, option.stopCh, logger)
 	}
 
+	serviceConsistencyStore := controllers.NewServiceConsistencyStore(ctx.ServiceInformer, flags.F.EnableConsistencyStore, logger)
+
 	if flags.F.RunL4Controller {
-		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger)
+		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
@@ -674,7 +676,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger)
+		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
@@ -682,7 +684,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4StandaloneNEGController {
-		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
+		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")
 	}

@@ -26,6 +26,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -33,6 +36,7 @@ import (
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog/v2"
 )
@@ -41,6 +45,129 @@ const (
 	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
 	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
 )
+
+// servicesGroupResource identifies core v1 Services in the ConsistencyStore.
+var servicesGroupResource = schema.GroupResource{Resource: "services"}
+
+// NewServiceConsistencyStore returns the ConsistencyStore shared by the L4
+// controllers. A single store is shared because they mutate the same
+// services through the same informer, so each controller also waits for the
+// others' writes to become visible before reconciling.
+//
+// The store checks recorded writes against the service informer's store, and
+// drops the record of a service when the informer observes its deletion, so
+// that records do not leak or stall a service recreated under the same name.
+// It is a no-op store when enabled is false or informer stores do not track
+// the ResourceVersion they have applied.
+func NewServiceConsistencyStore(serviceInformer cache.SharedIndexInformer, enabled bool, logger klog.Logger) consistency.ConsistencyStore {
+	if !enabled {
+		return consistency.NewNoopConsistencyStore()
+	}
+	if !consistency.Supported() {
+		logger.Error(nil, "Informer stores do not track their ResourceVersion (client-go AtomicFIFO feature gate is disabled), running L4 controllers without the consistency store")
+		return consistency.NewNoopConsistencyStore()
+	}
+	store := consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{
+		servicesGroupResource: serviceInformer.GetIndexer(),
+	})
+	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
+			clearServiceRecord(store, obj)
+		},
+	})
+	logger.V(0).Info("L4 controllers will use the service consistency store")
+	return store
+}
+
+// serviceRef returns the ConsistencyStore reference for a service.
+func serviceRef(namespace, name string) consistency.ObjectRef {
+	return consistency.ObjectRef{
+		Resource:       servicesGroupResource,
+		NamespacedName: types.NamespacedName{Namespace: namespace, Name: name},
+	}
+}
+
+// clearServiceRecord drops the ConsistencyStore record of the service carried
+// by an informer delete event, unwrapping tombstones. The UID keeps a
+// deletion event for an old incarnation from dropping the record of a
+// service that has been recreated since.
+func clearServiceRecord(store consistency.ConsistencyStore, obj interface{}) {
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		obj = tombstone.Obj
+	}
+	svc, ok := obj.(*v1.Service)
+	if !ok {
+		return
+	}
+	store.Clear(serviceRef(svc.Namespace, svc.Name), svc.UID)
+}
+
+// recordServiceWrite records in the ConsistencyStore that a controller wrote
+// a service and received writtenSvc in the API server's response, so that
+// the next sync of the service waits until the informer has observed it.
+func recordServiceWrite(store consistency.ConsistencyStore, writtenSvc *v1.Service) {
+	if writtenSvc == nil {
+		return
+	}
+	store.WroteAt(serviceRef(writtenSvc.Namespace, writtenSvc.Name), writtenSvc.UID, writtenSvc.ResourceVersion)
+}
+
+// ensureServiceCacheReady returns a *consistency.ConsistencyError while the
+// service informer has not yet observed the last recorded write to the
+// service with the given queue key. A sync returns that error to have the
+// key requeued instead of reconciling from a stale cache.
+func ensureServiceCacheReady(store consistency.ConsistencyStore, key string) error {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		// Not a namespace/name key, so no write was recorded for it.
+		return nil
+	}
+	return store.EnsureReady(serviceRef(namespace, name))
+}
+
+// patchServiceMetadata patches the metadata of svc and records the write in
+// the ConsistencyStore.
+func patchServiceMetadata(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newObjectMeta metav1.ObjectMeta) error {
+	patchedSvc, err := patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, newObjectMeta)
+	if err != nil {
+		return err
+	}
+	recordServiceWrite(store, patchedSvc)
+	return nil
+}
+
+// ensureServiceFinalizer adds the finalizer to svc if it is missing and
+// records the write in the ConsistencyStore.
+func ensureServiceFinalizer(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, key string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureServiceFinalizer(svc, key, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	recordServiceWrite(store, patchedSvc)
+	return nil
+}
+
+// ensureDeleteServiceFinalizer removes the finalizer from svc if it is
+// present and records the write in the ConsistencyStore.
+func ensureDeleteServiceFinalizer(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, key string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureDeleteServiceFinalizer(svc, key, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	recordServiceWrite(store, patchedSvc)
+	return nil
+}
+
+// ensureServiceDeleteFinalizers removes the finalizers from svc that are
+// present and records the write in the ConsistencyStore.
+func ensureServiceDeleteFinalizers(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, keys []string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureServiceDeleteFinalizers(svc, keys, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	recordServiceWrite(store, patchedSvc)
+	return nil
+}
 
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
@@ -74,7 +201,7 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	svcLogger.V(3).Info("Updating annotations of service")
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
@@ -82,27 +209,27 @@ func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Servic
 		return nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return patchServiceMetadata(ctx, store, svc, *newObjectMeta)
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return patchServiceMetadata(ctx, store, svc, *newObjectMeta)
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
+func deleteAnnotation(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
 		return nil
 	}
 	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return patchServiceMetadata(ctx, store, svc, *newObjectMeta)
 }
 
 // mergeConditions merges the new set of l4lb resource conditions with the preexisting service conditions.
@@ -165,7 +292,7 @@ func conditionsEqual(l, r []metav1.Condition) bool {
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
+func updateServiceStatus(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
 	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions), "conditionsToRemove", conditionsToRemove)
 
 	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, conditionsToRemove)
@@ -176,10 +303,15 @@ func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newSta
 
 	if !lbStatusEqual || !lbConditionsEqual {
 		svcLogger.V(2).Info("Patching LoadBalancer status and Conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
-		return patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
+		patchedSvc, err := patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
 			LoadBalancer: *newStatus,
 			Conditions:   mergedConditions,
 		})
+		if err != nil {
+			return err
+		}
+		recordServiceWrite(store, patchedSvc)
+		return nil
 	}
 	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
 	return nil
