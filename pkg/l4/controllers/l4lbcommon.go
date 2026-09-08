@@ -28,9 +28,10 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
-	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/klog/v2"
 )
 
@@ -38,6 +39,39 @@ const (
 	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
 	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
 )
+
+// ensureServiceFinalizer adds the finalizer to svc if it is missing and
+// records the write in the ConsistencyStore.
+func ensureServiceFinalizer(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, key string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureServiceFinalizer(svc, key, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	serviceconsistency.RecordWrite(store, patchedSvc)
+	return nil
+}
+
+// ensureDeleteServiceFinalizer removes the finalizer from svc if it is
+// present and records the write in the ConsistencyStore.
+func ensureDeleteServiceFinalizer(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, key string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureDeleteServiceFinalizer(svc, key, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	serviceconsistency.RecordWrite(store, patchedSvc)
+	return nil
+}
+
+// ensureServiceDeleteFinalizers removes the finalizers from svc that are
+// present and records the write in the ConsistencyStore.
+func ensureServiceDeleteFinalizers(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, keys []string, svcLogger klog.Logger) error {
+	patchedSvc, err := common.EnsureServiceDeleteFinalizers(svc, keys, ctx.KubeClient, svcLogger)
+	if err != nil {
+		return err
+	}
+	serviceconsistency.RecordWrite(store, patchedSvc)
+	return nil
+}
 
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
@@ -71,7 +105,7 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	svcLogger.V(3).Info("Updating annotations of service")
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
@@ -79,27 +113,27 @@ func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Servic
 		return nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return serviceconsistency.PatchMetadata(ctx.KubeClient.CoreV1(), store, svc, *newObjectMeta)
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return serviceconsistency.PatchMetadata(ctx.KubeClient.CoreV1(), store, svc, *newObjectMeta)
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
+func deleteAnnotation(ctx *context.ControllerContext, store consistency.ConsistencyStore, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
 		return nil
 	}
 	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	return serviceconsistency.PatchMetadata(ctx.KubeClient.CoreV1(), store, svc, *newObjectMeta)
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE

@@ -26,13 +26,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/cloud-provider/service/helpers"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog/v2"
 )
 
 // Update checks if the LoadBalancer status or the conditions of the service
-// changed and patches the service status if needed.
-func Update(client coreclient.CoreV1Interface, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
+// changed and patches the service status if needed. The patch is recorded in
+// the ConsistencyStore.
+func Update(client coreclient.CoreV1Interface, store consistency.ConsistencyStore, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
 	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions), "conditionsToRemove", conditionsToRemove)
 
 	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, conditionsToRemove)
@@ -43,10 +46,15 @@ func Update(client coreclient.CoreV1Interface, svc *v1.Service, newStatus *v1.Lo
 
 	if !lbStatusEqual || !lbConditionsEqual {
 		svcLogger.V(2).Info("Patching LoadBalancer status and Conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
-		return patch.PatchServiceStatus(client, svc, v1.ServiceStatus{
+		patchedSvc, err := patch.PatchServiceStatus(client, svc, v1.ServiceStatus{
 			LoadBalancer: *newStatus,
 			Conditions:   mergedConditions,
 		})
+		if err != nil {
+			return err
+		}
+		serviceconsistency.RecordWrite(store, patchedSvc)
+		return nil
 	}
 	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
 	return nil

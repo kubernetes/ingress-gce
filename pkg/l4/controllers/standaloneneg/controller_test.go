@@ -44,8 +44,10 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	svcnegclientfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -2008,7 +2010,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				c.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
 			}
 
-			lc := NewController(c, stopCh, klog.TODO())
+			lc := NewController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 
 			// Add service to informer
 			c.ServiceInformer.GetIndexer().Add(tc.svc)
@@ -2159,7 +2161,7 @@ func setupControllerContext(t *testing.T) (*fake.Clientset, *gce.Cloud, *Control
 	}
 	c.L4Namer = l4Namer
 
-	lc := NewController(c, stopCh, klog.TODO())
+	lc := NewController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	return kubeClient, fakeGCE, lc, stopCh
 }
 
@@ -2468,5 +2470,115 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 	_, ok = lc.ctx.L4Metrics.StandaloneNEGServiceState(svcKey)
 	if ok {
 		t.Errorf("Expected service %s to be removed from metrics map", svcKey)
+	}
+}
+
+// TestStandaloneNEGSyncStallsUntilCacheIsConsistent verifies the
+// ConsistencyStore integration end to end: a sync records the ResourceVersion
+// its status write returns, the next sync stalls while the informer has not
+// observed it, resumes once it has, and the record is dropped when the
+// deletion of the service is processed.
+func TestStandaloneNEGSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	kubeClient, fakeGCE, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	// The informer has observed ResourceVersion 100.
+	store, getter := consistency.NewStoreWithFakeRV(serviceconsistency.GroupResource, "100")
+	lc.serviceConsistencyStore = store
+
+	const (
+		project = "test-project"
+		region  = "us-central1"
+		frName  = "custom-fr"
+		frIP    = "10.0.0.100"
+	)
+	bsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region)
+	negSelfLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)
+
+	frKey, err := composite.CreateKey(fakeGCE, frName, meta.Regional)
+	if err != nil {
+		t.Fatalf("CreateKey(%q) = %v, want nil", frName, err)
+	}
+	if err := composite.CreateForwardingRule(fakeGCE, frKey, &composite.ForwardingRule{
+		Name:                frName,
+		IPAddress:           frIP,
+		BackendService:      bsURL,
+		LoadBalancingScheme: "EXTERNAL",
+		IPProtocol:          "TCP",
+		Scope:               meta.Regional,
+		Version:             meta.VersionBeta,
+	}, klog.TODO()); err != nil {
+		t.Fatalf("CreateForwardingRule(%q) = %v, want nil", frName, err)
+	}
+	bsKey, err := composite.CreateKey(fakeGCE, "bs1", meta.Regional)
+	if err != nil {
+		t.Fatalf("CreateKey(bs1) = %v, want nil", err)
+	}
+	if err := composite.CreateBackendService(fakeGCE, bsKey, &composite.BackendService{
+		Name:     "bs1",
+		Scope:    meta.Regional,
+		Version:  meta.VersionBeta,
+		Backends: []*composite.Backend{{Group: negSelfLink}},
+	}, klog.TODO()); err != nil {
+		t.Fatalf("CreateBackendService(bs1) = %v, want nil", err)
+	}
+
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "default",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+			Annotations: map[string]string{
+				annotations.CustomForwardingRuleKey: frName,
+			},
+		},
+		Spec: v1.ServiceSpec{
+			Type:              v1.ServiceTypeLoadBalancer,
+			LoadBalancerClass: &lbClass,
+		},
+	}
+	svcNeg := test.NewSvcNeg(types.NamespacedName{Namespace: svc.Namespace, Name: lc.namer.L4Backend(svc.Namespace, svc.Name)}, negv1beta1.ServiceNetworkEndpointGroupStatus{
+		NetworkEndpointGroups: []negv1beta1.NegObjectReference{{SelfLink: negSelfLink}},
+	})
+	svcNeg.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(svc, svc.GroupVersionKind())})
+	if err := lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg); err != nil {
+		t.Fatalf("SvcNegInformer.Add() = %v, want nil", err)
+	}
+	if err := lc.ctx.ServiceInformer.GetIndexer().Add(svc); err != nil {
+		t.Fatalf("ServiceInformer.Add() = %v, want nil", err)
+	}
+
+	written := svc.DeepCopy()
+	written.ResourceVersion = "150"
+	if _, err := kubeClient.CoreV1().Services(svc.Namespace).Create(t.Context(), written, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Create(%s/%s) = %v, want nil", svc.Namespace, svc.Name, err)
+	}
+	key := svc.Namespace + "/" + svc.Name
+
+	// First sync programs the VIP status and records ResourceVersion 150.
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) before any write = %v, want nil", key, err)
+	}
+
+	if err := lc.sync(key, klog.TODO()); !consistency.IsStall(err) {
+		t.Fatalf("sync(%s) before the informer observed the write = %v, want a consistency stall", key, err)
+	}
+
+	getter.SetRV("150")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the informer observed the write = %v, want nil", key, err)
+	}
+
+	// Clearing the record on deletion keeps a lagging informer from stalling
+	// this key.
+	if err := lc.ctx.ServiceInformer.GetIndexer().Delete(svc); err != nil {
+		t.Fatalf("ServiceInformer.Delete() = %v, want nil", err)
+	}
+	store.Clear(serviceconsistency.Ref(svc.Namespace, svc.Name), svc.UID)
+	getter.SetRV("100")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the service was deleted = %v, want nil", key, err)
 	}
 }

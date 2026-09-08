@@ -252,7 +252,7 @@ func (c *Controller) clearNoForwardingRuleRef(svc *v1.Service, svcLogger klog.Lo
 	c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 	svcLogger.V(4).Info("Service has no forwarding rule reference; skipping")
 	cond := newConditionExternalIPProgrammedFalse(reasonNoForwardingRuleRef)
-	statusErr := servicestatus.Update(c.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{}, []metav1.Condition{cond}, nil, svcLogger)
+	statusErr := servicestatus.Update(c.ctx.KubeClient.CoreV1(), c.serviceConsistencyStore, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{cond}, nil, svcLogger)
 	_, annotationErr := c.updateExternalHealthCheckAnnotation(svc, nil, svcLogger)
 	if err := errors.Join(statusErr, annotationErr); err != nil {
 		// The service could not be updated, the sync fails with a system error to be retried.
@@ -266,7 +266,7 @@ func (c *Controller) clearNoForwardingRuleRef(svc *v1.Service, svcLogger klog.Lo
 // ExternalIPProgrammed condition. It returns the sync errors.
 func (c *Controller) clearLoadBalancerStatus(svc *v1.Service, reason lbConditionReason, syncErrs []error, svcLogger klog.Logger) error {
 	cond := newConditionExternalIPProgrammedFalse(reason)
-	statusErr := servicestatus.Update(c.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{}, []metav1.Condition{cond}, nil, svcLogger)
+	statusErr := servicestatus.Update(c.ctx.KubeClient.CoreV1(), c.serviceConsistencyStore, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{cond}, nil, svcLogger)
 	return errors.Join(append([]error{statusErr}, syncErrs...)...)
 }
 
@@ -278,7 +278,7 @@ func (c *Controller) programLoadBalancerStatus(svc *v1.Service, ingresses []v1.L
 		ips = append(ips, ingress.IP)
 	}
 	cond := newConditionExternalIPProgrammedTrue(ips)
-	if err := servicestatus.Update(c.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{Ingress: ingresses}, []metav1.Condition{cond}, nil, svcLogger); err != nil {
+	if err := servicestatus.Update(c.ctx.KubeClient.CoreV1(), c.serviceConsistencyStore, svc, &v1.LoadBalancerStatus{Ingress: ingresses}, []metav1.Condition{cond}, nil, svcLogger); err != nil {
 		return err
 	}
 	if len(syncErrs) > 0 {
@@ -293,7 +293,7 @@ func (c *Controller) programLoadBalancerStatus(svc *v1.Service, ingresses []v1.L
 // its external health check annotation. Unlike clearLoadBalancerStatus, the
 // condition is removed and not set to False.
 func (c *Controller) removeLoadBalancer(svc *v1.Service, svcLogger klog.Logger) error {
-	if err := servicestatus.Update(c.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{}, nil, []string{externalIPProgrammed}, svcLogger); err != nil {
+	if err := servicestatus.Update(c.ctx.KubeClient.CoreV1(), c.serviceConsistencyStore, svc, &v1.LoadBalancerStatus{}, nil, []string{externalIPProgrammed}, svcLogger); err != nil {
 		return err
 	}
 	_, err := c.updateExternalHealthCheckAnnotation(svc, nil, svcLogger)

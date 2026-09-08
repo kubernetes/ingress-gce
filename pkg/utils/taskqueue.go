@@ -20,12 +20,25 @@ import (
 	"fmt"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/klog/v2"
 )
 
 var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
+
+// logRequeue logs why a key is requeued after its sync returned err. A
+// consistency stall is expected and transient - the sync only asks to be
+// retried once the informer has observed the controller's own writes - so it
+// is not logged as an error.
+func logRequeue(logger klog.Logger, err error, keysAndValues ...interface{}) {
+	if consistency.IsStall(err) {
+		logger.V(2).Info("Requeuing until the informer cache has observed the controller's writes", append(keysAndValues, "reason", err.Error())...)
+		return
+	}
+	logger.Error(err, "Requeuing due to error", keysAndValues...)
+}
 
 // TaskQueue is a rate limited operation queue.
 type TaskQueue interface {
@@ -77,7 +90,7 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) runInternal(workerId int) {
 		}
 		t.logger.V(4).Info("Syncing", "workerId", workerId, "key", key, "resource", t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			t.logger.Error(err, "Requeuing due to error", "workerId", workerId, "key", key, "resource", t.resource)
+			logRequeue(t.logger, err, "workerId", workerId, "key", key, "resource", t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
 			t.logger.V(4).Info("Finished syncing", "workerId", workerId, "key", key)
@@ -184,7 +197,7 @@ func (t *PeriodicTaskQueue) Run() {
 		}
 		t.logger.V(4).Info("Syncing", "key", key, "resource", t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			t.logger.Error(err, "Requeuing due to error", "key", key, "resource", t.resource)
+			logRequeue(t.logger, err, "key", key, "resource", t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
 			t.logger.V(4).Info("Finished syncing", "key", key)
