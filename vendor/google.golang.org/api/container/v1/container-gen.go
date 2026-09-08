@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -120,9 +120,6 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	}
 	s := &Service{client: client, BasePath: basePath, logger: internaloption.GetLogger(opts)}
 	s.Projects = NewProjectsService(s)
-	if err != nil {
-		return nil, err
-	}
 	if endpoint != "" {
 		s.BasePath = endpoint
 	}
@@ -334,6 +331,44 @@ func (s AcceleratorConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// AdditionalIPRangesConfig: AdditionalIPRangesConfig is the configuration for
+// individual additional subnetwork attached to the cluster
+type AdditionalIPRangesConfig struct {
+	// PodIpv4RangeNames: List of secondary ranges names within this subnetwork
+	// that can be used for pod IPs. Example1: gke-pod-range1 Example2:
+	// gke-pod-range1,gke-pod-range2
+	PodIpv4RangeNames []string `json:"podIpv4RangeNames,omitempty"`
+	// Status: Draining status of the additional subnet.
+	//
+	// Possible values:
+	//   "STATUS_UNSPECIFIED" - Not set, same as ACTIVE.
+	//   "ACTIVE" - ACTIVE status indicates that the subnet is available for new
+	// node pool creation.
+	//   "DRAINING" - DRAINING status indicates that the subnet is not used for new
+	// node pool creation.
+	Status string `json:"status,omitempty"`
+	// Subnetwork: Name of the subnetwork. This can be the full path of the
+	// subnetwork or just the name. Example1: my-subnet Example2:
+	// projects/gke-project/regions/us-central1/subnetworks/my-subnet
+	Subnetwork string `json:"subnetwork,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "PodIpv4RangeNames") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PodIpv4RangeNames") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AdditionalIPRangesConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AdditionalIPRangesConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // AdditionalNodeNetworkConfig: AdditionalNodeNetworkConfig is the
 // configuration for additional node networks within the NodeNetworkConfig
 // message
@@ -426,8 +461,8 @@ type AddonsConfig struct {
 	// to use a managed Knative service.
 	CloudRunConfig *CloudRunConfig `json:"cloudRunConfig,omitempty"`
 	// ConfigConnectorConfig: Configuration for the ConfigConnector add-on, a
-	// Kubernetes extension to manage hosted GCP services through the Kubernetes
-	// API
+	// Kubernetes extension to manage hosted Google Cloud services through the
+	// Kubernetes API.
 	ConfigConnectorConfig *ConfigConnectorConfig `json:"configConnectorConfig,omitempty"`
 	// DnsCacheConfig: Configuration for NodeLocalDNS, a dns cache running on
 	// cluster nodes
@@ -435,12 +470,15 @@ type AddonsConfig struct {
 	// GcePersistentDiskCsiDriverConfig: Configuration for the Compute Engine
 	// Persistent Disk CSI driver.
 	GcePersistentDiskCsiDriverConfig *GcePersistentDiskCsiDriverConfig `json:"gcePersistentDiskCsiDriverConfig,omitempty"`
-	// GcpFilestoreCsiDriverConfig: Configuration for the GCP Filestore CSI driver.
+	// GcpFilestoreCsiDriverConfig: Configuration for the Filestore CSI driver.
 	GcpFilestoreCsiDriverConfig *GcpFilestoreCsiDriverConfig `json:"gcpFilestoreCsiDriverConfig,omitempty"`
 	// GcsFuseCsiDriverConfig: Configuration for the Cloud Storage Fuse CSI driver.
 	GcsFuseCsiDriverConfig *GcsFuseCsiDriverConfig `json:"gcsFuseCsiDriverConfig,omitempty"`
 	// GkeBackupAgentConfig: Configuration for the Backup for GKE agent addon.
 	GkeBackupAgentConfig *GkeBackupAgentConfig `json:"gkeBackupAgentConfig,omitempty"`
+	// HighScaleCheckpointingConfig: Configuration for the High Scale Checkpointing
+	// add-on.
+	HighScaleCheckpointingConfig *HighScaleCheckpointingConfig `json:"highScaleCheckpointingConfig,omitempty"`
 	// HorizontalPodAutoscaling: Configuration for the horizontal pod autoscaling
 	// feature, which increases or decreases the number of replica pods a
 	// replication controller has based on the resource usage of the existing pods.
@@ -455,6 +493,8 @@ type AddonsConfig struct {
 	// applications. For more information, see:
 	// https://cloud.google.com/kubernetes-engine/docs/concepts/dashboards
 	KubernetesDashboard *KubernetesDashboard `json:"kubernetesDashboard,omitempty"`
+	// LustreCsiDriverConfig: Configuration for the Lustre CSI driver.
+	LustreCsiDriverConfig *LustreCsiDriverConfig `json:"lustreCsiDriverConfig,omitempty"`
 	// NetworkPolicyConfig: Configuration for NetworkPolicy. This only tracks
 	// whether the addon is enabled or not on the Master, it does not track whether
 	// network policy is enabled for the nodes.
@@ -523,6 +563,16 @@ type AdvancedMachineFeatures struct {
 	// EnableNestedVirtualization: Whether or not to enable nested virtualization
 	// (defaults to false).
 	EnableNestedVirtualization bool `json:"enableNestedVirtualization,omitempty"`
+	// PerformanceMonitoringUnit: Type of Performance Monitoring Unit (PMU)
+	// requested on node pool instances. If unset, PMU will not be available to the
+	// node.
+	//
+	// Possible values:
+	//   "PERFORMANCE_MONITORING_UNIT_UNSPECIFIED" - PMU not enabled.
+	//   "ARCHITECTURAL" - Architecturally defined non-LLC events.
+	//   "STANDARD" - Most documented core/L2 events.
+	//   "ENHANCED" - Most documented core/L2 and LLC events.
+	PerformanceMonitoringUnit string `json:"performanceMonitoringUnit,omitempty"`
 	// ThreadsPerCore: The number of threads per physical core. To disable
 	// simultaneous multithreading (SMT) set this to 1. If unset, the maximum
 	// number of threads supported per core by the underlying processor is assumed.
@@ -542,6 +592,35 @@ type AdvancedMachineFeatures struct {
 
 func (s AdvancedMachineFeatures) MarshalJSON() ([]byte, error) {
 	type NoMethod AdvancedMachineFeatures
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// AnonymousAuthenticationConfig: AnonymousAuthenticationConfig defines the
+// settings needed to limit endpoints that allow anonymous authentication.
+type AnonymousAuthenticationConfig struct {
+	// Mode: Defines the mode of limiting anonymous access in the cluster.
+	//
+	// Possible values:
+	//   "MODE_UNSPECIFIED" - Default value not specified.
+	//   "ENABLED" - Anonymous authentication is allowed for all endpoints.
+	//   "LIMITED" - Anonymous authentication is allowed for only health check
+	// endpoints.
+	Mode string `json:"mode,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Mode") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Mode") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AnonymousAuthenticationConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AnonymousAuthenticationConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -569,6 +648,28 @@ type AuthenticatorGroupsConfig struct {
 
 func (s AuthenticatorGroupsConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod AuthenticatorGroupsConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// AutoIpamConfig: AutoIpamConfig contains all information related to Auto IPAM
+type AutoIpamConfig struct {
+	// Enabled: The flag that enables Auto IPAM on this cluster
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AutoIpamConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AutoIpamConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -633,6 +734,9 @@ func (s AutoUpgradeOptions) MarshalJSON() ([]byte, error) {
 type Autopilot struct {
 	// Enabled: Enable Autopilot
 	Enabled bool `json:"enabled,omitempty"`
+	// PrivilegedAdmissionConfig: PrivilegedAdmissionConfig is the configuration
+	// related to privileged admission control.
+	PrivilegedAdmissionConfig *PrivilegedAdmissionConfig `json:"privilegedAdmissionConfig,omitempty"`
 	// WorkloadPolicyConfig: WorkloadPolicyConfig is the configuration related to
 	// GCW workload policy
 	WorkloadPolicyConfig *WorkloadPolicyConfig `json:"workloadPolicyConfig,omitempty"`
@@ -743,8 +847,8 @@ type AutoprovisioningNodePoolDefaults struct {
 	// https://cloud.google.com/kubernetes-engine/docs/concepts/node-images for
 	// available image types.
 	ImageType string `json:"imageType,omitempty"`
-	// InsecureKubeletReadonlyPortEnabled: Enable or disable Kubelet read only
-	// port.
+	// InsecureKubeletReadonlyPortEnabled: DEPRECATED. Use
+	// NodePoolAutoConfig.NodeKubeletConfig instead.
 	InsecureKubeletReadonlyPortEnabled bool `json:"insecureKubeletReadonlyPortEnabled,omitempty"`
 	// Management: Specifies the node management options for NAP created
 	// node-pools.
@@ -783,6 +887,31 @@ type AutoprovisioningNodePoolDefaults struct {
 
 func (s AutoprovisioningNodePoolDefaults) MarshalJSON() ([]byte, error) {
 	type NoMethod AutoprovisioningNodePoolDefaults
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// AutoscaledRolloutPolicy: Autoscaled rollout policy utilizes the cluster
+// autoscaler during blue-green upgrade to scale both the blue and green pools.
+type AutoscaledRolloutPolicy struct {
+	// WaitForDrainDuration: Optional. Time to wait after cordoning the blue pool
+	// before draining the nodes. Defaults to 3 days. The value can be set between
+	// 0 and 7 days, inclusive.
+	WaitForDrainDuration string `json:"waitForDrainDuration,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "WaitForDrainDuration") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "WaitForDrainDuration") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s AutoscaledRolloutPolicy) MarshalJSON() ([]byte, error) {
+	type NoMethod AutoscaledRolloutPolicy
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -919,26 +1048,60 @@ func (s BlueGreenInfo) MarshalJSON() ([]byte, error) {
 
 // BlueGreenSettings: Settings for blue-green upgrade.
 type BlueGreenSettings struct {
+	// AutoscaledRolloutPolicy: Autoscaled policy for cluster autoscaler enabled
+	// blue-green upgrade.
+	AutoscaledRolloutPolicy *AutoscaledRolloutPolicy `json:"autoscaledRolloutPolicy,omitempty"`
 	// NodePoolSoakDuration: Time needed after draining entire blue pool. After
 	// this period, blue pool will be cleaned up.
 	NodePoolSoakDuration string `json:"nodePoolSoakDuration,omitempty"`
 	// StandardRolloutPolicy: Standard policy for the blue-green upgrade.
 	StandardRolloutPolicy *StandardRolloutPolicy `json:"standardRolloutPolicy,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "NodePoolSoakDuration") to
+	// ForceSendFields is a list of field names (e.g. "AutoscaledRolloutPolicy") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "NodePoolSoakDuration") to include
-	// in API requests with the JSON null value. By default, fields with empty
-	// values are omitted from API requests. See
+	// NullFields is a list of field names (e.g. "AutoscaledRolloutPolicy") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
 
 func (s BlueGreenSettings) MarshalJSON() ([]byte, error) {
 	type NoMethod BlueGreenSettings
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// BootDisk: BootDisk specifies the boot disk configuration for nodepools.
+type BootDisk struct {
+	// DiskType: Disk type of the boot disk. (i.e. Hyperdisk-Balanced, PD-Balanced,
+	// etc.)
+	DiskType string `json:"diskType,omitempty"`
+	// ProvisionedIops: For Hyperdisk-Balanced only, the provisioned IOPS config
+	// value.
+	ProvisionedIops int64 `json:"provisionedIops,omitempty,string"`
+	// ProvisionedThroughput: For Hyperdisk-Balanced only, the provisioned
+	// throughput config value.
+	ProvisionedThroughput int64 `json:"provisionedThroughput,omitempty,string"`
+	// SizeGb: Disk size in GB. Replaces NodeConfig.disk_size_gb
+	SizeGb int64 `json:"sizeGb,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "DiskType") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "DiskType") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s BootDisk) MarshalJSON() ([]byte, error) {
+	type NoMethod BootDisk
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -986,8 +1149,7 @@ type CertificateAuthorityDomainConfig struct {
 	// supported. Wildcards are NOT supported. Examples: - my.customdomain.com -
 	// 10.0.1.2:5000
 	Fqdns []string `json:"fqdns,omitempty"`
-	// GcpSecretManagerCertificateConfig: Google Secret Manager (GCP) certificate
-	// configuration.
+	// GcpSecretManagerCertificateConfig: Secret Manager certificate configuration.
 	GcpSecretManagerCertificateConfig *GCPSecretManagerCertificateConfig `json:"gcpSecretManagerCertificateConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Fqdns") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
@@ -1004,6 +1166,60 @@ type CertificateAuthorityDomainConfig struct {
 
 func (s CertificateAuthorityDomainConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod CertificateAuthorityDomainConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CertificateConfig: CertificateConfig configures certificate for the
+// registry.
+type CertificateConfig struct {
+	// GcpSecretManagerSecretUri: The URI configures a secret from Secret Manager
+	// (https://cloud.google.com/secret-manager) in the format
+	// "projects/$PROJECT_ID/secrets/$SECRET_NAME/versions/$VERSION" for global
+	// secret or
+	// "projects/$PROJECT_ID/locations/$REGION/secrets/$SECRET_NAME/versions/$VERSIO
+	// N" for regional secret. Version can be fixed (e.g. "2") or "latest"
+	GcpSecretManagerSecretUri string `json:"gcpSecretManagerSecretUri,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "GcpSecretManagerSecretUri")
+	// to unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "GcpSecretManagerSecretUri") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CertificateConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod CertificateConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CertificateConfigPair: CertificateConfigPair configures pairs of
+// certificates, which is used for client certificate and key pairs under a
+// registry.
+type CertificateConfigPair struct {
+	// Cert: Cert configures the client certificate.
+	Cert *CertificateConfig `json:"cert,omitempty"`
+	// Key: Key configures the client private key. Optional.
+	Key *CertificateConfig `json:"key,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Cert") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Cert") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CertificateConfigPair) MarshalJSON() ([]byte, error) {
+	type NoMethod CertificateConfigPair
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -1120,6 +1336,13 @@ type Cluster struct {
 	// AddonsConfig: Configurations for the various addons available to run in the
 	// cluster.
 	AddonsConfig *AddonsConfig `json:"addonsConfig,omitempty"`
+	// AlphaClusterFeatureGates: The list of user specified Kubernetes feature
+	// gates. Each string represents the activation status of a feature gate (e.g.
+	// "featureX=true" or "featureX=false")
+	AlphaClusterFeatureGates []string `json:"alphaClusterFeatureGates,omitempty"`
+	// AnonymousAuthenticationConfig: Configuration for limiting anonymous access
+	// to all endpoints except the health checks.
+	AnonymousAuthenticationConfig *AnonymousAuthenticationConfig `json:"anonymousAuthenticationConfig,omitempty"`
 	// AuthenticatorGroupsConfig: Configuration controlling RBAC group membership
 	// information.
 	AuthenticatorGroupsConfig *AuthenticatorGroupsConfig `json:"authenticatorGroupsConfig,omitempty"`
@@ -1130,7 +1353,7 @@ type Cluster struct {
 	// BinaryAuthorization: Configuration for Binary Authorization.
 	BinaryAuthorization *BinaryAuthorization `json:"binaryAuthorization,omitempty"`
 	// ClusterIpv4Cidr: The IP address range of the container pods in this cluster,
-	// in CIDR (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
+	// in CIDR (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)
 	// notation (e.g. `10.96.0.0/14`). Leave blank to have one automatically chosen
 	// or specify a `/14` block in `10.0.0.0/8`.
 	ClusterIpv4Cidr string `json:"clusterIpv4Cidr,omitempty"`
@@ -1189,7 +1412,8 @@ type Cluster struct {
 	// `https://username:password@endpoint/`. See the `masterAuth` property of this
 	// resource for username and password information.
 	Endpoint string `json:"endpoint,omitempty"`
-	// EnterpriseConfig: GKE Enterprise Configuration.
+	// EnterpriseConfig: GKE Enterprise Configuration. Deprecated: GKE Enterprise
+	// features are now available without an Enterprise tier.
 	EnterpriseConfig *EnterpriseConfig `json:"enterpriseConfig,omitempty"`
 	// Etag: This checksum is computed by the server based on the value of cluster
 	// fields, and may be sent on update requests to ensure the client has an
@@ -1200,6 +1424,8 @@ type Cluster struct {
 	ExpireTime string `json:"expireTime,omitempty"`
 	// Fleet: Fleet information for the cluster.
 	Fleet *Fleet `json:"fleet,omitempty"`
+	// GkeAutoUpgradeConfig: Configuration for GKE auto upgrades.
+	GkeAutoUpgradeConfig *GkeAutoUpgradeConfig `json:"gkeAutoUpgradeConfig,omitempty"`
 	// Id: Output only. Unique id for the cluster.
 	Id string `json:"id,omitempty"`
 	// IdentityServiceConfig: Configuration for Identity Service component.
@@ -1234,7 +1460,12 @@ type Cluster struct {
 	LabelFingerprint string `json:"labelFingerprint,omitempty"`
 	// LegacyAbac: Configuration for the legacy ABAC authorization mode.
 	LegacyAbac *LegacyAbac `json:"legacyAbac,omitempty"`
-	Location   string      `json:"location,omitempty"`
+	// Location: Output only. The name of the Google Compute Engine zone
+	// (https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+	// or region
+	// (https://cloud.google.com/compute/docs/regions-zones/regions-zones#available)
+	// in which the cluster resides.
+	Location string `json:"location,omitempty"`
 	// Locations: The list of Google Compute Engine zones
 	// (https://cloud.google.com/compute/docs/zones#available) in which the
 	// cluster's nodes should be located. This field provides a default value if
@@ -1257,6 +1488,9 @@ type Cluster struct {
 	LoggingService string `json:"loggingService,omitempty"`
 	// MaintenancePolicy: Configure the maintenance policy for this cluster.
 	MaintenancePolicy *MaintenancePolicy `json:"maintenancePolicy,omitempty"`
+	// ManagedOpentelemetryConfig: Configuration for Managed OpenTelemetry
+	// pipeline.
+	ManagedOpentelemetryConfig *ManagedOpenTelemetryConfig `json:"managedOpentelemetryConfig,omitempty"`
 	// MasterAuth: The authentication information for accessing the master
 	// endpoint. If unspecified, the defaults are used: For clusters before v1.12,
 	// if master_auth is unspecified, `username` will be set to "admin", a random
@@ -1274,7 +1508,7 @@ type Cluster struct {
 	MonitoringConfig *MonitoringConfig `json:"monitoringConfig,omitempty"`
 	// MonitoringService: The monitoring service the cluster should use to write
 	// metrics. Currently available options: *
-	// "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring service with a
+	// `monitoring.googleapis.com/kubernetes` - The Cloud Monitoring service with a
 	// Kubernetes-native resource model * `monitoring.googleapis.com` - The legacy
 	// Cloud Monitoring service (no longer available as of GKE 1.15). * `none` - No
 	// metrics will be exported from the cluster. If left as an empty
@@ -1325,6 +1559,8 @@ type Cluster struct {
 	// This field is used by Google internal products that are built on top of the
 	// GKE cluster and take the ownership of the cluster.
 	ParentProductConfig *ParentProductConfig `json:"parentProductConfig,omitempty"`
+	// PodAutoscaling: The config for pod autoscaling.
+	PodAutoscaling *PodAutoscaling `json:"podAutoscaling,omitempty"`
 	// PrivateClusterConfig: Configuration for private cluster.
 	PrivateClusterConfig *PrivateClusterConfig `json:"privateClusterConfig,omitempty"`
 	// RbacBindingConfig: RBACBindingConfig allows user to restrict
@@ -1356,9 +1592,9 @@ type Cluster struct {
 	SelfLink string `json:"selfLink,omitempty"`
 	// ServicesIpv4Cidr: Output only. The IP address range of the Kubernetes
 	// services in this cluster, in CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `1.2.3.4/29`). Service addresses are typically put in the last `/16` from
-	// the container CIDR.
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `1.2.3.4/29`). Service addresses are typically put in the last `/16`
+	// from the container CIDR.
 	ServicesIpv4Cidr string `json:"servicesIpv4Cidr,omitempty"`
 	// ShieldedNodes: Shielded Nodes configuration.
 	ShieldedNodes *ShieldedNodes `json:"shieldedNodes,omitempty"`
@@ -1389,9 +1625,9 @@ type Cluster struct {
 	Subnetwork string `json:"subnetwork,omitempty"`
 	// TpuIpv4CidrBlock: Output only. The IP address range of the Cloud TPUs in
 	// this cluster, in CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `1.2.3.4/29`). This field is deprecated due to the deprecation of 2VM TPU.
-	// The end of life date for 2VM TPU is 2025-04-25.
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `1.2.3.4/29`). This field is deprecated due to the deprecation of 2VM
+	// TPU. The end of life date for 2VM TPU is 2025-04-25.
 	TpuIpv4CidrBlock string `json:"tpuIpv4CidrBlock,omitempty"`
 	// UserManagedKeysConfig: The Custom keys configuration for the cluster.
 	UserManagedKeysConfig *UserManagedKeysConfig `json:"userManagedKeysConfig,omitempty"`
@@ -1399,7 +1635,7 @@ type Cluster struct {
 	// configuration.
 	VerticalPodAutoscaling *VerticalPodAutoscaling `json:"verticalPodAutoscaling,omitempty"`
 	// WorkloadIdentityConfig: Configuration for the use of Kubernetes Service
-	// Accounts in GCP IAM policies.
+	// Accounts in IAM policies.
 	WorkloadIdentityConfig *WorkloadIdentityConfig `json:"workloadIdentityConfig,omitempty"`
 	// Zone: Output only. The name of the Google Compute Engine zone
 	// (https://cloud.google.com/compute/docs/zones#available) in which the cluster
@@ -1430,6 +1666,13 @@ func (s Cluster) MarshalJSON() ([]byte, error) {
 // information required by Cluster Autoscaler to automatically adjust the size
 // of the cluster and create/delete node pools based on the current needs.
 type ClusterAutoscaling struct {
+	// AutopilotGeneralProfile: Autopilot general profile for the cluster, which
+	// defines the configuration for the cluster.
+	//
+	// Possible values:
+	//   "AUTOPILOT_GENERAL_PROFILE_UNSPECIFIED" - Use default configuration.
+	//   "NO_PERFORMANCE" - Avoid extra IP consumption.
+	AutopilotGeneralProfile string `json:"autopilotGeneralProfile,omitempty"`
 	// AutoprovisioningLocations: The list of Google Compute Engine zones
 	// (https://cloud.google.com/compute/docs/zones#available) in which the
 	// NodePool's nodes can be created by NAP.
@@ -1444,19 +1687,22 @@ type ClusterAutoscaling struct {
 	//   "OPTIMIZE_UTILIZATION" - Prioritize optimizing utilization of resources.
 	//   "BALANCED" - Use default (balanced) autoscaling configuration.
 	AutoscalingProfile string `json:"autoscalingProfile,omitempty"`
+	// DefaultComputeClassConfig: Default compute class is a configuration for
+	// default compute class.
+	DefaultComputeClassConfig *DefaultComputeClassConfig `json:"defaultComputeClassConfig,omitempty"`
 	// EnableNodeAutoprovisioning: Enables automatic node pool creation and
 	// deletion.
 	EnableNodeAutoprovisioning bool `json:"enableNodeAutoprovisioning,omitempty"`
 	// ResourceLimits: Contains global constraints regarding minimum and maximum
 	// amount of resources in the cluster.
 	ResourceLimits []*ResourceLimit `json:"resourceLimits,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "AutoprovisioningLocations")
-	// to unconditionally include in API requests. By default, fields with empty or
+	// ForceSendFields is a list of field names (e.g. "AutopilotGeneralProfile") to
+	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "AutoprovisioningLocations") to
+	// NullFields is a list of field names (e.g. "AutopilotGeneralProfile") to
 	// include in API requests with the JSON null value. By default, fields with
 	// empty values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
@@ -1502,12 +1748,21 @@ type ClusterUpdate struct {
 	// AdditionalPodRangesConfig: The additional pod ranges to be added to the
 	// cluster. These pod ranges can be used by node pools to allocate pod IPs.
 	AdditionalPodRangesConfig *AdditionalPodRangesConfig `json:"additionalPodRangesConfig,omitempty"`
+	// DesiredAdditionalIpRangesConfig: The desired config for additional
+	// subnetworks attached to the cluster.
+	DesiredAdditionalIpRangesConfig *DesiredAdditionalIPRangesConfig `json:"desiredAdditionalIpRangesConfig,omitempty"`
 	// DesiredAddonsConfig: Configurations for the various addons available to run
 	// in the cluster.
 	DesiredAddonsConfig *AddonsConfig `json:"desiredAddonsConfig,omitempty"`
+	// DesiredAnonymousAuthenticationConfig: Configuration for limiting anonymous
+	// access to all endpoints except the health checks.
+	DesiredAnonymousAuthenticationConfig *AnonymousAuthenticationConfig `json:"desiredAnonymousAuthenticationConfig,omitempty"`
 	// DesiredAuthenticatorGroupsConfig: The desired authenticator groups config
 	// for the cluster.
 	DesiredAuthenticatorGroupsConfig *AuthenticatorGroupsConfig `json:"desiredAuthenticatorGroupsConfig,omitempty"`
+	// DesiredAutoIpamConfig: AutoIpamConfig contains all information related to
+	// Auto IPAM
+	DesiredAutoIpamConfig *AutoIpamConfig `json:"desiredAutoIpamConfig,omitempty"`
 	// DesiredAutopilotWorkloadPolicyConfig: WorkloadPolicyConfig is the
 	// configuration related to GCW workload policy
 	DesiredAutopilotWorkloadPolicyConfig *WorkloadPolicyConfig `json:"desiredAutopilotWorkloadPolicyConfig,omitempty"`
@@ -1566,7 +1821,8 @@ type ClusterUpdate struct {
 	// enable_private_endpoint is false, then enable_public_endpoint will be true.
 	DesiredEnablePrivateEndpoint bool `json:"desiredEnablePrivateEndpoint,omitempty"`
 	// DesiredEnterpriseConfig: The desired enterprise configuration for the
-	// cluster.
+	// cluster. Deprecated: GKE Enterprise features are now available without an
+	// Enterprise tier.
 	DesiredEnterpriseConfig *DesiredEnterpriseConfig `json:"desiredEnterpriseConfig,omitempty"`
 	// DesiredFleet: The desired fleet configuration for the cluster.
 	DesiredFleet *Fleet `json:"desiredFleet,omitempty"`
@@ -1615,6 +1871,9 @@ type ClusterUpdate struct {
 	// cluster. If left as an empty string,`logging.googleapis.com/kubernetes` will
 	// be used for GKE 1.14+ or `logging.googleapis.com` for earlier versions.
 	DesiredLoggingService string `json:"desiredLoggingService,omitempty"`
+	// DesiredManagedOpentelemetryConfig: The desired managed open telemetry
+	// configuration.
+	DesiredManagedOpentelemetryConfig *ManagedOpenTelemetryConfig `json:"desiredManagedOpentelemetryConfig,omitempty"`
 	// DesiredMasterAuthorizedNetworksConfig: The desired configuration options for
 	// master authorized networks feature. Deprecated: Use
 	// desired_control_plane_endpoints_config.ip_endpoints_config.authorized_network
@@ -1635,7 +1894,7 @@ type ClusterUpdate struct {
 	DesiredMonitoringConfig *MonitoringConfig `json:"desiredMonitoringConfig,omitempty"`
 	// DesiredMonitoringService: The monitoring service the cluster should use to
 	// write metrics. Currently available options: *
-	// "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring service with a
+	// `monitoring.googleapis.com/kubernetes` - The Cloud Monitoring service with a
 	// Kubernetes-native resource model * `monitoring.googleapis.com` - The legacy
 	// Cloud Monitoring service (no longer available as of GKE 1.15). * `none` - No
 	// metrics will be exported from the cluster. If left as an empty
@@ -1644,6 +1903,9 @@ type ClusterUpdate struct {
 	DesiredMonitoringService string `json:"desiredMonitoringService,omitempty"`
 	// DesiredNetworkPerformanceConfig: The desired network performance config.
 	DesiredNetworkPerformanceConfig *ClusterNetworkPerformanceConfig `json:"desiredNetworkPerformanceConfig,omitempty"`
+	// DesiredNetworkTierConfig: The desired network tier configuration for the
+	// cluster.
+	DesiredNetworkTierConfig *NetworkTierConfig `json:"desiredNetworkTierConfig,omitempty"`
 	// DesiredNodeKubeletConfig: The desired node kubelet config for the cluster.
 	DesiredNodeKubeletConfig *NodeKubeletConfig `json:"desiredNodeKubeletConfig,omitempty"`
 	// DesiredNodePoolAutoConfigKubeletConfig: The desired node kubelet config for
@@ -1689,6 +1951,8 @@ type ClusterUpdate struct {
 	// DesiredParentProductConfig: The desired parent product config for the
 	// cluster.
 	DesiredParentProductConfig *ParentProductConfig `json:"desiredParentProductConfig,omitempty"`
+	// DesiredPodAutoscaling: The desired config for pod autoscaling.
+	DesiredPodAutoscaling *PodAutoscaling `json:"desiredPodAutoscaling,omitempty"`
 	// DesiredPrivateClusterConfig: The desired private cluster configuration.
 	// master_global_access_config is the only field that can be changed via this
 	// field. See also ClusterUpdate.desired_enable_private_endpoint for modifying
@@ -1708,6 +1972,9 @@ type ClusterUpdate struct {
 	//   "PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL" - Enables private IPv6 access
 	// to and from Google Services
 	DesiredPrivateIpv6GoogleAccess string `json:"desiredPrivateIpv6GoogleAccess,omitempty"`
+	// DesiredPrivilegedAdmissionConfig: The desired privileged admission config
+	// for the cluster.
+	DesiredPrivilegedAdmissionConfig *PrivilegedAdmissionConfig `json:"desiredPrivilegedAdmissionConfig,omitempty"`
 	// DesiredRbacBindingConfig: RBACBindingConfig allows user to restrict
 	// ClusterRoleBindings an RoleBindings that can be created.
 	DesiredRbacBindingConfig *RBACBindingConfig `json:"desiredRbacBindingConfig,omitempty"`
@@ -1735,6 +2002,9 @@ type ClusterUpdate struct {
 	//   "IPV4" - Cluster is IPV4 only
 	//   "IPV4_IPV6" - Cluster can use both IPv4 and IPv6
 	DesiredStackType string `json:"desiredStackType,omitempty"`
+	// DesiredUserManagedKeysConfig: The desired user managed keys config for the
+	// cluster.
+	DesiredUserManagedKeysConfig *UserManagedKeysConfig `json:"desiredUserManagedKeysConfig,omitempty"`
 	// DesiredVerticalPodAutoscaling: Cluster-level Vertical Pod Autoscaling
 	// configuration.
 	DesiredVerticalPodAutoscaling *VerticalPodAutoscaling `json:"desiredVerticalPodAutoscaling,omitempty"`
@@ -1747,11 +2017,15 @@ type ClusterUpdate struct {
 	// match the current etag of the cluster, update will be blocked and an ABORTED
 	// error will be returned.
 	Etag string `json:"etag,omitempty"`
+	// GkeAutoUpgradeConfig: Configuration for GKE auto upgrade.
+	GkeAutoUpgradeConfig *GkeAutoUpgradeConfig `json:"gkeAutoUpgradeConfig,omitempty"`
 	// RemovedAdditionalPodRangesConfig: The additional pod ranges that are to be
 	// removed from the cluster. The pod ranges specified here must have been
 	// specified earlier in the 'additional_pod_ranges_config' argument.
 	RemovedAdditionalPodRangesConfig *AdditionalPodRangesConfig `json:"removedAdditionalPodRangesConfig,omitempty"`
-	// UserManagedKeysConfig: The Custom keys configuration for the cluster.
+	// UserManagedKeysConfig: The Custom keys configuration for the cluster. This
+	// field is deprecated. Use ClusterUpdate.desired_user_managed_keys_config
+	// instead.
 	UserManagedKeysConfig *UserManagedKeysConfig `json:"userManagedKeysConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "AdditionalPodRangesConfig")
 	// to unconditionally include in API requests. By default, fields with empty or
@@ -1768,6 +2042,73 @@ type ClusterUpdate struct {
 
 func (s ClusterUpdate) MarshalJSON() ([]byte, error) {
 	type NoMethod ClusterUpdate
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// ClusterUpgradeInfo: ClusterUpgradeInfo contains the upgrade information of a
+// cluster.
+type ClusterUpgradeInfo struct {
+	// AutoUpgradeStatus: The auto upgrade status.
+	//
+	// Possible values:
+	//   "UNKNOWN" - UNKNOWN indicates an unknown status.
+	//   "ACTIVE" - ACTIVE indicates an active status.
+	//   "MINOR_UPGRADE_PAUSED" - MINOR_UPGRADE_PAUSED indicates the minor version
+	// upgrade is paused.
+	//   "UPGRADE_PAUSED" - UPGRADE_PAUSED indicates the upgrade is paused.
+	AutoUpgradeStatus []string `json:"autoUpgradeStatus,omitempty"`
+	// EndOfExtendedSupportTimestamp: The cluster's current minor version's end of
+	// extended support timestamp.
+	EndOfExtendedSupportTimestamp string `json:"endOfExtendedSupportTimestamp,omitempty"`
+	// EndOfStandardSupportTimestamp: The cluster's current minor version's end of
+	// standard support timestamp.
+	EndOfStandardSupportTimestamp string `json:"endOfStandardSupportTimestamp,omitempty"`
+	// MinorTargetVersion: minor_target_version indicates the target version for
+	// minor upgrade.
+	MinorTargetVersion string `json:"minorTargetVersion,omitempty"`
+	// PatchTargetVersion: patch_target_version indicates the target version for
+	// patch upgrade.
+	PatchTargetVersion string `json:"patchTargetVersion,omitempty"`
+	// PausedReason: The auto upgrade paused reason.
+	//
+	// Possible values:
+	//   "AUTO_UPGRADE_PAUSED_REASON_UNSPECIFIED" -
+	// AUTO_UPGRADE_PAUSED_REASON_UNSPECIFIED indicates an unspecified reason.
+	//   "MAINTENANCE_WINDOW" - MAINTENANCE_WINDOW indicates the cluster is outside
+	// customer maintenance window.
+	//   "MAINTENANCE_EXCLUSION_NO_UPGRADES" - MAINTENANCE_EXCLUSION_NO_UPGRADES
+	// indicates the cluster is in a maintenance exclusion with scope NO_UPGRADES.
+	//   "MAINTENANCE_EXCLUSION_NO_MINOR_UPGRADES" -
+	// MAINTENANCE_EXCLUSION_NO_MINOR_UPGRADES indicates the cluster is in a
+	// maintenance exclusion with scope NO_MINOR_UPGRADES.
+	//   "CLUSTER_DISRUPTION_BUDGET" - CLUSTER_DISRUPTION_BUDGET indicates the
+	// cluster is outside the cluster disruption budget.
+	//   "CLUSTER_DISRUPTION_BUDGET_MINOR_UPGRADE" -
+	// CLUSTER_DISRUPTION_BUDGET_MINOR_UPGRADE indicates the cluster is outside the
+	// cluster disruption budget for minor version upgrade.
+	//   "SYSTEM_CONFIG" - SYSTEM_CONFIG indicates the cluster upgrade is paused by
+	// system config.
+	PausedReason []string `json:"pausedReason,omitempty"`
+	// UpgradeDetails: The list of past auto upgrades.
+	UpgradeDetails []*UpgradeDetails `json:"upgradeDetails,omitempty"`
+
+	// ServerResponse contains the HTTP response code and headers from the server.
+	googleapi.ServerResponse `json:"-"`
+	// ForceSendFields is a list of field names (e.g. "AutoUpgradeStatus") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AutoUpgradeStatus") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ClusterUpgradeInfo) MarshalJSON() ([]byte, error) {
+	type NoMethod ClusterUpgradeInfo
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -1867,17 +2208,27 @@ func (s ComplianceStandard) MarshalJSON() ([]byte, error) {
 // ConfidentialNodes: ConfidentialNodes is configuration for the confidential
 // nodes feature, which makes nodes run on confidential VMs.
 type ConfidentialNodes struct {
+	// ConfidentialInstanceType: Defines the type of technology used by the
+	// confidential node.
+	//
+	// Possible values:
+	//   "CONFIDENTIAL_INSTANCE_TYPE_UNSPECIFIED" - No type specified. Do not use
+	// this value.
+	//   "SEV" - AMD Secure Encrypted Virtualization.
+	//   "SEV_SNP" - AMD Secure Encrypted Virtualization - Secure Nested Paging.
+	//   "TDX" - Intel Trust Domain eXtension.
+	ConfidentialInstanceType string `json:"confidentialInstanceType,omitempty"`
 	// Enabled: Whether Confidential Nodes feature is enabled.
 	Enabled bool `json:"enabled,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
-	// include in API requests. By default, fields with empty or default values are
-	// omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "ConfidentialInstanceType")
+	// to unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Enabled") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "ConfidentialInstanceType") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -1940,6 +2291,13 @@ type ContainerdConfig struct {
 	// PrivateRegistryAccessConfig: PrivateRegistryAccessConfig is used to
 	// configure access configuration for private container registries.
 	PrivateRegistryAccessConfig *PrivateRegistryAccessConfig `json:"privateRegistryAccessConfig,omitempty"`
+	// RegistryHosts: RegistryHostConfig configures containerd registry host
+	// configuration. Each registry_hosts represents a hosts.toml file. At most 25
+	// registry_hosts are allowed.
+	RegistryHosts []*RegistryHostConfig `json:"registryHosts,omitempty"`
+	// WritableCgroups: Optional. WritableCgroups defines writable cgroups
+	// configuration for the node pool.
+	WritableCgroups *WritableCgroups `json:"writableCgroups,omitempty"`
 	// ForceSendFields is a list of field names (e.g.
 	// "PrivateRegistryAccessConfig") to unconditionally include in API requests.
 	// By default, fields with empty or default values are omitted from API
@@ -2128,9 +2486,15 @@ func (s DNSConfig) MarshalJSON() ([]byte, error) {
 // DNSEndpointConfig: Describes the configuration of a DNS endpoint.
 type DNSEndpointConfig struct {
 	// AllowExternalTraffic: Controls whether user traffic is allowed over this
-	// endpoint. Note that GCP-managed services may still use the endpoint even if
-	// this is false.
+	// endpoint. Note that Google-managed services may still use the endpoint even
+	// if this is false.
 	AllowExternalTraffic bool `json:"allowExternalTraffic,omitempty"`
+	// EnableK8sCertsViaDns: Controls whether the k8s certs auth is allowed via
+	// DNS.
+	EnableK8sCertsViaDns bool `json:"enableK8sCertsViaDns,omitempty"`
+	// EnableK8sTokensViaDns: Controls whether the k8s token auth is allowed via
+	// DNS.
+	EnableK8sTokensViaDns bool `json:"enableK8sTokensViaDns,omitempty"`
 	// Endpoint: Output only. The cluster's DNS endpoint configuration. A DNS
 	// format address. This is accessible from the public internet. Ex:
 	// uid.us-central1.gke.goog. Always present, but the behavior may change
@@ -2239,6 +2603,29 @@ func (s DatabaseEncryption) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// DefaultComputeClassConfig: DefaultComputeClassConfig defines default compute
+// class configuration.
+type DefaultComputeClassConfig struct {
+	// Enabled: Enables default compute class.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s DefaultComputeClassConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod DefaultComputeClassConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // DefaultSnatStatus: DefaultSnatStatus contains the desired state of whether
 // default sNAT should be disabled on the cluster.
 type DefaultSnatStatus struct {
@@ -2262,8 +2649,34 @@ func (s DefaultSnatStatus) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// DesiredAdditionalIPRangesConfig: DesiredAdditionalIPRangesConfig is a
+// wrapper used for cluster update operation and contains multiple
+// AdditionalIPRangesConfigs.
+type DesiredAdditionalIPRangesConfig struct {
+	// AdditionalIpRangesConfigs: List of additional IP ranges configs where each
+	// AdditionalIPRangesConfig corresponds to one subnetwork's IP ranges
+	AdditionalIpRangesConfigs []*AdditionalIPRangesConfig `json:"additionalIpRangesConfigs,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AdditionalIpRangesConfigs")
+	// to unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AdditionalIpRangesConfigs") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s DesiredAdditionalIPRangesConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod DesiredAdditionalIPRangesConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // DesiredEnterpriseConfig: DesiredEnterpriseConfig is a wrapper used for
-// updating enterprise_config.
+// updating enterprise_config. Deprecated: GKE Enterprise features are now
+// available without an Enterprise tier.
 type DesiredEnterpriseConfig struct {
 	// DesiredTier: desired_tier specifies the desired tier of the cluster.
 	//
@@ -2288,6 +2701,48 @@ type DesiredEnterpriseConfig struct {
 
 func (s DesiredEnterpriseConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod DesiredEnterpriseConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// DisruptionEvent: DisruptionEvent is a notification sent to customers about
+// the disruption event of a resource.
+type DisruptionEvent struct {
+	// DisruptionType: The type of the disruption event.
+	//
+	// Possible values:
+	//   "DISRUPTION_TYPE_UNSPECIFIED" - DISRUPTION_TYPE_UNSPECIFIED indicates the
+	// disruption type is unspecified.
+	//   "POD_NOT_ENOUGH_PDB" - POD_NOT_ENOUGH_PDB indicates there are still
+	// running pods on the node during node drain because their evictions are
+	// blocked by PDB.
+	//   "POD_PDB_VIOLATION" - POD_PDB_VIOLATION indicates that there are force pod
+	// evictions during node drain which violate the PDB.
+	DisruptionType string `json:"disruptionType,omitempty"`
+	// PdbBlockedNode: The node whose drain is blocked by PDB. This field is set
+	// for both POD_PDB_VIOLATION and POD_NOT_ENOUGH_PDB event.
+	PdbBlockedNode string `json:"pdbBlockedNode,omitempty"`
+	// PdbBlockedPod: The pods whose evictions are blocked by PDB. This field is
+	// set for both POD_PDB_VIOLATION and POD_NOT_ENOUGH_PDB event.
+	PdbBlockedPod []*PdbBlockedPod `json:"pdbBlockedPod,omitempty"`
+	// PdbViolationTimeout: The timeout in seconds for which the node drain is
+	// blocked by PDB. After this timeout, pods are forcefully evicted. This field
+	// is only populated when event_type is POD_PDB_VIOLATION.
+	PdbViolationTimeout string `json:"pdbViolationTimeout,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "DisruptionType") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "DisruptionType") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s DisruptionEvent) MarshalJSON() ([]byte, error) {
+	type NoMethod DisruptionEvent
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -2323,6 +2778,8 @@ type Empty struct {
 }
 
 // EnterpriseConfig: EnterpriseConfig is the cluster enterprise configuration.
+// Deprecated: GKE Enterprise features are now available without an Enterprise
+// tier.
 type EnterpriseConfig struct {
 	// ClusterTier: Output only. cluster_tier indicates the effective tier of the
 	// cluster.
@@ -2362,6 +2819,8 @@ func (s EnterpriseConfig) MarshalJSON() ([]byte, error) {
 // EphemeralStorageLocalSsdConfig: EphemeralStorageLocalSsdConfig contains
 // configuration for the node ephemeral storage using Local SSDs.
 type EphemeralStorageLocalSsdConfig struct {
+	// DataCacheCount: Number of local SSDs to use for GKE Data Cache.
+	DataCacheCount int64 `json:"dataCacheCount,omitempty"`
 	// LocalSsdCount: Number of local SSDs to use to back ephemeral storage. Uses
 	// NVMe interfaces. A zero (or unset) value has different meanings depending on
 	// machine type being used: 1. For pre-Gen3 machines, which support flexible
@@ -2377,21 +2836,184 @@ type EphemeralStorageLocalSsdConfig struct {
 	// https://cloud.google.com/compute/docs/disks/local-ssd#choose_number_local_ssds
 	// for more info.
 	LocalSsdCount int64 `json:"localSsdCount,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "LocalSsdCount") to
+	// ForceSendFields is a list of field names (e.g. "DataCacheCount") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "LocalSsdCount") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "DataCacheCount") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
 
 func (s EphemeralStorageLocalSsdConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod EphemeralStorageLocalSsdConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// EvictionGracePeriod: Eviction grace periods are grace periods for each
+// eviction signal.
+type EvictionGracePeriod struct {
+	// ImagefsAvailable: Optional. Grace period for eviction due to imagefs
+	// available signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsAvailable string `json:"imagefsAvailable,omitempty"`
+	// ImagefsInodesFree: Optional. Grace period for eviction due to imagefs inodes
+	// free signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsInodesFree string `json:"imagefsInodesFree,omitempty"`
+	// MemoryAvailable: Optional. Grace period for eviction due to memory available
+	// signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	MemoryAvailable string `json:"memoryAvailable,omitempty"`
+	// NodefsAvailable: Optional. Grace period for eviction due to nodefs available
+	// signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsAvailable string `json:"nodefsAvailable,omitempty"`
+	// NodefsInodesFree: Optional. Grace period for eviction due to nodefs inodes
+	// free signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsInodesFree string `json:"nodefsInodesFree,omitempty"`
+	// PidAvailable: Optional. Grace period for eviction due to pid available
+	// signal. Sample format: "10s". Must be >= 0. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	PidAvailable string `json:"pidAvailable,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ImagefsAvailable") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ImagefsAvailable") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s EvictionGracePeriod) MarshalJSON() ([]byte, error) {
+	type NoMethod EvictionGracePeriod
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// EvictionMinimumReclaim: Eviction minimum reclaims are the resource amounts
+// of minimum reclaims for each eviction signal.
+type EvictionMinimumReclaim struct {
+	// ImagefsAvailable: Optional. Minimum reclaim for eviction due to imagefs
+	// available signal. Only take percentage value for now. Sample format: "10%".
+	// Must be <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsAvailable string `json:"imagefsAvailable,omitempty"`
+	// ImagefsInodesFree: Optional. Minimum reclaim for eviction due to imagefs
+	// inodes free signal. Only take percentage value for now. Sample format:
+	// "10%". Must be <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsInodesFree string `json:"imagefsInodesFree,omitempty"`
+	// MemoryAvailable: Optional. Minimum reclaim for eviction due to memory
+	// available signal. Only take percentage value for now. Sample format: "10%".
+	// Must be <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	MemoryAvailable string `json:"memoryAvailable,omitempty"`
+	// NodefsAvailable: Optional. Minimum reclaim for eviction due to nodefs
+	// available signal. Only take percentage value for now. Sample format: "10%".
+	// Must be <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsAvailable string `json:"nodefsAvailable,omitempty"`
+	// NodefsInodesFree: Optional. Minimum reclaim for eviction due to nodefs
+	// inodes free signal. Only take percentage value for now. Sample format:
+	// "10%". Must be <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsInodesFree string `json:"nodefsInodesFree,omitempty"`
+	// PidAvailable: Optional. Minimum reclaim for eviction due to pid available
+	// signal. Only take percentage value for now. Sample format: "10%". Must be
+	// <=10%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	PidAvailable string `json:"pidAvailable,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ImagefsAvailable") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ImagefsAvailable") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s EvictionMinimumReclaim) MarshalJSON() ([]byte, error) {
+	type NoMethod EvictionMinimumReclaim
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// EvictionSignals: Eviction signals are the current state of a particular
+// resource at a specific point in time. The kubelet uses eviction signals to
+// make eviction decisions by comparing the signals to eviction thresholds,
+// which are the minimum amount of the resource that should be available on the
+// node.
+type EvictionSignals struct {
+	// ImagefsAvailable: Optional. Amount of storage available on filesystem that
+	// container runtime uses for storing images layers. If the container
+	// filesystem and image filesystem are not separate, then imagefs can store
+	// both image layers and writeable layers. Defines the amount of
+	// "imagefs.available" signal in kubelet. Default is unset, if not specified in
+	// the kubelet config. It takses percentage value for now. Sample format:
+	// "30%". Must be >= 15% and <= 50%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsAvailable string `json:"imagefsAvailable,omitempty"`
+	// ImagefsInodesFree: Optional. Amount of inodes available on filesystem that
+	// container runtime uses for storing images layers. Defines the amount of
+	// "imagefs.inodesFree" signal in kubelet. Default is unset, if not specified
+	// in the kubelet config. Linux only. It takses percentage value for now.
+	// Sample format: "30%". Must be >= 5% and <= 50%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	ImagefsInodesFree string `json:"imagefsInodesFree,omitempty"`
+	// MemoryAvailable: Optional. Memory available (i.e. capacity - workingSet), in
+	// bytes. Defines the amount of "memory.available" signal in kubelet. Default
+	// is unset, if not specified in the kubelet config. Format: positive number +
+	// unit, e.g. 100Ki, 10Mi, 5Gi. Valid units are Ki, Mi, Gi. Must be >= 100Mi
+	// and <= 50% of the node's memory. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	MemoryAvailable string `json:"memoryAvailable,omitempty"`
+	// NodefsAvailable: Optional. Amount of storage available on filesystem that
+	// kubelet uses for volumes, daemon logs, etc. Defines the amount of
+	// "nodefs.available" signal in kubelet. Default is unset, if not specified in
+	// the kubelet config. It takses percentage value for now. Sample format:
+	// "30%". Must be >= 10% and <= 50%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsAvailable string `json:"nodefsAvailable,omitempty"`
+	// NodefsInodesFree: Optional. Amount of inodes available on filesystem that
+	// kubelet uses for volumes, daemon logs, etc. Defines the amount of
+	// "nodefs.inodesFree" signal in kubelet. Default is unset, if not specified in
+	// the kubelet config. Linux only. It takses percentage value for now. Sample
+	// format: "30%". Must be >= 5% and <= 50%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	NodefsInodesFree string `json:"nodefsInodesFree,omitempty"`
+	// PidAvailable: Optional. Amount of PID available for pod allocation. Defines
+	// the amount of "pid.available" signal in kubelet. Default is unset, if not
+	// specified in the kubelet config. It takses percentage value for now. Sample
+	// format: "30%". Must be >= 10% and <= 50%. See
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+	PidAvailable string `json:"pidAvailable,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ImagefsAvailable") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ImagefsAvailable") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s EvictionSignals) MarshalJSON() ([]byte, error) {
+	type NoMethod EvictionSignals
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -2455,6 +3077,13 @@ type Fleet struct {
 	// membership of the cluster, in the format
 	// `//gkehub.googleapis.com/projects/*/locations/*/memberships/*`.
 	Membership string `json:"membership,omitempty"`
+	// MembershipType: The type of the cluster's fleet membership.
+	//
+	// Possible values:
+	//   "MEMBERSHIP_TYPE_UNSPECIFIED" - The MembershipType is not set.
+	//   "LIGHTWEIGHT" - The membership supports only lightweight compatible
+	// features.
+	MembershipType string `json:"membershipType,omitempty"`
 	// PreRegistered: Output only. Whether the cluster has been registered through
 	// the fleet API.
 	PreRegistered bool `json:"preRegistered,omitempty"`
@@ -2481,7 +3110,7 @@ func (s Fleet) MarshalJSON() ([]byte, error) {
 }
 
 // GCPSecretManagerCertificateConfig: GCPSecretManagerCertificateConfig
-// configures a secret from Google Secret Manager
+// configures a secret from Secret Manager
 // (https://cloud.google.com/secret-manager).
 type GCPSecretManagerCertificateConfig struct {
 	// SecretUri: Secret URI, in the form
@@ -2647,9 +3276,9 @@ func (s GcfsConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
-// GcpFilestoreCsiDriverConfig: Configuration for the GCP Filestore CSI driver.
+// GcpFilestoreCsiDriverConfig: Configuration for the Filestore CSI driver.
 type GcpFilestoreCsiDriverConfig struct {
-	// Enabled: Whether the GCP Filestore CSI driver is enabled for this cluster.
+	// Enabled: Whether the Filestore CSI driver is enabled for this cluster.
 	Enabled bool `json:"enabled,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
@@ -2764,6 +3393,37 @@ func (s GetOpenIDConfigResponse) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// GkeAutoUpgradeConfig: GkeAutoUpgradeConfig is the configuration for GKE auto
+// upgrades.
+type GkeAutoUpgradeConfig struct {
+	// PatchMode: PatchMode specifies how auto upgrade patch builds should be
+	// selected.
+	//
+	// Possible values:
+	//   "PATCH_MODE_UNSPECIFIED" - PATCH_MODE_UNSPECIFIED defaults to using the
+	// upgrade target from the channel's patch upgrade targets as the upgrade
+	// target for the version.
+	//   "ACCELERATED" - ACCELERATED denotes that the latest patch build in the
+	// channel should be used as the upgrade target for the version.
+	PatchMode string `json:"patchMode,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "PatchMode") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PatchMode") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s GkeAutoUpgradeConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod GkeAutoUpgradeConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // GkeBackupAgentConfig: Configuration for the Backup for GKE Agent.
 type GkeBackupAgentConfig struct {
 	// Enabled: Whether the Backup for GKE agent is enabled for this cluster.
@@ -2783,6 +3443,29 @@ type GkeBackupAgentConfig struct {
 
 func (s GkeBackupAgentConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod GkeBackupAgentConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// HighScaleCheckpointingConfig: Configuration for the High Scale
+// Checkpointing.
+type HighScaleCheckpointingConfig struct {
+	// Enabled: Whether the High Scale Checkpointing is enabled for this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s HighScaleCheckpointingConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod HighScaleCheckpointingConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -2810,6 +3493,60 @@ type HorizontalPodAutoscaling struct {
 
 func (s HorizontalPodAutoscaling) MarshalJSON() ([]byte, error) {
 	type NoMethod HorizontalPodAutoscaling
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// HostConfig: HostConfig configures the registry host under a given Server.
+type HostConfig struct {
+	// Ca: CA configures the registry host certificate.
+	Ca []*CertificateConfig `json:"ca,omitempty"`
+	// Capabilities: Capabilities represent the capabilities of the registry host,
+	// specifying what operations a host is capable of performing. If not set,
+	// containerd enables all capabilities by default.
+	//
+	// Possible values:
+	//   "HOST_CAPABILITY_UNSPECIFIED" - UNKNOWN should never be set.
+	//   "HOST_CAPABILITY_PULL" - Pull represents the capability to fetch manifests
+	// and blobs by digest.
+	//   "HOST_CAPABILITY_RESOLVE" - Resolve represents the capability to fetch
+	// manifests by name.
+	//   "HOST_CAPABILITY_PUSH" - Push represents the capability to push blobs and
+	// manifests.
+	Capabilities []string `json:"capabilities,omitempty"`
+	// Client: Client configures the registry host client certificate and key.
+	Client []*CertificateConfigPair `json:"client,omitempty"`
+	// DialTimeout: Specifies the maximum duration allowed for a connection attempt
+	// to complete. A shorter timeout helps reduce delays when falling back to the
+	// original registry if the mirror is unreachable. Maximum allowed value is
+	// 180s. If not set, containerd sets default 30s. The value should be a decimal
+	// number of seconds with an `s` suffix.
+	DialTimeout string `json:"dialTimeout,omitempty"`
+	// Header: Header configures the registry host headers.
+	Header []*RegistryHeader `json:"header,omitempty"`
+	// Host: Host configures the registry host/mirror. It supports fully qualified
+	// domain names (FQDN) and IP addresses: Specifying port is supported.
+	// Wildcards are NOT supported. Examples: - my.customdomain.com - 10.0.1.2:5000
+	Host string `json:"host,omitempty"`
+	// OverridePath: OverridePath is used to indicate the host's API root endpoint
+	// is defined in the URL path rather than by the API specification. This may be
+	// used with non-compliant OCI registries which are missing the /v2 prefix. If
+	// not set, containerd sets default false.
+	OverridePath bool `json:"overridePath,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Ca") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Ca") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s HostConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod HostConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -2915,11 +3652,20 @@ func (s ILBSubsettingConfig) MarshalJSON() ([]byte, error) {
 // IPAllocationPolicy: Configuration for controlling how IPs are allocated in
 // the cluster.
 type IPAllocationPolicy struct {
+	// AdditionalIpRangesConfigs: Output only. The additional IP ranges that are
+	// added to the cluster. These IP ranges can be used by new node pools to
+	// allocate node and pod IPs automatically. Each AdditionalIPRangesConfig
+	// corresponds to a single subnetwork. Once a range is removed it will not show
+	// up in IPAllocationPolicy.
+	AdditionalIpRangesConfigs []*AdditionalIPRangesConfig `json:"additionalIpRangesConfigs,omitempty"`
 	// AdditionalPodRangesConfig: Output only. The additional pod ranges that are
 	// added to the cluster. These pod ranges can be used by new node pools to
 	// allocate pod IPs automatically. Once the range is removed it will not show
 	// up in IPAllocationPolicy.
 	AdditionalPodRangesConfig *AdditionalPodRangesConfig `json:"additionalPodRangesConfig,omitempty"`
+	// AutoIpamConfig: Optional. AutoIpamConfig contains all information related to
+	// Auto IPAM
+	AutoIpamConfig *AutoIpamConfig `json:"autoIpamConfig,omitempty"`
 	// ClusterIpv4Cidr: This field is deprecated, use cluster_ipv4_cidr_block.
 	ClusterIpv4Cidr string `json:"clusterIpv4Cidr,omitempty"`
 	// ClusterIpv4CidrBlock: The IP address range for the cluster pod IPs. If this
@@ -2927,8 +3673,8 @@ type IPAllocationPolicy struct {
 	// field is only applicable when `use_ip_aliases` is true. Set to blank to have
 	// a range chosen with the default size. Set to /netmask (e.g. `/14`) to have a
 	// range chosen with a specific netmask. Set to a CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
 	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use.
 	ClusterIpv4CidrBlock string `json:"clusterIpv4CidrBlock,omitempty"`
 	// ClusterSecondaryRangeName: The name of the secondary range to be used for
@@ -2953,14 +3699,18 @@ type IPAllocationPolicy struct {
 	//   "INTERNAL" - Access type internal (all v6 addresses are internal IPs)
 	//   "EXTERNAL" - Access type external (all v6 addresses are external IPs)
 	Ipv6AccessType string `json:"ipv6AccessType,omitempty"`
+	// NetworkTierConfig: Cluster-level network tier configuration is used to
+	// determine the default network tier for external IP addresses on cluster
+	// resources, such as node pools and load balancers.
+	NetworkTierConfig *NetworkTierConfig `json:"networkTierConfig,omitempty"`
 	// NodeIpv4Cidr: This field is deprecated, use node_ipv4_cidr_block.
 	NodeIpv4Cidr string `json:"nodeIpv4Cidr,omitempty"`
 	// NodeIpv4CidrBlock: The IP address range of the instance IPs in this cluster.
 	// This is applicable only if `create_subnetwork` is true. Set to blank to have
 	// a range chosen with the default size. Set to /netmask (e.g. `/14`) to have a
 	// range chosen with a specific netmask. Set to a CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
 	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use.
 	NodeIpv4CidrBlock string `json:"nodeIpv4CidrBlock,omitempty"`
 	// PodCidrOverprovisionConfig: [PRIVATE FIELD] Pod CIDR size overprovisioning
@@ -2979,8 +3729,8 @@ type IPAllocationPolicy struct {
 	// size. This field is only applicable when `use_ip_aliases` is true. Set to
 	// blank to have a range chosen with the default size. Set to /netmask (e.g.
 	// `/14`) to have a range chosen with a specific netmask. Set to a CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
 	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use.
 	ServicesIpv4CidrBlock string `json:"servicesIpv4CidrBlock,omitempty"`
 	// ServicesIpv6CidrBlock: Output only. The services IPv6 CIDR block for the
@@ -3011,8 +3761,8 @@ type IPAllocationPolicy struct {
 	// This field is only applicable when `use_ip_aliases` is true. If unspecified,
 	// the range will use the default size. Set to /netmask (e.g. `/14`) to have a
 	// range chosen with a specific netmask. Set to a CIDR
-	// (http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation (e.g.
-	// `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
+	// (https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation
+	// (e.g. `10.96.0.0/14`) from the RFC-1918 private networks (e.g. `10.0.0.0/8`,
 	// `172.16.0.0/12`, `192.168.0.0/16`) to pick a specific range to use. This
 	// field is deprecated due to the deprecation of 2VM TPU. The end of life date
 	// for 2VM TPU is 2025-04-25.
@@ -3027,13 +3777,13 @@ type IPAllocationPolicy struct {
 	// is true. If both use_ip_aliases and use_routes are false, then the server
 	// picks the default IP allocation mode
 	UseRoutes bool `json:"useRoutes,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "AdditionalPodRangesConfig")
+	// ForceSendFields is a list of field names (e.g. "AdditionalIpRangesConfigs")
 	// to unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "AdditionalPodRangesConfig") to
+	// NullFields is a list of field names (e.g. "AdditionalIpRangesConfigs") to
 	// include in API requests with the JSON null value. By default, fields with
 	// empty values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
@@ -3277,19 +4027,78 @@ type LinuxNodeConfig struct {
 	CgroupMode string `json:"cgroupMode,omitempty"`
 	// Hugepages: Optional. Amounts for 2M and 1G hugepages
 	Hugepages *HugepagesConfig `json:"hugepages,omitempty"`
+	// NodeKernelModuleLoading: Optional. Configuration for kernel module loading
+	// on nodes. When enabled, the node pool will be provisioned with a
+	// Container-Optimized OS image that enforces kernel module signature
+	// verification.
+	NodeKernelModuleLoading *NodeKernelModuleLoading `json:"nodeKernelModuleLoading,omitempty"`
 	// Sysctls: The Linux kernel parameters to be applied to the nodes and all pods
 	// running on the nodes. The following parameters are supported.
 	// net.core.busy_poll net.core.busy_read net.core.netdev_max_backlog
 	// net.core.rmem_max net.core.rmem_default net.core.wmem_default
 	// net.core.wmem_max net.core.optmem_max net.core.somaxconn net.ipv4.tcp_rmem
-	// net.ipv4.tcp_wmem net.ipv4.tcp_tw_reuse net.netfilter.nf_conntrack_max
-	// net.netfilter.nf_conntrack_buckets
+	// net.ipv4.tcp_wmem net.ipv4.tcp_tw_reuse net.ipv4.tcp_mtu_probing
+	// net.ipv4.tcp_max_orphans net.ipv4.tcp_max_tw_buckets
+	// net.ipv4.tcp_syn_retries net.ipv4.tcp_ecn net.ipv4.tcp_congestion_control
+	// net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets
 	// net.netfilter.nf_conntrack_tcp_timeout_close_wait
 	// net.netfilter.nf_conntrack_tcp_timeout_time_wait
 	// net.netfilter.nf_conntrack_tcp_timeout_established
 	// net.netfilter.nf_conntrack_acct kernel.shmmni kernel.shmmax kernel.shmall
-	// vm.max_map_count
+	// kernel.perf_event_paranoid kernel.sched_rt_runtime_us
+	// kernel.softlockup_panic kernel.yama.ptrace_scope kernel.kptr_restrict
+	// kernel.dmesg_restrict kernel.sysrq fs.aio-max-nr fs.file-max
+	// fs.inotify.max_user_instances fs.inotify.max_user_watches fs.nr_open
+	// vm.dirty_background_ratio vm.dirty_background_bytes
+	// vm.dirty_expire_centisecs vm.dirty_ratio vm.dirty_bytes
+	// vm.dirty_writeback_centisecs vm.max_map_count vm.overcommit_memory
+	// vm.overcommit_ratio vm.vfs_cache_pressure vm.swappiness
+	// vm.watermark_scale_factor vm.min_free_kbytes
 	Sysctls map[string]string `json:"sysctls,omitempty"`
+	// TransparentHugepageDefrag: Optional. Defines the transparent hugepage defrag
+	// configuration on the node. VM hugepage allocation can be managed by either
+	// limiting defragmentation for delayed allocation or skipping it entirely for
+	// immediate allocation only. See
+	// https://docs.kernel.org/admin-guide/mm/transhuge.html for more details.
+	//
+	// Possible values:
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_UNSPECIFIED" - Default value. GKE will not
+	// modify the kernel configuration.
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_ALWAYS" - It means that an application
+	// requesting THP will stall on allocation failure and directly reclaim pages
+	// and compact memory in an effort to allocate a THP immediately.
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_DEFER" - It means that an application will
+	// wake kswapd in the background to reclaim pages and wake kcompactd to compact
+	// memory so that THP is available in the near future. It's the responsibility
+	// of khugepaged to then install the THP pages later.
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_DEFER_WITH_MADVISE" - It means that an
+	// application will enter direct reclaim and compaction like always, but only
+	// for regions that have used madvise(MADV_HUGEPAGE); all other regions will
+	// wake kswapd in the background to reclaim pages and wake kcompactd to compact
+	// memory so that THP is available in the near future.
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_MADVISE" - It means that an application will
+	// enter direct reclaim like always but only for regions that are have used
+	// madvise(MADV_HUGEPAGE). This is the default kernel configuration.
+	//   "TRANSPARENT_HUGEPAGE_DEFRAG_NEVER" - It means that an application will
+	// never enter direct reclaim or compaction.
+	TransparentHugepageDefrag string `json:"transparentHugepageDefrag,omitempty"`
+	// TransparentHugepageEnabled: Optional. Transparent hugepage support for
+	// anonymous memory can be entirely disabled (mostly for debugging purposes) or
+	// only enabled inside MADV_HUGEPAGE regions (to avoid the risk of consuming
+	// more memory resources) or enabled system wide. See
+	// https://docs.kernel.org/admin-guide/mm/transhuge.html for more details.
+	//
+	// Possible values:
+	//   "TRANSPARENT_HUGEPAGE_ENABLED_UNSPECIFIED" - Default value. GKE will not
+	// modify the kernel configuration.
+	//   "TRANSPARENT_HUGEPAGE_ENABLED_ALWAYS" - Transparent hugepage support for
+	// anonymous memory is enabled system wide.
+	//   "TRANSPARENT_HUGEPAGE_ENABLED_MADVISE" - Transparent hugepage support for
+	// anonymous memory is enabled inside MADV_HUGEPAGE regions. This is the
+	// default kernel configuration.
+	//   "TRANSPARENT_HUGEPAGE_ENABLED_NEVER" - Transparent hugepage support for
+	// anonymous memory is disabled.
+	TransparentHugepageEnabled string `json:"transparentHugepageEnabled,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CgroupMode") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -3544,8 +4353,48 @@ func (s LoggingVariantConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// LustreCsiDriverConfig: Configuration for the Lustre CSI driver.
+type LustreCsiDriverConfig struct {
+	// EnableLegacyLustrePort: If set to true, the Lustre CSI driver will install
+	// Lustre kernel modules using port 6988. This serves as a workaround for a
+	// port conflict with the gke-metadata-server. This field is required ONLY
+	// under the following conditions: 1. The GKE node version is older than
+	// 1.33.2-gke.4655000. 2. You're connecting to a Lustre instance that has the
+	// 'gke-support-enabled' flag. Deprecated: This flag is no longer required as
+	// of GKE node version 1.33.2-gke.4655000, unless you are connecting to a
+	// Lustre instance that has the `gke-support-enabled` flag.
+	EnableLegacyLustrePort bool `json:"enableLegacyLustrePort,omitempty"`
+	// Enabled: Whether the Lustre CSI driver is enabled for this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "EnableLegacyLustrePort") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "EnableLegacyLustrePort") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s LustreCsiDriverConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod LustreCsiDriverConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // MaintenanceExclusionOptions: Represents the Maintenance exclusion option.
 type MaintenanceExclusionOptions struct {
+	// EndTimeBehavior: EndTimeBehavior specifies the behavior of the exclusion end
+	// time.
+	//
+	// Possible values:
+	//   "END_TIME_BEHAVIOR_UNSPECIFIED" - END_TIME_BEHAVIOR_UNSPECIFIED is the
+	// default behavior, which is fixed end time.
+	//   "UNTIL_END_OF_SUPPORT" - UNTIL_END_OF_SUPPORT means the exclusion will be
+	// in effect until the end of the support of the cluster's current version.
+	EndTimeBehavior string `json:"endTimeBehavior,omitempty"`
 	// Scope: Scope specifies the upgrade scope which upgrades are blocked by the
 	// exclusion.
 	//
@@ -3559,15 +4408,15 @@ type MaintenanceExclusionOptions struct {
 	// upgrades for the cluster, and also exclude all node pool upgrades. Only
 	// control plane patches are allowed.
 	Scope string `json:"scope,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "Scope") to unconditionally
-	// include in API requests. By default, fields with empty or default values are
-	// omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "EndTimeBehavior") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Scope") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "EndTimeBehavior") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -3635,6 +4484,36 @@ type MaintenanceWindow struct {
 
 func (s MaintenanceWindow) MarshalJSON() ([]byte, error) {
 	type NoMethod MaintenanceWindow
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// ManagedOpenTelemetryConfig: ManagedOpenTelemetryConfig is the configuration
+// for the GKE Managed OpenTelemetry pipeline.
+type ManagedOpenTelemetryConfig struct {
+	// Scope: Scope of the Managed OpenTelemetry pipeline.
+	//
+	// Possible values:
+	//   "SCOPE_UNSPECIFIED" - SCOPE_UNSPECIFIED is when the scope is not set.
+	//   "NONE" - NONE is used to disable the Managed OpenTelemetry pipeline.
+	//   "COLLECTION_AND_INSTRUMENTATION_COMPONENTS" -
+	// COLLECTION_AND_INSTRUMENTATION_COMPONENTS is used to enable the Managed
+	// OpenTelemetry pipeline for collection and instrumentation components.
+	Scope string `json:"scope,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Scope") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Scope") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ManagedOpenTelemetryConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ManagedOpenTelemetryConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -3769,6 +4648,33 @@ type MaxPodsConstraint struct {
 
 func (s MaxPodsConstraint) MarshalJSON() ([]byte, error) {
 	type NoMethod MaxPodsConstraint
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// MemoryManager: The option enables the Kubernetes NUMA-aware Memory Manager
+// feature. Detailed description about the feature can be found here
+// (https://kubernetes.io/docs/tasks/administer-cluster/memory-manager/).
+type MemoryManager struct {
+	// Policy: Controls the memory management policy on the Node. See
+	// https://kubernetes.io/docs/tasks/administer-cluster/memory-manager/#policies
+	// The following values are allowed. * "none" * "static" The default value is
+	// 'none' if unspecified.
+	Policy string `json:"policy,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Policy") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Policy") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s MemoryManager) MarshalJSON() ([]byte, error) {
+	type NoMethod MemoryManager
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -4117,6 +5023,41 @@ func (s NetworkTags) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// NetworkTierConfig: NetworkTierConfig contains network tier information.
+type NetworkTierConfig struct {
+	// NetworkTier: Network tier configuration.
+	//
+	// Possible values:
+	//   "NETWORK_TIER_UNSPECIFIED" - By default, use project-level configuration.
+	// When unspecified, the behavior defaults to NETWORK_TIER_DEFAULT. For cluster
+	// updates, this implies no action (no-op).
+	//   "NETWORK_TIER_DEFAULT" - Default network tier. Use project-level
+	// configuration. User can specify this value, meaning they want to keep the
+	// same behaviour as before cluster level network tier configuration is
+	// introduced. This field ensures backward compatibility for the network tier
+	// of cluster resources, such as node pools and load balancers, for their
+	// external IP addresses.
+	//   "NETWORK_TIER_PREMIUM" - Premium network tier.
+	//   "NETWORK_TIER_STANDARD" - Standard network tier.
+	NetworkTier string `json:"networkTier,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "NetworkTier") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "NetworkTier") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s NetworkTierConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod NetworkTierConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // NodeAffinity: Specifies the NodeAffinity key, values, and affinity operator
 // according to shared sole tenant node group affinities
 // (https://cloud.google.com/compute/docs/nodes/sole-tenant-nodes#node_affinity_and_anti-affinity).
@@ -4160,6 +5101,8 @@ type NodeConfig struct {
 	Accelerators []*AcceleratorConfig `json:"accelerators,omitempty"`
 	// AdvancedMachineFeatures: Advanced features for the Compute Engine VM.
 	AdvancedMachineFeatures *AdvancedMachineFeatures `json:"advancedMachineFeatures,omitempty"`
+	// BootDisk: The boot disk configuration for the node pool.
+	BootDisk *BootDisk `json:"bootDisk,omitempty"`
 	// BootDiskKmsKey:  The Customer Managed Encryption Key used to encrypt the
 	// boot disk attached to each node in the node pool. This should be of the form
 	// projects/[KEY_PROJECT_ID]/locations/[LOCATION]/keyRings/[RING_NAME]/cryptoKey
@@ -4170,6 +5113,11 @@ type NodeConfig struct {
 	// ConfidentialNodes: Confidential nodes config. All the nodes in the node pool
 	// will be Confidential VM once enabled.
 	ConfidentialNodes *ConfidentialNodes `json:"confidentialNodes,omitempty"`
+	// ConsolidationDelay: Consolidation delay defines duration after which the
+	// Cluster Autoscaler can scale down underutilized nodes. If not set, nodes are
+	// scaled down by default behavior, i.e. according to the chosen autoscaling
+	// profile.
+	ConsolidationDelay string `json:"consolidationDelay,omitempty"`
 	// ContainerdConfig: Parameters for containerd customization.
 	ContainerdConfig *ContainerdConfig `json:"containerdConfig,omitempty"`
 	// DiskSizeGb: Size of the disk attached to each node, specified in GB. The
@@ -4202,6 +5150,8 @@ type NodeConfig struct {
 	EphemeralStorageLocalSsdConfig *EphemeralStorageLocalSsdConfig `json:"ephemeralStorageLocalSsdConfig,omitempty"`
 	// FastSocket: Enable or disable NCCL fast socket for the node pool.
 	FastSocket *FastSocket `json:"fastSocket,omitempty"`
+	// FlexStart: Flex Start flag for enabling Flex Start VM.
+	FlexStart bool `json:"flexStart,omitempty"`
 	// GcfsConfig: Google Container File System (image streaming) configs.
 	GcfsConfig *GcfsConfig `json:"gcfsConfig,omitempty"`
 	// Gvnic: Enable or disable gvnic in the node pool.
@@ -4287,8 +5237,8 @@ type NodeConfig struct {
 	// `https://www.googleapis.com/auth/compute` is required for mounting
 	// persistent storage on your nodes. *
 	// `https://www.googleapis.com/auth/devstorage.read_only` is required for
-	// communicating with **gcr.io** (the Google Container Registry
-	// (https://cloud.google.com/container-registry/)). If unspecified, no scopes
+	// communicating with **gcr.io** (the Artifact Registry
+	// (https://cloud.google.com/artifact-registry/)). If unspecified, no scopes
 	// are added, unless Cloud Logging or Cloud Monitoring are enabled, in which
 	// case their required scopes will be added.
 	OauthScopes []string `json:"oauthScopes,omitempty"`
@@ -4389,6 +5339,68 @@ func (s NodeConfigDefaults) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// NodeDrainConfig: NodeDrainConfig contains the node drain related
+// configurations for this nodepool.
+type NodeDrainConfig struct {
+	// RespectPdbDuringNodePoolDeletion: Whether to respect PDB during node pool
+	// deletion.
+	RespectPdbDuringNodePoolDeletion bool `json:"respectPdbDuringNodePoolDeletion,omitempty"`
+	// ForceSendFields is a list of field names (e.g.
+	// "RespectPdbDuringNodePoolDeletion") to unconditionally include in API
+	// requests. By default, fields with empty or default values are omitted from
+	// API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g.
+	// "RespectPdbDuringNodePoolDeletion") to include in API requests with the JSON
+	// null value. By default, fields with empty values are omitted from API
+	// requests. See https://pkg.go.dev/google.golang.org/api#hdr-NullFields for
+	// more details.
+	NullFields []string `json:"-"`
+}
+
+func (s NodeDrainConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod NodeDrainConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// NodeKernelModuleLoading: Configuration for kernel module loading on nodes.
+type NodeKernelModuleLoading struct {
+	// Policy: Set the node module loading policy for nodes in the node pool.
+	//
+	// Possible values:
+	//   "POLICY_UNSPECIFIED" - Default behavior. GKE selects the image based on
+	// node type. For CPU and TPU nodes, the image will not allow loading external
+	// kernel modules. For GPU nodes, the image will allow loading any module,
+	// whether it is signed or not.
+	//   "ENFORCE_SIGNED_MODULES" - Enforced signature verification: Node pools
+	// will use a Container-Optimized OS image configured to allow loading of
+	// *Google-signed* external kernel modules. Loadpin is enabled but configured
+	// to exclude modules, and kernel module signature checking is enforced.
+	//   "DO_NOT_ENFORCE_SIGNED_MODULES" - Mirrors existing DEFAULT behavior: For
+	// CPU and TPU nodes, the image will not allow loading external kernel modules.
+	// For GPU nodes, the image will allow loading any module, whether it is signed
+	// or not.
+	Policy string `json:"policy,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Policy") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Policy") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s NodeKernelModuleLoading) MarshalJSON() ([]byte, error) {
+	type NoMethod NodeKernelModuleLoading
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // NodeKubeletConfig: Node kubelet configs.
 type NodeKubeletConfig struct {
 	// AllowedUnsafeSysctls: Optional. Defines a comma-separated allowlist of
@@ -4427,7 +5439,8 @@ type NodeKubeletConfig struct {
 	// CpuCfsQuotaPeriod: Set the CPU CFS quota period value 'cpu.cfs_period_us'.
 	// The string must be a sequence of decimal numbers, each with optional
 	// fraction and a unit suffix, such as "300ms". Valid time units are "ns", "us"
-	// (or "µs"), "ms", "s", "m", "h". The value must be a positive duration.
+	// (or "µs"), "ms", "s", "m", "h". The value must be a positive duration
+	// between 1ms and 1 second, inclusive.
 	CpuCfsQuotaPeriod string `json:"cpuCfsQuotaPeriod,omitempty"`
 	// CpuManagerPolicy: Control the CPU management policy on the node. See
 	// https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/
@@ -4436,6 +5449,27 @@ type NodeKubeletConfig struct {
 	// resource characteristics to be granted increased CPU affinity and
 	// exclusivity on the node. The default value is 'none' if unspecified.
 	CpuManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	// EvictionMaxPodGracePeriodSeconds: Optional.
+	// eviction_max_pod_grace_period_seconds is the maximum allowed grace period
+	// (in seconds) to use when terminating pods in response to a soft eviction
+	// threshold being met. This value effectively caps the Pod's
+	// terminationGracePeriodSeconds value during soft evictions. Default: 0.
+	// Range: [0, 300].
+	EvictionMaxPodGracePeriodSeconds int64 `json:"evictionMaxPodGracePeriodSeconds,omitempty"`
+	// EvictionMinimumReclaim: Optional. eviction_minimum_reclaim is a map of
+	// signal names to quantities that defines minimum reclaims, which describe the
+	// minimum amount of a given resource the kubelet will reclaim when performing
+	// a pod eviction while that resource is under pressure.
+	EvictionMinimumReclaim *EvictionMinimumReclaim `json:"evictionMinimumReclaim,omitempty"`
+	// EvictionSoft: Optional. eviction_soft is a map of signal names to quantities
+	// that defines soft eviction thresholds. Each signal is compared to its
+	// corresponding threshold to determine if a pod eviction should occur.
+	EvictionSoft *EvictionSignals `json:"evictionSoft,omitempty"`
+	// EvictionSoftGracePeriod: Optional. eviction_soft_grace_period is a map of
+	// signal names to quantities that defines grace periods for each soft eviction
+	// signal. The grace period is the amount of time that a pod must be under
+	// pressure before an eviction occurs.
+	EvictionSoftGracePeriod *EvictionGracePeriod `json:"evictionSoftGracePeriod,omitempty"`
 	// ImageGcHighThresholdPercent: Optional. Defines the percent of disk usage
 	// after which image garbage collection is always run. The percent is
 	// calculated as this field value out of 100. The value must be between 10 and
@@ -4467,11 +5501,30 @@ type NodeKubeletConfig struct {
 	// InsecureKubeletReadonlyPortEnabled: Enable or disable Kubelet read only
 	// port.
 	InsecureKubeletReadonlyPortEnabled bool `json:"insecureKubeletReadonlyPortEnabled,omitempty"`
+	// MaxParallelImagePulls: Optional. Defines the maximum number of image pulls
+	// in parallel. The range is 2 to 5, inclusive. The default value is 2 or 3
+	// depending on the disk type. See
+	// https://kubernetes.io/docs/concepts/containers/images/#maximum-parallel-image-pulls
+	// for more details.
+	MaxParallelImagePulls int64 `json:"maxParallelImagePulls,omitempty"`
+	// MemoryManager: Optional. Controls NUMA-aware Memory Manager configuration on
+	// the node. For more information, see:
+	// https://kubernetes.io/docs/tasks/administer-cluster/memory-manager/
+	MemoryManager *MemoryManager `json:"memoryManager,omitempty"`
 	// PodPidsLimit: Set the Pod PID limits. See
 	// https://kubernetes.io/docs/concepts/policy/pid-limiting/#pod-pid-limits
 	// Controls the maximum number of processes allowed to run in a pod. The value
 	// must be greater than or equal to 1024 and less than 4194304.
 	PodPidsLimit int64 `json:"podPidsLimit,omitempty,string"`
+	// SingleProcessOomKill: Optional. Defines whether to enable single process OOM
+	// killer. If true, will prevent the memory.oom.group flag from being set for
+	// container cgroups in cgroups v2. This causes processes in the container to
+	// be OOM killed individually instead of as a group.
+	SingleProcessOomKill bool `json:"singleProcessOomKill,omitempty"`
+	// TopologyManager: Optional. Controls Topology Manager configuration on the
+	// node. For more information, see:
+	// https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/
+	TopologyManager *TopologyManager `json:"topologyManager,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "AllowedUnsafeSysctls") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -4569,6 +5622,10 @@ type NodeNetworkConfig struct {
 	EnablePrivateNodes bool `json:"enablePrivateNodes,omitempty"`
 	// NetworkPerformanceConfig: Network bandwidth tier configuration.
 	NetworkPerformanceConfig *NetworkPerformanceConfig `json:"networkPerformanceConfig,omitempty"`
+	// NetworkTierConfig: Output only. The network tier configuration for the node
+	// pool inherits from the cluster-level configuration and remains immutable
+	// throughout the node pool's lifecycle, including during upgrades.
+	NetworkTierConfig *NetworkTierConfig `json:"networkTierConfig,omitempty"`
 	// PodCidrOverprovisionConfig: [PRIVATE FIELD] Pod CIDR size overprovisioning
 	// config for the nodepool. Pod CIDR size per node depends on
 	// max_pods_per_node. By default, the value of max_pods_per_node is rounded off
@@ -4597,6 +5654,15 @@ type NodeNetworkConfig struct {
 	// `ip_allocation_policy.use_ip_aliases` is true. This field cannot be changed
 	// after the node pool has been created.
 	PodRange string `json:"podRange,omitempty"`
+	// Subnetwork: Optional. The subnetwork name/path for the node pool. Format:
+	// projects/{project}/regions/{region}/subnetworks/{subnetwork} If the cluster
+	// is associated with multiple subnetworks, the subnetwork can be either: 1. A
+	// user supplied subnetwork name/full path during node pool creation. Example1:
+	// my-subnet Example2:
+	// projects/gke-project/regions/us-central1/subnetworks/my-subnet 2. A
+	// subnetwork path picked based on the IP utilization during node pool creation
+	// and is immutable.
+	Subnetwork string `json:"subnetwork,omitempty"`
 	// ForceSendFields is a list of field names (e.g.
 	// "AdditionalNodeNetworkConfigs") to unconditionally include in API requests.
 	// By default, fields with empty or default values are omitted from API
@@ -4637,8 +5703,7 @@ func (s *NodeNetworkConfig) UnmarshalJSON(data []byte) error {
 // accommodate the workload.
 type NodePool struct {
 	// AutopilotConfig: Specifies the autopilot configuration for this node pool.
-	// This field is exclusively reserved for Cluster Autoscaler to implement
-	// go/gke-managed-nodes-ccc-api
+	// This field is exclusively reserved for Cluster Autoscaler.
 	AutopilotConfig *AutopilotConfig `json:"autopilotConfig,omitempty"`
 	// Autoscaling: Autoscaler configuration for this NodePool. Autoscaler is
 	// enabled only if a valid configuration is present.
@@ -4682,6 +5747,8 @@ type NodePool struct {
 	// NetworkConfig: Networking configuration for this NodePool. If specified, it
 	// overrides the cluster-level defaults.
 	NetworkConfig *NodeNetworkConfig `json:"networkConfig,omitempty"`
+	// NodeDrainConfig: Specifies the node drain configuration for this node pool.
+	NodeDrainConfig *NodeDrainConfig `json:"nodeDrainConfig,omitempty"`
 	// PlacementPolicy: Specifies the node placement policy.
 	PlacementPolicy *PlacementPolicy `json:"placementPolicy,omitempty"`
 	// PodIpv4CidrSize: Output only. The pod CIDR block size per node in this node
@@ -4875,6 +5942,68 @@ type NodePoolLoggingConfig struct {
 
 func (s NodePoolLoggingConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod NodePoolLoggingConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// NodePoolUpgradeInfo: NodePoolUpgradeInfo contains the upgrade information of
+// a nodepool.
+type NodePoolUpgradeInfo struct {
+	// AutoUpgradeStatus: The auto upgrade status.
+	//
+	// Possible values:
+	//   "UNKNOWN" - UNKNOWN indicates an unknown status.
+	//   "ACTIVE" - ACTIVE indicates an active status.
+	//   "MINOR_UPGRADE_PAUSED" - MINOR_UPGRADE_PAUSED indicates the minor version
+	// upgrade is paused.
+	//   "UPGRADE_PAUSED" - UPGRADE_PAUSED indicates the upgrade is paused.
+	AutoUpgradeStatus []string `json:"autoUpgradeStatus,omitempty"`
+	// EndOfExtendedSupportTimestamp: The nodepool's current minor version's end of
+	// extended support timestamp.
+	EndOfExtendedSupportTimestamp string `json:"endOfExtendedSupportTimestamp,omitempty"`
+	// EndOfStandardSupportTimestamp: The nodepool's current minor version's end of
+	// standard support timestamp.
+	EndOfStandardSupportTimestamp string `json:"endOfStandardSupportTimestamp,omitempty"`
+	// MinorTargetVersion: minor_target_version indicates the target version for
+	// minor upgrade.
+	MinorTargetVersion string `json:"minorTargetVersion,omitempty"`
+	// PatchTargetVersion: patch_target_version indicates the target version for
+	// patch upgrade.
+	PatchTargetVersion string `json:"patchTargetVersion,omitempty"`
+	// PausedReason: The auto upgrade paused reason.
+	//
+	// Possible values:
+	//   "AUTO_UPGRADE_PAUSED_REASON_UNSPECIFIED" -
+	// AUTO_UPGRADE_PAUSED_REASON_UNSPECIFIED indicates an unspecified reason.
+	//   "MAINTENANCE_WINDOW" - MAINTENANCE_WINDOW indicates the cluster is outside
+	// customer maintenance window.
+	//   "MAINTENANCE_EXCLUSION_NO_UPGRADES" - MAINTENANCE_EXCLUSION_NO_UPGRADES
+	// indicates the cluster is in a maintenance exclusion with scope NO_UPGRADES.
+	//   "MAINTENANCE_EXCLUSION_NO_MINOR_UPGRADES" -
+	// MAINTENANCE_EXCLUSION_NO_MINOR_UPGRADES indicates the cluster is in a
+	// maintenance exclusion with scope NO_MINOR_UPGRADES.
+	//   "SYSTEM_CONFIG" - SYSTEM_CONFIG indicates the cluster upgrade is paused by
+	// system config.
+	PausedReason []string `json:"pausedReason,omitempty"`
+	// UpgradeDetails: The list of past auto upgrades.
+	UpgradeDetails []*UpgradeDetails `json:"upgradeDetails,omitempty"`
+
+	// ServerResponse contains the HTTP response code and headers from the server.
+	googleapi.ServerResponse `json:"-"`
+	// ForceSendFields is a list of field names (e.g. "AutoUpgradeStatus") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AutoUpgradeStatus") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s NodePoolUpgradeInfo) MarshalJSON() ([]byte, error) {
+	type NoMethod NodePoolUpgradeInfo
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -5239,6 +6368,31 @@ func (s ParentProductConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// PdbBlockedPod: The namespace/name of the pod whose eviction is blocked by
+// PDB.
+type PdbBlockedPod struct {
+	// Name: The name of the pod.
+	Name string `json:"name,omitempty"`
+	// Namespace: The namespace of the pod.
+	Namespace string `json:"namespace,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Name") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Name") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s PdbBlockedPod) MarshalJSON() ([]byte, error) {
+	type NoMethod PdbBlockedPod
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // PlacementPolicy: PlacementPolicy defines the placement policy used by the
 // node pool.
 type PlacementPolicy struct {
@@ -5272,6 +6426,37 @@ type PlacementPolicy struct {
 
 func (s PlacementPolicy) MarshalJSON() ([]byte, error) {
 	type NoMethod PlacementPolicy
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// PodAutoscaling: PodAutoscaling is used for configuration of parameters for
+// workload autoscaling.
+type PodAutoscaling struct {
+	// HpaProfile: Selected Horizontal Pod Autoscaling profile.
+	//
+	// Possible values:
+	//   "HPA_PROFILE_UNSPECIFIED" - HPA_PROFILE_UNSPECIFIED is used when no custom
+	// HPA profile is set.
+	//   "NONE" - Customers explicitly opt-out of HPA profiles.
+	//   "PERFORMANCE" - PERFORMANCE is used when customers opt-in to the
+	// performance HPA profile. In this profile we support a higher number of HPAs
+	// per cluster and faster metrics collection for workload autoscaling.
+	HpaProfile string `json:"hpaProfile,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "HpaProfile") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "HpaProfile") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s PodAutoscaling) MarshalJSON() ([]byte, error) {
+	type NoMethod PodAutoscaling
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -5403,6 +6588,35 @@ type PrivateRegistryAccessConfig struct {
 
 func (s PrivateRegistryAccessConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod PrivateRegistryAccessConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// PrivilegedAdmissionConfig: PrivilegedAdmissionConfig stores the list of
+// authorized allowlist paths for the cluster.
+type PrivilegedAdmissionConfig struct {
+	// AllowlistPaths: The customer allowlist Cloud Storage paths for the cluster.
+	// These paths are used with the `--autopilot-privileged-admission` flag to
+	// authorize privileged workloads in Autopilot clusters. Paths can be
+	// GKE-owned, in the format `gke:////`, or customer-owned, in the format
+	// `gs:///`. Wildcards (`*`) are supported to authorize all allowlists under
+	// specific paths or directories. Example: `gs://my-bucket/*` will authorize
+	// all allowlists under the `my-bucket` bucket.
+	AllowlistPaths []string `json:"allowlistPaths,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AllowlistPaths") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AllowlistPaths") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s PrivilegedAdmissionConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod PrivilegedAdmissionConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -5605,7 +6819,7 @@ func (s RayOperatorConfig) MarshalJSON() ([]byte, error) {
 // RecurringTimeWindow: Represents an arbitrary window of time that recurs.
 type RecurringTimeWindow struct {
 	// Recurrence: An RRULE (https://tools.ietf.org/html/rfc5545#section-3.8.5.3)
-	// for how this window reccurs. They go on for the span of time between the
+	// for how this window recurs. They go on for the span of time between the
 	// start and end time. For example, to have something repeat every weekday,
 	// you'd use: `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` To repeat some window daily
 	// (equivalent to the DailyMaintenanceWindow): `FREQ=DAILY` For the first
@@ -5638,6 +6852,62 @@ type RecurringTimeWindow struct {
 
 func (s RecurringTimeWindow) MarshalJSON() ([]byte, error) {
 	type NoMethod RecurringTimeWindow
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// RegistryHeader: RegistryHeader configures headers for the registry.
+type RegistryHeader struct {
+	// Key: Key configures the header key.
+	Key string `json:"key,omitempty"`
+	// Value: Value configures the header value.
+	Value []string `json:"value,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Key") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Key") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s RegistryHeader) MarshalJSON() ([]byte, error) {
+	type NoMethod RegistryHeader
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// RegistryHostConfig: RegistryHostConfig configures the top-level structure
+// for a single containerd registry server's configuration, which represents
+// one hosts.toml file on the node. It will override the same fqdns in
+// PrivateRegistryAccessConfig.
+type RegistryHostConfig struct {
+	// Hosts: HostConfig configures a list of host-specific configurations for the
+	// server. Each server can have at most 10 host configurations.
+	Hosts []*HostConfig `json:"hosts,omitempty"`
+	// Server: Defines the host name of the registry server, which will be used to
+	// create configuration file as /etc/containerd/hosts.d//hosts.toml. It
+	// supports fully qualified domain names (FQDN) and IP addresses: Specifying
+	// port is supported. Wildcards are NOT supported. Examples: -
+	// my.customdomain.com - 10.0.1.2:5000
+	Server string `json:"server,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Hosts") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Hosts") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s RegistryHostConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod RegistryHostConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -5768,7 +7038,7 @@ func (s ReservationAffinity) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
-// ResourceLabels: Collection of GCP labels
+// ResourceLabels: Collection of Resource Manager labels
 // (https://cloud.google.com/resource-manager/docs/creating-managing-labels).
 type ResourceLabels struct {
 	// Labels: Map of node label keys and node label values.
@@ -5923,6 +7193,31 @@ func (s RollbackNodePoolUpgradeRequest) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// RotationConfig: RotationConfig is config for secret manager auto rotation.
+type RotationConfig struct {
+	// Enabled: Whether the rotation is enabled.
+	Enabled bool `json:"enabled,omitempty"`
+	// RotationInterval: The interval between two consecutive rotations. Default
+	// rotation interval is 2 minutes.
+	RotationInterval string `json:"rotationInterval,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s RotationConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod RotationConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // SandboxConfig: SandboxConfig contains configurations of the sandbox to use
 // for the node.
 type SandboxConfig struct {
@@ -5991,6 +7286,8 @@ type SecondaryBootDiskUpdateStrategy struct {
 type SecretManagerConfig struct {
 	// Enabled: Enable/Disable Secret Manager Config.
 	Enabled bool `json:"enabled,omitempty"`
+	// RotationConfig: Rotation config for secret manager.
+	RotationConfig *RotationConfig `json:"rotationConfig,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
 	// omitted from API requests. See
@@ -6029,6 +7326,8 @@ type SecurityBulletinEvent struct {
 	// ManualStepsRequired: If this field is specified, it means there are manual
 	// steps that the user must take to make their clusters safe.
 	ManualStepsRequired bool `json:"manualStepsRequired,omitempty"`
+	// MitigatedVersions: The GKE versions where this vulnerability is mitigated.
+	MitigatedVersions []string `json:"mitigatedVersions,omitempty"`
 	// PatchedVersions: The GKE versions where this vulnerability is patched.
 	PatchedVersions []string `json:"patchedVersions,omitempty"`
 	// ResourceTypeAffected: The resource type (node/control plane) that has the
@@ -6466,7 +7765,7 @@ type SetMonitoringServiceRequest struct {
 	ClusterId string `json:"clusterId,omitempty"`
 	// MonitoringService: Required. The monitoring service the cluster should use
 	// to write metrics. Currently available options: *
-	// "monitoring.googleapis.com/kubernetes" - The Cloud Monitoring service with a
+	// `monitoring.googleapis.com/kubernetes` - The Cloud Monitoring service with a
 	// Kubernetes-native resource model * `monitoring.googleapis.com` - The legacy
 	// Cloud Monitoring service (no longer available as of GKE 1.15). * `none` - No
 	// metrics will be exported from the cluster. If left as an empty
@@ -6725,18 +8024,22 @@ func (s ShieldedNodes) MarshalJSON() ([]byte, error) {
 // SoleTenantConfig: SoleTenantConfig contains the NodeAffinities to specify
 // what shared sole tenant node groups should back the node pool.
 type SoleTenantConfig struct {
+	// MinNodeCpus: Optional. The minimum number of virtual CPUs this instance will
+	// consume when running on a sole-tenant node. This field can only be set if
+	// the node pool is created in a shared sole-tenant node group.
+	MinNodeCpus int64 `json:"minNodeCpus,omitempty"`
 	// NodeAffinities: NodeAffinities used to match to a shared sole tenant node
 	// group.
 	NodeAffinities []*NodeAffinity `json:"nodeAffinities,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "NodeAffinities") to
+	// ForceSendFields is a list of field names (e.g. "MinNodeCpus") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "NodeAffinities") to include in
-	// API requests with the JSON null value. By default, fields with empty values
-	// are omitted from API requests. See
+	// NullFields is a list of field names (e.g. "MinNodeCpus") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -6985,6 +8288,8 @@ type StatusCondition struct {
 	//   "CA_EXPIRING" - Cluster CA is expiring soon.
 	//   "NODE_SERVICE_ACCOUNT_MISSING_PERMISSIONS" - Node service account is
 	// missing permissions.
+	//   "CLOUD_KMS_KEY_DESTROYED" - Cloud KMS key version used for etcd level
+	// encryption has been destroyed. This is a permanent error.
 	Code string `json:"code,omitempty"`
 	// Message: Human-friendly representation of the condition
 	Message string `json:"message,omitempty"`
@@ -7031,6 +8336,48 @@ type TimeWindow struct {
 
 func (s TimeWindow) MarshalJSON() ([]byte, error) {
 	type NoMethod TimeWindow
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// TopologyManager: TopologyManager defines the configuration options for
+// Topology Manager feature. See
+// https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/
+type TopologyManager struct {
+	// Policy: Configures the strategy for resource alignment. Allowed values are:
+	// * none: the default policy, and does not perform any topology alignment. *
+	// restricted: the topology manager stores the preferred NUMA node affinity for
+	// the container, and will reject the pod if the affinity if not preferred. *
+	// best-effort: the topology manager stores the preferred NUMA node affinity
+	// for the container. If the affinity is not preferred, the topology manager
+	// will admit the pod to the node anyway. * single-numa-node: the topology
+	// manager determines if the single NUMA node affinity is possible. If it is,
+	// Topology Manager will store this and the Hint Providers can then use this
+	// information when making the resource allocation decision. If, however, this
+	// is not possible then the Topology Manager will reject the pod from the node.
+	// This will result in a pod in a Terminated state with a pod admission
+	// failure. The default policy value is 'none' if unspecified. Details about
+	// each strategy can be found here
+	// (https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#topology-manager-policies).
+	Policy string `json:"policy,omitempty"`
+	// Scope: The Topology Manager aligns resources in following scopes: *
+	// container * pod The default scope is 'container' if unspecified. See
+	// https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#topology-manager-scopes
+	Scope string `json:"scope,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Policy") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Policy") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s TopologyManager) MarshalJSON() ([]byte, error) {
+	type NoMethod TopologyManager
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -7145,12 +8492,21 @@ type UpdateNodePoolRequest struct {
 	// See https://cloud.google.com/compute/docs/gpus for more information about
 	// support for GPUs.
 	Accelerators []*AcceleratorConfig `json:"accelerators,omitempty"`
+	// BootDisk: The desired boot disk config for nodes in the node pool. Initiates
+	// an upgrade operation that migrates the nodes in the node pool to the
+	// specified boot disk config.
+	BootDisk *BootDisk `json:"bootDisk,omitempty"`
 	// ClusterId: Deprecated. The name of the cluster to upgrade. This field has
 	// been deprecated and replaced by the name field.
 	ClusterId string `json:"clusterId,omitempty"`
 	// ConfidentialNodes: Confidential nodes config. All the nodes in the node pool
 	// will be Confidential VM once enabled.
 	ConfidentialNodes *ConfidentialNodes `json:"confidentialNodes,omitempty"`
+	// ConsolidationDelay: Consolidation delay defines duration after which the
+	// Cluster Autoscaler can scale down underutilized nodes. If not set, nodes are
+	// scaled down by default behavior, i.e. according to the chosen autoscaling
+	// profile.
+	ConsolidationDelay string `json:"consolidationDelay,omitempty"`
 	// ContainerdConfig: The desired containerd config for nodes in the node pool.
 	// Initiates an upgrade operation that recreates the nodes with the new config.
 	ContainerdConfig *ContainerdConfig `json:"containerdConfig,omitempty"`
@@ -7169,6 +8525,8 @@ type UpdateNodePoolRequest struct {
 	Etag string `json:"etag,omitempty"`
 	// FastSocket: Enable or disable NCCL fast socket for the node pool.
 	FastSocket *FastSocket `json:"fastSocket,omitempty"`
+	// FlexStart: Flex Start flag for enabling Flex Start VM.
+	FlexStart bool `json:"flexStart,omitempty"`
 	// GcfsConfig: GCFS config.
 	GcfsConfig *GcfsConfig `json:"gcfsConfig,omitempty"`
 	// Gvnic: Enable or disable gvnic on the node pool.
@@ -7189,7 +8547,14 @@ type UpdateNodePoolRequest struct {
 	// (https://cloud.google.com/compute/docs/zones#available) in which the node
 	// pool's nodes should be located. Changing the locations for a node pool will
 	// result in nodes being either created or removed from the node pool,
-	// depending on whether locations are being added or removed.
+	// depending on whether locations are being added or removed. Warning: It is
+	// recommended to update node pool locations in a standalone API call. Do not
+	// combine a location update with changes to other fields (such as `tags`,
+	// `labels`, `taints`, etc.) in the same request. Otherwise, the API performs a
+	// structural modification where changes to other fields will only apply to
+	// newly created nodes and will not be applied to existing nodes in the node
+	// pool. To ensure all nodes are updated consistently, use a separate API call
+	// for location changes.
 	Locations []string `json:"locations,omitempty"`
 	// LoggingConfig: Logging configuration.
 	LoggingConfig *NodePoolLoggingConfig `json:"loggingConfig,omitempty"`
@@ -7205,6 +8570,9 @@ type UpdateNodePoolRequest struct {
 	// update. Specified in the format
 	// `projects/*/locations/*/clusters/*/nodePools/*`.
 	Name string `json:"name,omitempty"`
+	// NodeDrainConfig: The desired node drain configuration for nodes in the node
+	// pool.
+	NodeDrainConfig *NodeDrainConfig `json:"nodeDrainConfig,omitempty"`
 	// NodeNetworkConfig: Node network config.
 	NodeNetworkConfig *NodeNetworkConfig `json:"nodeNetworkConfig,omitempty"`
 	// NodePoolId: Deprecated. The name of the node pool to upgrade. This field has
@@ -7310,6 +8678,51 @@ func (s UpgradeAvailableEvent) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// UpgradeDetails: UpgradeDetails contains detailed information of each
+// individual upgrade operation.
+type UpgradeDetails struct {
+	// EndTime: The end timestamp of the upgrade.
+	EndTime string `json:"endTime,omitempty"`
+	// InitialVersion: The version before the upgrade.
+	InitialVersion string `json:"initialVersion,omitempty"`
+	// StartTime: The start timestamp of the upgrade.
+	StartTime string `json:"startTime,omitempty"`
+	// StartType: The start type of the upgrade.
+	//
+	// Possible values:
+	//   "START_TYPE_UNSPECIFIED" - Upgrade start type is unspecified.
+	//   "AUTOMATIC" - Upgrade started automatically.
+	//   "MANUAL" - Upgrade started manually.
+	StartType string `json:"startType,omitempty"`
+	// State: Output only. The state of the upgrade.
+	//
+	// Possible values:
+	//   "UNKNOWN" - Upgrade state is unknown.
+	//   "FAILED" - Upgrade has failed with an error.
+	//   "SUCCEEDED" - Upgrade has succeeded.
+	//   "CANCELED" - Upgrade has been canceled.
+	//   "RUNNING" - Upgrade is running.
+	State string `json:"state,omitempty"`
+	// TargetVersion: The version after the upgrade.
+	TargetVersion string `json:"targetVersion,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "EndTime") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "EndTime") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s UpgradeDetails) MarshalJSON() ([]byte, error) {
+	type NoMethod UpgradeDetails
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // UpgradeEvent: UpgradeEvent is a notification sent to customers by the
 // cluster server when a resource is upgrading.
 type UpgradeEvent struct {
@@ -7357,6 +8770,9 @@ type UpgradeInfoEvent struct {
 	CurrentVersion string `json:"currentVersion,omitempty"`
 	// Description: A brief description of the event.
 	Description string `json:"description,omitempty"`
+	// DisruptionEvent: The information about the disruption event. This field is
+	// only populated when event_type is DISRUPTION_EVENT.
+	DisruptionEvent *DisruptionEvent `json:"disruptionEvent,omitempty"`
 	// EndTime: The time when the operation ended.
 	EndTime string `json:"endTime,omitempty"`
 	// EventType: The type of the event.
@@ -7370,6 +8786,10 @@ type UpgradeInfoEvent struct {
 	//   "COS_MILESTONE_VERSION_UPDATE" - COS_MILESTONE_VERSION_UPDATE indicates
 	// that the COS node image will update COS milestone version for new patch
 	// versions starting with the one in the description.
+	//   "UPGRADE_LIFECYCLE" - UPGRADE_LIFECYCLE indicates the event is about the
+	// upgrade lifecycle.
+	//   "DISRUPTION_EVENT" - DISRUPTION_EVENT indicates the event is about the
+	// disruption.
 	EventType string `json:"eventType,omitempty"`
 	// ExtendedSupportEndTime: The end of extended support timestamp.
 	ExtendedSupportEndTime string `json:"extendedSupportEndTime,omitempty"`
@@ -7581,6 +9001,10 @@ type UserManagedKeysConfig struct {
 	// ControlPlaneDiskEncryptionKey: The Cloud KMS cryptoKey to use for
 	// Confidential Hyperdisk on the control plane nodes.
 	ControlPlaneDiskEncryptionKey string `json:"controlPlaneDiskEncryptionKey,omitempty"`
+	// ControlPlaneDiskEncryptionKeyVersions: Output only. All of the versions of
+	// the Cloud KMS cryptoKey that are used by Confidential Hyperdisks on the
+	// control plane nodes.
+	ControlPlaneDiskEncryptionKeyVersions []string `json:"controlPlaneDiskEncryptionKeyVersions,omitempty"`
 	// EtcdApiCa: Resource path of the Certificate Authority Service caPool to use
 	// for the etcd API CA in this cluster.
 	EtcdApiCa string `json:"etcdApiCa,omitempty"`
@@ -7666,17 +9090,17 @@ func (s VirtualNIC) MarshalJSON() ([]byte, error) {
 
 // WindowsNodeConfig: Parameters that can be configured on Windows nodes.
 // Windows Node Config that define the parameters that will be used to
-// configure the Windows node pool settings
+// configure the Windows node pool settings.
 type WindowsNodeConfig struct {
 	// OsVersion: OSVersion specifies the Windows node config to be used on the
-	// node
+	// node.
 	//
 	// Possible values:
-	//   "OS_VERSION_UNSPECIFIED" - When OSVersion is not specified
+	//   "OS_VERSION_UNSPECIFIED" - When OSVersion is not specified.
 	//   "OS_VERSION_LTSC2019" - LTSC2019 specifies to use LTSC2019 as the Windows
-	// Servercore Base Image
+	// Servercore Base Image.
 	//   "OS_VERSION_LTSC2022" - LTSC2022 specifies to use LTSC2022 as the Windows
-	// Servercore Base Image
+	// Servercore Base Image.
 	OsVersion string `json:"osVersion,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "OsVersion") to
 	// unconditionally include in API requests. By default, fields with empty or
@@ -7697,7 +9121,7 @@ func (s WindowsNodeConfig) MarshalJSON() ([]byte, error) {
 }
 
 // WorkloadIdentityConfig: Configuration for the use of Kubernetes Service
-// Accounts in GCP IAM policies.
+// Accounts in IAM policies.
 type WorkloadIdentityConfig struct {
 	// WorkloadPool: The workload pool to attach all Kubernetes service accounts
 	// to.
@@ -7776,6 +9200,28 @@ type WorkloadPolicyConfig struct {
 
 func (s WorkloadPolicyConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod WorkloadPolicyConfig
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// WritableCgroups: Defines writable cgroups configuration.
+type WritableCgroups struct {
+	// Enabled: Optional. Whether writable cgroups is enabled.
+	Enabled bool `json:"enabled,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Enabled") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Enabled") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s WritableCgroups) MarshalJSON() ([]byte, error) {
+	type NoMethod WritableCgroups
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -8297,7 +9743,7 @@ type ProjectsLocationsClustersCreateCall struct {
 // Google Compute Engine instances. By default, the cluster is created in the
 // project's default network
 // (https://cloud.google.com/compute/docs/networks-and-firewalls#networks). One
-// firewall is added for the cluster. After cluster creation, the Kubelet
+// firewall is added for the cluster. After cluster creation, the kubelet
 // creates routes for each node to allow the containers on that node to
 // communicate with all other instances in the cluster. Finally, an entry is
 // added to the project's global metadata indicating which CIDR range the
@@ -8521,6 +9967,125 @@ func (c *ProjectsLocationsClustersDeleteCall) Do(opts ...googleapi.CallOption) (
 		return nil, err
 	}
 	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.delete", "response", internallog.HTTPResponse(res, b))
+	return ret, nil
+}
+
+type ProjectsLocationsClustersFetchClusterUpgradeInfoCall struct {
+	s            *Service
+	name         string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// FetchClusterUpgradeInfo: Fetch upgrade information of a specific cluster.
+//
+//   - name: The name (project, location, cluster) of the cluster to get.
+//     Specified in the format `projects/*/locations/*/clusters/*` or
+//     `projects/*/zones/*/clusters/*`.
+func (r *ProjectsLocationsClustersService) FetchClusterUpgradeInfo(name string) *ProjectsLocationsClustersFetchClusterUpgradeInfoCall {
+	c := &ProjectsLocationsClustersFetchClusterUpgradeInfoCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.name = name
+	return c
+}
+
+// Version sets the optional parameter "version": API request version that
+// initiates this operation.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) Version(version string) *ProjectsLocationsClustersFetchClusterUpgradeInfoCall {
+	c.urlParams_.Set("version", version)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) Fields(s ...googleapi.Field) *ProjectsLocationsClustersFetchClusterUpgradeInfoCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) IfNoneMatch(entityTag string) *ProjectsLocationsClustersFetchClusterUpgradeInfoCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) Context(ctx context.Context) *ProjectsLocationsClustersFetchClusterUpgradeInfoCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:fetchClusterUpgradeInfo")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"name": c.name,
+	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.fetchClusterUpgradeInfo", "request", internallog.HTTPRequest(req, nil))
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "container.projects.locations.clusters.fetchClusterUpgradeInfo" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *ClusterUpgradeInfo.ServerResponse.Header or (if a response was returned at
+// all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
+// check whether the returned error was because http.StatusNotModified was
+// returned.
+func (c *ProjectsLocationsClustersFetchClusterUpgradeInfoCall) Do(opts ...googleapi.CallOption) (*ClusterUpgradeInfo, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &ClusterUpgradeInfo{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
+		return nil, err
+	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.fetchClusterUpgradeInfo", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -10502,6 +12067,126 @@ func (c *ProjectsLocationsClustersNodePoolsDeleteCall) Do(opts ...googleapi.Call
 	return ret, nil
 }
 
+type ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall struct {
+	s            *Service
+	name         string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// FetchNodePoolUpgradeInfo: Fetch upgrade information of a specific nodepool.
+//
+//   - name: The name (project, location, cluster, nodepool) of the nodepool to
+//     get. Specified in the format
+//     `projects/*/locations/*/clusters/*/nodePools/*` or
+//     `projects/*/zones/*/clusters/*/nodePools/*`.
+func (r *ProjectsLocationsClustersNodePoolsService) FetchNodePoolUpgradeInfo(name string) *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c := &ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.name = name
+	return c
+}
+
+// Version sets the optional parameter "version": API request version that
+// initiates this operation.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) Version(version string) *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.urlParams_.Set("version", version)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) Fields(s ...googleapi.Field) *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) IfNoneMatch(entityTag string) *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) Context(ctx context.Context) *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:fetchNodePoolUpgradeInfo")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"name": c.name,
+	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.fetchNodePoolUpgradeInfo", "request", internallog.HTTPRequest(req, nil))
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "container.projects.locations.clusters.nodePools.fetchNodePoolUpgradeInfo" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *NodePoolUpgradeInfo.ServerResponse.Header or (if a response was returned at
+// all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
+// check whether the returned error was because http.StatusNotModified was
+// returned.
+func (c *ProjectsLocationsClustersNodePoolsFetchNodePoolUpgradeInfoCall) Do(opts ...googleapi.CallOption) (*NodePoolUpgradeInfo, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &NodePoolUpgradeInfo{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
+		return nil, err
+	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.locations.clusters.nodePools.fetchNodePoolUpgradeInfo", "response", internallog.HTTPResponse(res, b))
+	return ret, nil
+}
+
 type ProjectsLocationsClustersNodePoolsGetCall struct {
 	s            *Service
 	name         string
@@ -12172,7 +13857,7 @@ type ProjectsZonesClustersCreateCall struct {
 // Google Compute Engine instances. By default, the cluster is created in the
 // project's default network
 // (https://cloud.google.com/compute/docs/networks-and-firewalls#networks). One
-// firewall is added for the cluster. After cluster creation, the Kubelet
+// firewall is added for the cluster. After cluster creation, the kubelet
 // creates routes for each node to allow the containers on that node to
 // communicate with all other instances in the cluster. Finally, an entry is
 // added to the project's global metadata indicating which CIDR range the
@@ -12400,6 +14085,125 @@ func (c *ProjectsZonesClustersDeleteCall) Do(opts ...googleapi.CallOption) (*Ope
 		return nil, err
 	}
 	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.delete", "response", internallog.HTTPResponse(res, b))
+	return ret, nil
+}
+
+type ProjectsZonesClustersFetchClusterUpgradeInfoCall struct {
+	s            *Service
+	name         string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// FetchClusterUpgradeInfo: Fetch upgrade information of a specific cluster.
+//
+//   - name: The name (project, location, cluster) of the cluster to get.
+//     Specified in the format `projects/*/locations/*/clusters/*` or
+//     `projects/*/zones/*/clusters/*`.
+func (r *ProjectsZonesClustersService) FetchClusterUpgradeInfo(name string) *ProjectsZonesClustersFetchClusterUpgradeInfoCall {
+	c := &ProjectsZonesClustersFetchClusterUpgradeInfoCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.name = name
+	return c
+}
+
+// Version sets the optional parameter "version": API request version that
+// initiates this operation.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) Version(version string) *ProjectsZonesClustersFetchClusterUpgradeInfoCall {
+	c.urlParams_.Set("version", version)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) Fields(s ...googleapi.Field) *ProjectsZonesClustersFetchClusterUpgradeInfoCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) IfNoneMatch(entityTag string) *ProjectsZonesClustersFetchClusterUpgradeInfoCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) Context(ctx context.Context) *ProjectsZonesClustersFetchClusterUpgradeInfoCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:fetchClusterUpgradeInfo")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"name": c.name,
+	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.fetchClusterUpgradeInfo", "request", internallog.HTTPRequest(req, nil))
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "container.projects.zones.clusters.fetchClusterUpgradeInfo" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *ClusterUpgradeInfo.ServerResponse.Header or (if a response was returned at
+// all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
+// check whether the returned error was because http.StatusNotModified was
+// returned.
+func (c *ProjectsZonesClustersFetchClusterUpgradeInfoCall) Do(opts ...googleapi.CallOption) (*ClusterUpgradeInfo, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &ClusterUpgradeInfo{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
+		return nil, err
+	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.fetchClusterUpgradeInfo", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
@@ -14327,6 +16131,126 @@ func (c *ProjectsZonesClustersNodePoolsDeleteCall) Do(opts ...googleapi.CallOpti
 		return nil, err
 	}
 	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.delete", "response", internallog.HTTPResponse(res, b))
+	return ret, nil
+}
+
+type ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall struct {
+	s            *Service
+	name         string
+	urlParams_   gensupport.URLParams
+	ifNoneMatch_ string
+	ctx_         context.Context
+	header_      http.Header
+}
+
+// FetchNodePoolUpgradeInfo: Fetch upgrade information of a specific nodepool.
+//
+//   - name: The name (project, location, cluster, nodepool) of the nodepool to
+//     get. Specified in the format
+//     `projects/*/locations/*/clusters/*/nodePools/*` or
+//     `projects/*/zones/*/clusters/*/nodePools/*`.
+func (r *ProjectsZonesClustersNodePoolsService) FetchNodePoolUpgradeInfo(name string) *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c := &ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall{s: r.s, urlParams_: make(gensupport.URLParams)}
+	c.name = name
+	return c
+}
+
+// Version sets the optional parameter "version": API request version that
+// initiates this operation.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) Version(version string) *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.urlParams_.Set("version", version)
+	return c
+}
+
+// Fields allows partial responses to be retrieved. See
+// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
+// details.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) Fields(s ...googleapi.Field) *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.urlParams_.Set("fields", googleapi.CombineFields(s))
+	return c
+}
+
+// IfNoneMatch sets an optional parameter which makes the operation fail if the
+// object's ETag matches the given value. This is useful for getting updates
+// only after the object has changed since the last request.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) IfNoneMatch(entityTag string) *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.ifNoneMatch_ = entityTag
+	return c
+}
+
+// Context sets the context to be used in this call's Do method.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) Context(ctx context.Context) *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall {
+	c.ctx_ = ctx
+	return c
+}
+
+// Header returns a http.Header that can be modified by the caller to add
+// headers to the request.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) Header() http.Header {
+	if c.header_ == nil {
+		c.header_ = make(http.Header)
+	}
+	return c.header_
+}
+
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) doRequest(alt string) (*http.Response, error) {
+	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "", c.header_)
+	if c.ifNoneMatch_ != "" {
+		reqHeaders.Set("If-None-Match", c.ifNoneMatch_)
+	}
+	c.urlParams_.Set("alt", alt)
+	c.urlParams_.Set("prettyPrint", "false")
+	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:fetchNodePoolUpgradeInfo")
+	urls += "?" + c.urlParams_.Encode()
+	req, err := http.NewRequest("GET", urls, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = reqHeaders
+	googleapi.Expand(req.URL, map[string]string{
+		"name": c.name,
+	})
+	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.fetchNodePoolUpgradeInfo", "request", internallog.HTTPRequest(req, nil))
+	return gensupport.SendRequest(c.ctx_, c.s.client, req)
+}
+
+// Do executes the "container.projects.zones.clusters.nodePools.fetchNodePoolUpgradeInfo" call.
+// Any non-2xx status code is an error. Response headers are in either
+// *NodePoolUpgradeInfo.ServerResponse.Header or (if a response was returned at
+// all) in error.(*googleapi.Error).Header. Use googleapi.IsNotModified to
+// check whether the returned error was because http.StatusNotModified was
+// returned.
+func (c *ProjectsZonesClustersNodePoolsFetchNodePoolUpgradeInfoCall) Do(opts ...googleapi.CallOption) (*NodePoolUpgradeInfo, error) {
+	gensupport.SetOptions(c.urlParams_, opts...)
+	res, err := c.doRequest("json")
+	if res != nil && res.StatusCode == http.StatusNotModified {
+		if res.Body != nil {
+			res.Body.Close()
+		}
+		return nil, gensupport.WrapError(&googleapi.Error{
+			Code:   res.StatusCode,
+			Header: res.Header,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer googleapi.CloseBody(res)
+	if err := googleapi.CheckResponse(res); err != nil {
+		return nil, gensupport.WrapError(err)
+	}
+	ret := &NodePoolUpgradeInfo{
+		ServerResponse: googleapi.ServerResponse{
+			Header:         res.Header,
+			HTTPStatusCode: res.StatusCode,
+		},
+	}
+	target := &ret
+	b, err := gensupport.DecodeResponseBytes(target, res)
+	if err != nil {
+		return nil, err
+	}
+	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "container.projects.zones.clusters.nodePools.fetchNodePoolUpgradeInfo", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
