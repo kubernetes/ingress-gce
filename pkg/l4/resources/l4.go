@@ -698,7 +698,7 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
 	if l4utils.NeedsIPv6(l4.Service) {
-		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse)
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, subnetworkURL, ipv6AddressToUse)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
 	}
