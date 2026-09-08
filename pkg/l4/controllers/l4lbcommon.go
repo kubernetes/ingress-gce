@@ -26,6 +26,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -33,6 +36,7 @@ import (
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog/v2"
 )
@@ -41,6 +45,32 @@ const (
 	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
 	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
 )
+
+// ServicesGroupResource identifies core v1 Services in the ConsistencyStore.
+// The L4 controllers and cmd/glbc must use the same key so recorded writes
+// are matched with the service informer.
+var ServicesGroupResource = schema.GroupResource{Resource: "services"}
+
+// recordServiceWrite records in the ConsistencyStore that a controller wrote
+// the given service and observed writtenSvc in the API server's response.
+func recordServiceWrite(store consistency.ConsistencyStore, uid types.UID, writtenSvc *v1.Service) {
+	store.WroteAt(types.NamespacedName{Namespace: writtenSvc.Namespace, Name: writtenSvc.Name}, uid, ServicesGroupResource, writtenSvc.ResourceVersion)
+}
+
+// serviceFromDeleteEvent extracts the deleted service from an informer
+// DeleteFunc event object, unwrapping tombstones. Returns nil for
+// unexpected types.
+func serviceFromDeleteEvent(obj interface{}) *v1.Service {
+	if svc, ok := obj.(*v1.Service); ok {
+		return svc
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		if svc, ok := tombstone.Obj.(*v1.Service); ok {
+			return svc
+		}
+	}
+	return nil
+}
 
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
@@ -74,35 +104,51 @@ func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []
 }
 
 // updateL4ResourcesAnnotations checks if new annotations should be added to service and patch service metadata if needed.
-func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed or the patch failed; the result is never nil.
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
 	svcLogger.V(3).Info("Updating annotations of service")
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4ResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		svcLogger.V(3).Info("Service annotations not changed, skipping patch for service")
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	newSvc, err := patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	if err != nil {
+		return svc, err
+	}
+	return newSvc, nil
 }
 
 // updateL4DualStackResourcesAnnotations checks if new annotations should be added to dual-stack service and patch service metadata if needed.
-func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed or the patch failed; the result is never nil.
+func updateL4DualStackResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
 	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, resources.L4DualStackResourceAnnotationKeys)
 	if newObjectMeta == nil {
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Patching annotations of service")
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	newSvc, err := patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	if err != nil {
+		return svc, err
+	}
+	return newSvc, nil
 }
 
-func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) error {
+// deleteAnnotation removes the given annotation key from the service and patches it if needed.
+// It returns the patched service, or the passed-in service if no patch was needed or the patch failed; the result is never nil.
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string, svcLogger klog.Logger) (*v1.Service, error) {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
-		return nil
+		return svc, nil
 	}
 	svcLogger.V(3).Info("Removing annotation from service", "annotationKey", annotationKey)
 	delete(newObjectMeta.Annotations, annotationKey)
-	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	newSvc, err := patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+	if err != nil {
+		return svc, err
+	}
+	return newSvc, nil
 }
 
 // mergeConditions merges the new set of l4lb resource conditions with the preexisting service conditions.
@@ -165,7 +211,8 @@ func conditionsEqual(l, r []metav1.Condition) bool {
 }
 
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
-func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed or the patch failed; the result is never nil.
+func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) (*v1.Service, error) {
 	svcLogger.V(2).Info("Updating service status and conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions), "conditionsToRemove", conditionsToRemove)
 
 	mergedConditions := mergeConditions(svc.Status.Conditions, newConditions, conditionsToRemove)
@@ -176,13 +223,17 @@ func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newSta
 
 	if !lbStatusEqual || !lbConditionsEqual {
 		svcLogger.V(2).Info("Patching LoadBalancer status and Conditions", "newStatus", fmt.Sprintf("%+v", newStatus), "newConditions", fmt.Sprintf("%+v", newConditions))
-		return patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
+		newSvc, err := patch.PatchServiceStatus(ctx.KubeClient.CoreV1(), svc, v1.ServiceStatus{
 			LoadBalancer: *newStatus,
 			Conditions:   mergedConditions,
 		})
+		if err != nil {
+			return svc, err
+		}
+		return newSvc, nil
 	}
 	svcLogger.V(3).Info("Service status not changed, skipping patch for service")
-	return nil
+	return svc, nil
 }
 
 // isHealthCheckDeleted checks if given health check exists in GCE

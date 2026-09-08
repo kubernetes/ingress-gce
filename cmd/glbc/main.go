@@ -33,6 +33,7 @@ import (
 	k8scp "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
@@ -58,6 +59,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/systemhealth"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/klog/v2"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
@@ -651,8 +653,13 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go collectLockAvailabilityMetrics(l4LockName, flags.F.GKEClusterType, option.stopCh, logger)
 	}
 
+	// A single store is shared by all L4 controllers: they mutate the same
+	// services through the same informer, so each controller also waits for
+	// the others' writes to become visible before reconciling.
+	l4ConsistencyStore := newL4ConsistencyStore(ctx, logger)
+
 	if flags.F.RunL4Controller {
-		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger)
+		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger, l4ConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
@@ -680,7 +687,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger)
+		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger, l4ConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
@@ -688,12 +695,31 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4StandaloneNEGController {
-		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
+		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger, l4ConsistencyStore)
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")
 	}
 
 	ctx.Start(option.stopCh)
+}
+
+// newL4ConsistencyStore returns the ConsistencyStore shared by the L4
+// controllers, backed by the service informer. It returns a no-op store when
+// the feature is disabled by flag or the informer cannot report its last
+// synced ResourceVersion.
+func newL4ConsistencyStore(ctx *ingctx.ControllerContext, logger klog.Logger) consistency.ConsistencyStore {
+	if !flags.F.EnableL4ConsistencyStore {
+		return consistency.NewNoopConsistencyStore()
+	}
+	getter, ok := ctx.ServiceInformer.(consistency.LastSyncRVGetter)
+	if !ok {
+		logger.Error(nil, "Service informer does not implement LastSyncResourceVersion, running L4 controllers without the consistency store")
+		return consistency.NewNoopConsistencyStore()
+	}
+	logger.V(0).Info("L4 controllers will use the service consistency store")
+	return consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{
+		controllers.ServicesGroupResource: getter,
+	})
 }
 
 func runNEGController(ctx *ingctx.ControllerContext, systemHealth *systemhealth.SystemHealth, option runOption, logger klog.Logger) error {
