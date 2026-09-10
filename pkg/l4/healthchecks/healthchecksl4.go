@@ -31,12 +31,16 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/validation"
 	"k8s.io/klog/v2"
+	netutils "k8s.io/utils/net"
 )
 
 const (
@@ -158,12 +162,12 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 
 	if needsIPv4 {
 		hcLogger.V(3).Info("Ensuring IPv4 firewall rule for health check for service")
-		l4hc.ensureIPv4Firewall(svc, namer, hcPort, isSharedFirewall, nodeNames, hcResult, svcNetwork, hcLogger)
+		l4hc.ensureFirewall(l4Type, address.IPv4Version, isSharedFirewall, svc, namer, hcPort, nodeNames, hcResult, svcNetwork, hcLogger)
 	}
 
 	if needsIPv6 {
 		hcLogger.V(3).Info("Ensuring IPv6 firewall rule for health check for service")
-		l4hc.ensureIPv6Firewall(svc, namer, hcPort, isSharedFirewall, nodeNames, l4Type, hcResult, svcNetwork, hcLogger)
+		l4hc.ensureFirewall(l4Type, address.IPv6Version, isSharedFirewall, svc, namer, hcPort, nodeNames, hcResult, svcNetwork, hcLogger)
 	}
 
 	return hcResult
@@ -215,19 +219,32 @@ func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.Names
 	return selfLink, l4utils.ResourceUpdate, err
 }
 
-// ensureIPv4Firewall rule for `svc`.
+// ensureFirewall creates a firewall rule for `svc` allowing health check probes.
 //
 // L4 ILB and L4 NetLB Services with ExternalTrafficPolicy=Cluster use the same firewall
 // rule at global scope.
-func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo, svcLogger klog.Logger) {
+func (l4hc *l4HealthChecks) ensureFirewall(l4Type utils.L4LBType, ipVersion address.IPVersion, isSharedHC bool, svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, nodeNames []string, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo, svcLogger klog.Logger) {
+	var hcFwName string
+	var gceResourceInError string
+	ipFamily := "IPv4"
+
+	if ipVersion == address.IPv6Version {
+		ipFamily = "IPv6"
+		hcFwName = namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
+		gceResourceInError = annotations.FirewallForHealthcheckIPv6Resource
+	} else {
+		hcFwName = namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
+		gceResourceInError = annotations.FirewallForHealthcheckResource
+	}
+
+	sourceRanges := getHCFirewallSourceRanges(l4Type, isSharedHC, ipVersion)
+
 	start := time.Now()
 
-	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
-
 	fwLogger := svcLogger.WithValues("healthcheckFirewallName", hcFwName)
-	fwLogger.V(2).Info("Ensuring IPv4 Firewall for health check for service", "healthcheckPort", hcPort, "shared", isSharedHC, "len(nodeNames)", len(nodeNames))
+	fwLogger.V(2).Info(fmt.Sprintf("Ensuring %s Firewall for health check for service", ipFamily), "healthcheckPort", hcPort, "shared", isSharedHC, "len(nodeNames)", len(nodeNames))
 	defer func() {
-		fwLogger.V(2).Info("Finished ensuring IPv4 firewall for health check for service", "timeTaken", time.Since(start))
+		fwLogger.V(2).Info(fmt.Sprintf("Finished ensuring %s firewall for health check for service", ipFamily), "timeTaken", time.Since(start))
 	}()
 
 	hcFWRParams := firewalls.FirewallParams{
@@ -237,55 +254,28 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 				Ports:      []string{strconv.Itoa(int(hcPort))},
 			},
 		},
-		SourceRanges: gce.L4LoadBalancerSrcRanges(),
+		SourceRanges: sourceRanges,
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 		Network:      svcNetwork,
 		Priority:     l4hc.firewallPriority(),
 	}
+
 	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
 	hcResult.WasFirewallUpdated = wasUpdated == l4utils.ResourceUpdate || hcResult.WasFirewallUpdated == l4utils.ResourceUpdate
+
 	if err != nil {
-		fwLogger.Error(err, "Error ensuring IPv4 Firewall for health check for service")
-		hcResult.GceResourceInError = annotations.FirewallForHealthcheckResource
+		fwLogger.Error(err, fmt.Sprintf("Error ensuring %s Firewall for health check for service", ipFamily))
+		hcResult.GceResourceInError = gceResourceInError
 		hcResult.Err = err
 		return
 	}
-	hcResult.HCFirewallRuleName = hcFwName
-}
 
-func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, l4Type utils.L4LBType, hcResult *EnsureHealthCheckResult, svcNetwork network.NetworkInfo, svcLogger klog.Logger) {
-	ipv6HCFWName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
-
-	start := time.Now()
-	fwLogger := svcLogger.WithValues("healthcheckFirewallName", ipv6HCFWName)
-	fwLogger.V(2).Info("Ensuring IPv6 Firewall for health check for service", "healthcheckPort", hcPort, "shared", isSharedHC, "len(nodeNames)", len(nodeNames))
-	defer func() {
-		fwLogger.V(2).Info("Finished ensuring IPv6 firewall for health check for service", "timeTaken", time.Since(start))
-	}()
-
-	hcFWRParams := firewalls.FirewallParams{
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: string(corev1.ProtocolTCP),
-				Ports:      []string{strconv.Itoa(int(hcPort))},
-			},
-		},
-		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type, isSharedHC),
-		Name:         ipv6HCFWName,
-		NodeNames:    nodeNames,
-		Network:      svcNetwork,
-		Priority:     l4hc.firewallPriority(),
+	if ipVersion == address.IPv6Version {
+		hcResult.HCFirewallRuleIPv6Name = hcFwName
+	} else {
+		hcResult.HCFirewallRuleName = hcFwName
 	}
-	wasUpdated, err := firewalls.EnsureL4LBFirewallForHc(svc, isSharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder, fwLogger)
-	hcResult.WasFirewallUpdated = wasUpdated == l4utils.ResourceUpdate || hcResult.WasFirewallUpdated == l4utils.ResourceUpdate
-	if err != nil {
-		fwLogger.Error(err, "Error ensuring IPv6 Firewall for health check for service")
-		hcResult.GceResourceInError = annotations.FirewallForHealthcheckIPv6Resource
-		hcResult.Err = err
-		return
-	}
-	hcResult.HCFirewallRuleIPv6Name = ipv6HCFWName
 }
 
 func (l4hc *l4HealthChecks) firewallPriority() *int {
@@ -503,12 +493,96 @@ func needToUpdateHealthChecks(hc, newHC *composite.HealthCheck) bool {
 		hc.HealthyThreshold < newHC.HealthyThreshold
 }
 
-func getIPv6HCFirewallSourceRanges(l4Type utils.L4LBType, shared bool) []string {
+// getHCFirewallSourceRanges returns the list of source CIDR ranges for the health check firewall rule.
+//
+// Arguments:
+// l4Type: The type of L4 load balancer (ILB or XLB/NetLB).
+// shared: Indicates whether the firewall rule is shared between different K8s Services (e.g., when ExternalTrafficPolicy=Cluster).
+//
+//	If shared is true, the firewall rule must include the ranges for both ILB and NetLB because a single global firewall rule is used.
+//
+// ipVersion: Specifies if we are retrieving ranges for an IPv6 firewall rule. If false, we return IPv4 ranges.
+//
+// Logic:
+// The function gathers the appropriate CIDR ranges based on the LB type(s). If 'shared' is true, it aggregates
+// the CIDRs for both ILB and NetLB.
+// For each LB type, it parses the override flag (if provided) and extracts the requested IP family.
+// If the flag is not provided, or if the extracted ranges are empty (meaning the flag was missing that specific IP family),
+// it falls back to the default GCP health check ranges for that LB type and IP family.
+// Finally, it removes duplicates from the aggregated ranges.
+func getHCFirewallSourceRanges(l4Type utils.L4LBType, shared bool, ipVersion address.IPVersion) []string {
+	var lbTypesToProcess []utils.L4LBType
+
 	if shared {
-		return []string{L4ILBIPv6HCRange, L4NetLBIPv6HCRange}
+		// If shared, we need to include ranges for both ILB and NetLB
+		lbTypesToProcess = []utils.L4LBType{utils.ILB, utils.XLB}
+	} else {
+		lbTypesToProcess = []utils.L4LBType{l4Type}
 	}
-	if l4Type == utils.XLB {
-		return []string{L4NetLBIPv6HCRange}
+
+	var ranges []string
+
+	for _, lbType := range lbTypesToProcess {
+		var overrideFlag string
+		var currentRanges []string
+
+		// get custom value if provided:
+		if lbType == utils.ILB {
+			overrideFlag = flags.F.OverrideL4ILBHealthCheckSourceCIDRs
+		} else {
+			overrideFlag = flags.F.OverrideL4NetLBHealthCheckSourceCIDRs
+		}
+		if overrideFlag != "" {
+			parsed, err := validation.ParseHealthCheckSourceCIDRs(overrideFlag)
+			if err != nil {
+				klog.Errorf("Failed to parse health check source CIDRs for %v: %v", lbType, err)
+				return []string{} // fail closed
+			}
+			currentRanges = filterIPFamily(parsed, ipVersion == address.IPv6Version)
+		}
+
+		// get default value if flag was not provided or didn't contain the requested IP family
+		if len(currentRanges) == 0 {
+
+			if ipVersion == address.IPv6Version {
+				if lbType == utils.ILB {
+					currentRanges = []string{L4ILBIPv6HCRange}
+				} else {
+					currentRanges = []string{L4NetLBIPv6HCRange}
+				}
+			} else {
+				// contains IPv4 only ranges for ILB + NetLB
+				currentRanges = gce.L4LoadBalancerSrcRanges()
+			}
+		}
+
+		ranges = append(ranges, currentRanges...)
 	}
-	return []string{L4ILBIPv6HCRange}
+
+	return dropDuplicates(ranges)
+}
+
+func filterIPFamily(cidrs []string, ipv6 bool) []string {
+	var result []string
+	for _, cidr := range cidrs {
+		if ipv6 && netutils.IsIPv6CIDRString(cidr) {
+			result = append(result, cidr)
+		}
+		if !ipv6 && netutils.IsIPv4CIDRString(cidr) {
+			result = append(result, cidr)
+		}
+	}
+	return result
+}
+
+func dropDuplicates(cidrs []string) []string {
+	var result []string
+	seen := make(map[string]bool)
+	for _, cidr := range cidrs {
+		if !seen[cidr] {
+			seen[cidr] = true
+			result = append(result, cidr)
+		}
+	}
+	return result
 }
