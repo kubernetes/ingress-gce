@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -1561,7 +1563,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				c.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
 			}
 
-			lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+			lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 
 			// Add service to informer
 			c.ServiceInformer.GetIndexer().Add(tc.svc)
@@ -1783,7 +1785,7 @@ func setupControllerContext(t *testing.T) (*fake.Clientset, *gce.Cloud, *Standal
 	}
 	c.L4Namer = l4Namer
 
-	lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO())
+	lc := NewStandaloneNEGLBController(c, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	return kubeClient, fakeGCE, lc, stopCh
 }
 
@@ -2396,5 +2398,40 @@ func TestJoinMaybeUserErrors(t *testing.T) {
 				t.Errorf("isUserErrorWrapper(%v) = %v, expected %v", got, isUser, tc.expectUser)
 			}
 		})
+	}
+}
+
+// TestStandaloneNEGSyncStallsUntilCacheIsConsistent verifies that the sync
+// loop stalls with a ConsistencyError while the informer lags behind a
+// recorded write, resumes once the informer catches up, and drops the record
+// when the service disappears.
+func TestStandaloneNEGSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	_, _, lc, stopCh := setupControllerContext(t)
+	defer close(stopCh)
+
+	store, getter := newTestConsistencyStore("100")
+	lc.consistencyStore = store
+
+	namespacedName := types.NamespacedName{Namespace: "test-ns", Name: "test-svc"}
+	key := namespacedName.String()
+
+	// Simulate a status write whose ResourceVersion the informer has not
+	// observed yet: the sync must stall.
+	store.WroteAt(namespacedName, "test-uid", ServicesGroupResource, "150")
+	err := lc.sync(key, klog.TODO())
+	var consistencyErr *consistency.ConsistencyError
+	if !errors.As(err, &consistencyErr) {
+		t.Fatalf("sync(%s) with stale cache = %v, want *consistency.ConsistencyError", key, err)
+	}
+
+	// Informer caught up; the service does not exist in the cache, so the
+	// sync must succeed and clear the record.
+	getter.setRV("150")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after cache caught up = %v, want nil", key, err)
+	}
+	getter.setRV("99")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after record cleared = %v, want nil", key, err)
 	}
 }

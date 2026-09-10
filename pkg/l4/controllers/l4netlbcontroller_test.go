@@ -29,6 +29,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
@@ -359,7 +360,7 @@ func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode boo
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	lc := NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc := NewL4NetLBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	lc.hasSynced = func() bool { return true }
 	return lc
 }
@@ -2508,5 +2509,58 @@ func TestEnsureReadOnlyModeDoesNotProvision(t *testing.T) {
 			verifyNetLBServiceNotProvisioned(t, svc)
 			deleteNetLBService(lc, svc)
 		})
+	}
+}
+
+// TestNetLBSyncStallsUntilCacheIsConsistent verifies the ConsistencyStore
+// integration end to end: a successful sync records the ResourceVersions it
+// wrote, a subsequent sync stalls with a ConsistencyError while the informer
+// lags behind those writes, resumes once the informer catches up, and the
+// record is dropped when the service disappears.
+func TestNetLBSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	lc := newL4NetLBServiceController()
+
+	store, getter := newTestConsistencyStore("100")
+	lc.consistencyStore = store
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.ResourceVersion = "100"
+	svc.UID = "test-uid"
+	addNetLBService(lc, svc)
+	key, err := common.KeyFunc(svc)
+	if err != nil {
+		t.Fatalf("common.KeyFunc(%v) = %v, want nil", svc, err)
+	}
+
+	// With a consistent cache the sync must succeed and record the writes
+	// it performs (finalizer, annotations, status; the fake client keeps
+	// ResourceVersion "100").
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) with consistent cache = %v, want nil", key, err)
+	}
+
+	// Informer behind the recorded writes: the sync must stall.
+	getter.setRV("99")
+	err = lc.sync(key, klog.TODO())
+	var consistencyErr *consistency.ConsistencyError
+	if !errors.As(err, &consistencyErr) {
+		t.Fatalf("sync(%s) with stale cache = %v, want *consistency.ConsistencyError", key, err)
+	}
+
+	// Informer caught up: the sync must proceed again.
+	getter.setRV("100")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after cache caught up = %v, want nil", key, err)
+	}
+
+	// A sync that finds the service gone must clear the record, so a
+	// stale cache no longer stalls this key.
+	deleteNetLBService(lc, svc)
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) of deleted service = %v, want nil", key, err)
+	}
+	getter.setRV("99")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after record cleared = %v, want nil", key, err)
 	}
 }

@@ -26,6 +26,7 @@ import (
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -92,7 +93,8 @@ type L4NetLBController struct {
 
 	hasSynced func() bool
 
-	logger klog.Logger
+	logger           klog.Logger
+	consistencyStore consistency.ConsistencyStore
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -100,6 +102,7 @@ func NewL4NetLBController(
 	ctx *context.ControllerContext,
 	stopCh <-chan struct{},
 	logger klog.Logger,
+	consistencyStore consistency.ConsistencyStore,
 ) *L4NetLBController {
 	logger = logger.WithName("L4NetLBController")
 	if ctx.NumL4NetLBWorkers <= 0 {
@@ -109,6 +112,7 @@ func NewL4NetLBController(
 
 	backendPool := backends.NewPoolWithConnectionTrackingPolicy(ctx.Cloud, ctx.L4Namer, ctx.EnableL4StrongSessionAffinity)
 	l4netLBc := &L4NetLBController{
+		consistencyStore:            consistencyStore,
 		ctx:                         ctx,
 		stopCh:                      stopCh,
 		zoneGetter:                  ctx.ZoneGetter,
@@ -176,6 +180,14 @@ func NewL4NetLBController(
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return
+			}
+		},
+		// Deletes are handled in the Update when the deletion timestamp is
+		// set; here only drop the ConsistencyStore record so a deleted
+		// service does not leak an entry or stall a future recreation.
+		DeleteFunc: func(obj interface{}) {
+			if svc := serviceFromDeleteEvent(obj); svc != nil {
+				l4netLBc.consistencyStore.Clear(types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, svc.UID)
 			}
 		},
 	})
@@ -501,10 +513,11 @@ func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1
 }
 
 func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service, svcLogger klog.Logger) error {
-	err := deleteAnnotation(lc.ctx, service, annotations.RBSAnnotationKey, svcLogger)
+	newSvc, err := deleteAnnotation(lc.ctx, service, annotations.RBSAnnotationKey, svcLogger)
 	if err != nil {
 		return fmt.Errorf("deleteAnnotation(_, %v, %s) returned error %v, want nil", service, annotations.RBSAnnotationKey, err)
 	}
+	recordServiceWrite(lc.consistencyStore, service.UID, newSvc)
 	// update current object annotations, so we do not treat it as RBS after
 	delete(service.Annotations, annotations.RBSAnnotationKey)
 	return nil
@@ -592,11 +605,24 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 	lc.syncTracker.Track()
 	metrics.PublishL4controllerLastSyncTime(L4NetLBControllerName)
 
+	if namespace, name, keyErr := cache.SplitMetaNamespaceKey(key); keyErr == nil {
+		namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
+		// Do not reconcile from a cache that has not yet observed this
+		// controller's own writes to the service; requeue instead.
+		if err := lc.consistencyStore.EnsureReady(namespacedName); err != nil {
+			svcLogger.V(2).Info("Informer cache has not caught up with the controller's writes yet, requeuing service", "reason", err.Error())
+			return err
+		}
+	}
+
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
 	}
 	if !exists || svc == nil {
+		if namespace, name, keyErr := cache.SplitMetaNamespaceKey(key); keyErr == nil {
+			lc.consistencyStore.Clear(types.NamespacedName{Namespace: namespace, Name: name}, "")
+		}
 		svcLogger.V(3).Info("Ignoring sync of non-existent service")
 		return nil
 	}
@@ -690,12 +716,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	if usesNegBackends {
 		finalizer = common.NetLBFinalizerV3
 	}
-	if err := common.EnsureServiceFinalizer(service, finalizer, lc.ctx.KubeClient, svcLogger); err != nil {
+	service, err := lc.ensureServiceFinalizer(service, finalizer, svcLogger)
+	if err != nil {
 		return &resources.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
 	var nodes []*v1.Node
-	var err error
 	if usesNegBackends {
 		nodes, err = lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
 	} else {
@@ -740,7 +766,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return syncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
+	service, err = lc.updateServiceStatus(service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error updating L4 External LoadBalancer, err: %v", err)
@@ -750,7 +776,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	if lc.enableDualStack {
 		lc.emitEnsuredDualStackEvent(service)
 
-		if err = updateL4DualStackResourcesAnnotations(lc.ctx, service, syncResult.Annotations, svcLogger); err != nil {
+		service, err = lc.updateL4DualStackResourcesAnnotations(service, syncResult.Annotations, svcLogger)
+		if err != nil {
 			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 				"Failed to update annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -760,7 +787,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 			"Successfully ensured L4 External LoadBalancer resources")
 
-		if err = updateL4ResourcesAnnotations(lc.ctx, service, syncResult.Annotations, svcLogger); err != nil {
+		service, err = lc.updateL4ResourcesAnnotations(service, syncResult.Annotations, svcLogger)
+		if err != nil {
 			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 				"Failed to update annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -952,7 +980,9 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		return result
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
+	var err error
+	svc, err = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger)
+	if err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
@@ -969,14 +999,16 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	}
 
 	if lc.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(lc.ctx, svc, nil, svcLogger); err != nil {
+		svc, err = lc.updateL4DualStackResourcesAnnotations(svc, nil, svcLogger)
+		if err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error removing Dual Stack resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset Dual Stack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
-		if err := updateL4ResourcesAnnotations(lc.ctx, svc, nil, svcLogger); err != nil {
+		svc, err = lc.updateL4ResourcesAnnotations(svc, nil, svcLogger)
+		if err != nil {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error removing resource annotations: %v", err)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
@@ -987,7 +1019,8 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 	// Finalizer needs to be removed last, because after deleting finalizer service can be deleted and
 	// updating annotations or other manipulations will fail
 	removeFinalizerKeys := []string{common.NetLBFinalizerV2, common.NetLBFinalizerV3}
-	if err := common.EnsureServiceDeleteFinalizers(svc, removeFinalizerKeys, lc.ctx.KubeClient, svcLogger); err != nil {
+	svc, err = lc.ensureServiceDeleteFinalizers(svc, removeFinalizerKeys, svcLogger)
+	if err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
@@ -1034,4 +1067,50 @@ func (lc *L4NetLBController) publishSyncMetrics(result *resources.L4NetLBSyncRes
 	isLoggingControlEnabled := result.MetricsState.LoggingControlEnabled
 
 	metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, l4utils.GetErrorType(result.Error), result.StartTime, isResync, isWeightedLB, result.MetricsState.Protocol, backendType, isLoggingControlEnabled)
+}
+
+// The wrappers below delegate service mutations to the shared helpers and
+// record the resulting ResourceVersion in the ConsistencyStore, so the next
+// sync of the service can be stalled until the informer cache has observed
+// the write. Each returns the freshest known version of the service (the
+// passed-in service if nothing was written); the result is never nil.
+
+func (lc *L4NetLBController) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := updateServiceStatus(lc.ctx, svc, newStatus, newConditions, conditionsToRemove, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
+}
+
+func (lc *L4NetLBController) updateL4ResourcesAnnotations(svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := updateL4ResourcesAnnotations(lc.ctx, svc, newL4LBAnnotations, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
+}
+
+func (lc *L4NetLBController) updateL4DualStackResourcesAnnotations(svc *v1.Service, newL4LBAnnotations map[string]string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := updateL4DualStackResourcesAnnotations(lc.ctx, svc, newL4LBAnnotations, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
+}
+
+func (lc *L4NetLBController) ensureServiceFinalizer(svc *v1.Service, key string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := common.EnsureServiceFinalizer(svc, key, lc.ctx.KubeClient, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
+}
+
+func (lc *L4NetLBController) ensureServiceDeleteFinalizers(svc *v1.Service, keys []string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := common.EnsureServiceDeleteFinalizers(svc, keys, lc.ctx.KubeClient, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
 }
