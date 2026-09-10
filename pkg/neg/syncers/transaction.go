@@ -443,7 +443,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// Only fetch label from pod for L7 endpoints
 	if flags.F.EnableNEGLabelPropagation && s.NegType == negtypes.VmIpPortEndpointType {
 		endpointPodLabelMap = getEndpointPodLabelMap(addEndpoints, endpointPodMap, s.podLister, s.podLabelPropagationConfig, s.recorder, s.logger, s.negMetrics)
-		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap)
+		publishAnnotationSizeMetrics(addEndpoints, endpointPodLabelMap, s.negMetrics)
 	}
 
 	s.syncMetricsCollector.SetLabelPropagationStats(s.NegSyncerKey, collectLabelStats(currentPodLabelMap, endpointPodLabelMap, targetMap))
@@ -1190,18 +1190,18 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 			key := fmt.Sprintf("%s/%s", endpointPodMap[endpoint].Namespace, endpointPodMap[endpoint].Name)
 			obj, ok, err := podLister.GetByKey(key)
 			if err != nil || !ok {
-				metrics.PublishLabelPropagationError(labels.OtherError)
+				m.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(err, "getEndpointPodLabelMap: error getting pod", "pod", key, "exist", ok)
 				m.PublishNegControllerErrorCountMetrics(err, true)
 				continue
 			}
 			pod, ok := obj.(*v1.Pod)
 			if !ok {
-				metrics.PublishLabelPropagationError(labels.OtherError)
+				m.PublishLabelPropagationError(labels.OtherError)
 				logger.Error(nil, "expected type *v1.Pod", "pod", key, "type", fmt.Sprintf("%T", obj))
 				continue
 			}
-			labelMap, err := labels.GetPodLabelMap(pod, lpConfig)
+			labelMap, err := labels.GetPodLabelMap(pod, lpConfig, m)
 			if err != nil {
 				recorder.Eventf(pod, v1.EventTypeWarning, "LabelsExceededLimit", "Label Propagation Error: %v", err)
 				m.PublishNegControllerErrorCountMetrics(err, true)
@@ -1214,11 +1214,11 @@ func getEndpointPodLabelMap(endpoints map[negtypes.NEGLocation]negtypes.NetworkE
 
 // publishAnnotationSizeMetrics goes through all the endpoints to be attached
 // and publish annotation size metrics.
-func publishAnnotationSizeMetrics(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap) {
+func publishAnnotationSizeMetrics(endpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, m *metrics.NegMetrics) {
 	for _, endpointSet := range endpoints {
 		for endpoint := range endpointSet {
 			labelMap := endpointPodLabelMap[endpoint]
-			metrics.PublishAnnotationMetrics(labels.GetPodLabelMapSize(labelMap), len(labelMap))
+			m.PublishAnnotationMetrics(labels.GetPodLabelMapSize(labelMap), len(labelMap))
 		}
 	}
 }

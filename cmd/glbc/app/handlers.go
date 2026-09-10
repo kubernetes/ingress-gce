@@ -26,6 +26,8 @@ import (
 	"strings"
 	"syscall"
 
+	metrics "github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
 
@@ -40,6 +42,7 @@ func RunHTTPServer(healthChecker func() systemhealth.HealthCheckResults, logger 
 	http.HandleFunc("/healthz", healthCheckHandler(healthChecker, logger))
 	http.HandleFunc("/flag", flagHandler)
 	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics/multitenancy", promhttp.HandlerFor(metrics.DefaultMultiGatherer.(prometheus.Gatherer), promhttp.HandlerOpts{}))
 
 	logger.V(0).Info("Running http server", "port", flags.F.HealthzPort)
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
