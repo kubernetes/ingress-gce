@@ -163,6 +163,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		runL4, //runL4Controller
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,
+		testContext.EnableIPv6NodeNEGEndpoints,
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
@@ -2564,6 +2565,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 		true,  // runL4Controller
 		false, // enableNonGcpMode
 		testContext.EnableDualStackNEG,
+		testContext.EnableIPv6NodeNEGEndpoints,
 		labels.PodLabelPropagationConfig{},
 		true,
 		false,
@@ -2733,6 +2735,7 @@ func TestControllerNEGBinding(t *testing.T) {
 		testContext.NumGCWorkers,
 		false, false, false,
 		testContext.EnableDualStackNEG,
+		testContext.EnableIPv6NodeNEGEndpoints,
 		labels.PodLabelPropagationConfig{},
 		true, false, false, false, true, true, false,
 		make(<-chan struct{}),

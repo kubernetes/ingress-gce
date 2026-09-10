@@ -25,12 +25,10 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/net"
 )
 
 const (
@@ -178,6 +176,71 @@ func newNodeWithSubnet(node *v1.Node, subnet string) *nodeWithSubnet {
 	}
 }
 
+// nodeSkipReason explains why a node was left out of the NEG. Individual skips
+// are logged at a low verbosity because in a misconfigured cluster they repeat
+// per node on every sync; the reason is carried back to getSubsetPerZone so that
+// losing *every* node in a zone can be reported once, loudly.
+type nodeSkipReason string
+
+const (
+	skipReasonIPv6Disabled nodeSkipReason = "node has only an IPv6 internal address and --enable-ipv6-node-neg-endpoints is not set"
+	skipReasonNotOnNetwork nodeSkipReason = "node is not connected to the network"
+	skipReasonNoInternalIP nodeSkipReason = "node has no internal IP address"
+)
+
+// nodeEndpoint builds the NetworkEndpoint for a node. The addresses come from
+// network.GetNodeIPsForNetwork or utils.GetNodeInternalIPs, both of which guarantee at
+// most one canonical address per family, so no further validation is done here.
+// It returns false, plus the reason, if the node has no usable address, in which
+// case the node must be left out of the NEG.
+//
+// The endpoint is always single-stack, carrying one address and never both.
+// EnableIPv6NodeNEGEndpoints exists to support IPv6-only clusters, where a node
+// has no IPv4 address at all, so IPv6 is a fallback rather than an addition:
+// whenever a node has an IPv4 address that is the one used. Emitting both
+// families would turn every dual-stack node's existing endpoint into a
+// different endpoint, and NetworkEndpoint is a set key, so the syncer would
+// have to detach and re-attach every node before the NEG converged again.
+func nodeEndpoint(node *v1.Node, networkInfo *network.NetworkInfo, populateIPv6 bool, logger klog.Logger) (negtypes.NetworkEndpoint, nodeSkipReason, bool) {
+	nodeIPv4, nodeIPv6 := "", ""
+	if !networkInfo.IsDefault {
+		nodeIPv4, nodeIPv6 = network.GetNodeIPsForNetwork(node, networkInfo.K8sNetwork)
+	} else {
+		nodeIPv4, nodeIPv6 = utils.GetNodeInternalIPs(node)
+	}
+
+	newEndpoint := negtypes.NetworkEndpoint{Node: node.Name}
+	switch {
+	case nodeIPv4 != "":
+		newEndpoint.IP = nodeIPv4
+	case populateIPv6 && nodeIPv6 != "":
+		newEndpoint.IPv6 = nodeIPv6
+	}
+	if newEndpoint.IP == "" && newEndpoint.IPv6 == "" {
+		// Skipping nodes with no usable address prevents sending malformed data to the
+		// Cloud API, which would result in errors.
+		var reason nodeSkipReason
+		switch {
+		case nodeIPv6 != "":
+			// The node does have an address; populateIPv6 is what excludes it. Reporting
+			// this as a node problem would send the reader to the Node object instead of
+			// to the flag that actually governs it.
+			reason = skipReasonIPv6Disabled
+		case !networkInfo.IsDefault:
+			// On a non-default network a node is routinely not attached to the network at
+			// all, so this is expected rather than an error.
+			reason = skipReasonNotOnNetwork
+		default:
+			reason = skipReasonNoInternalIP
+		}
+		logger.V(2).Info("Skipping node", "node", node.Name, "reason", string(reason),
+			"ipv4", nodeIPv4, "ipv6", nodeIPv6)
+		return negtypes.NetworkEndpoint{}, reason, false
+	}
+
+	return newEndpoint, "", true
+}
+
 // getSubsetPerZone creates a subset of nodes from the given list of nodes, for each zone provided.
 // The output is a map of zone string to NEG subset.
 // In order to pick as many nodes as possible given the total limit, the following algorithm is used:
@@ -189,7 +252,7 @@ func newNodeWithSubnet(node *v1.Node, subnet string) *nodeWithSubnet {
 //	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
 //	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
 //	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, error) {
+func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int, svcID string, currentMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, logger klog.Logger, networkInfo *network.NetworkInfo, populateIPv6 bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, error) {
 	result := make(map[negtypes.NEGLocation]negtypes.NetworkEndpointSet)
 
 	subsetSize := 0
@@ -215,33 +278,26 @@ func getSubsetPerZone(nodesPerZone map[string][]*nodeWithSubnet, totalLimit int,
 			currentList = getNetworkEndpointsForZone(zone.Name, currentMap)
 		}
 		subset := pickSubsetsMinRemovals(nodesPerZone[zone.Name], svcID, subsetSize, currentList)
+		skipped, picked := map[nodeSkipReason]int{}, 0
 		for _, nodeAndSubnet := range subset {
-			var ip string
-			if !networkInfo.IsDefault {
-				ip = network.GetNodeIPForNetwork(nodeAndSubnet.node, networkInfo.K8sNetwork)
-			} else {
-				ip = utils.GetNodePrimaryIP(nodeAndSubnet.node, logger)
+			newEndpoint, skipReason, ok := nodeEndpoint(nodeAndSubnet.node, networkInfo, populateIPv6, logger)
+			if !ok {
+				skipped[skipReason]++
+				continue
 			}
+			picked++
 			egi := negtypes.NEGLocation{Zone: zone.Name, Subnet: nodeAndSubnet.subnet}
 			if _, ok := result[egi]; !ok {
 				result[egi] = negtypes.NewNetworkEndpointSet()
 			}
-
-			newEndpoint := negtypes.NetworkEndpoint{Node: nodeAndSubnet.node.Name}
-
-			if flags.F.EnableIPv6NodeNEGEndpoints && net.IsIPv6String(ip) {
-				// Convert all addresses to a standard form as per rfc5952 to prevent
-				// accidental diffs resulting from different formats.
-				newEndpoint.IPv6 = parseIPAddress(ip)
-			} else if net.IsIPv4String(ip) {
-				newEndpoint.IP = ip
-			} else {
-				// Skipping invalid IPs prevents sending malformed data to the Cloud API, which would result in errors.
-				logger.Error(nil, "Skipping invalid IP address", "ip", ip, "node", nodeAndSubnet.node.Name)
-				continue
-			}
-
 			result[egi].Insert(newEndpoint)
+		}
+		if picked == 0 && len(skipped) > 0 {
+			// Every candidate node in this zone was dropped, so the zone's NEG ends up
+			// empty and the service loses all of its backends there.
+			for reason, count := range skipped {
+				logger.Error(nil, "All candidate nodes in zone were skipped", "zone", zone.Name, "skippedNodes", count, "reason", string(reason), "svcID", svcID)
+			}
 		}
 		totalLimit -= len(subset)
 		zonesRemaining--

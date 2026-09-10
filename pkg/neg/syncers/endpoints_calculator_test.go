@@ -1794,3 +1794,102 @@ func updateNodes(t *testing.T, nodeNames []string, nodeLabels map[string]map[str
 	}
 
 }
+
+// TestGetEndpointsCalculatorIPv6NodeEndpoints covers the enableIPv6NodeNEGEndpoints
+// parameter end to end, from GetEndpointsCalculator down to the endpoints it
+// produces. The rest of the L4 calculator tests construct the calculator directly,
+// so without this one nothing exercises that parameter being true, and the wiring
+// from the flag down to nodeEndpoint could be broken without a test noticing.
+func TestGetEndpointsCalculatorIPv6NodeEndpoints(t *testing.T) {
+	// testInstance1 is made IPv6-only, which is the case the flag exists for: on an
+	// IPv6-only cluster the node has no IPv4 address to fall back to.
+	const ipv6NodeAddress = "2001:db8::1"
+
+	testCases := []struct {
+		desc                       string
+		enableIPv6NodeNEGEndpoints bool
+		wantZone1                  negtypes.NetworkEndpointSet
+	}{
+		{
+			desc:                       "flag enabled, IPv6-only node is included with its IPv6 address",
+			enableIPv6NodeNEGEndpoints: true,
+			wantZone1: negtypes.NewNetworkEndpointSet(
+				negtypes.NetworkEndpoint{IPv6: ipv6NodeAddress, Node: testInstance1},
+				negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2},
+			),
+		},
+		{
+			desc:                       "flag disabled, IPv6-only node is left out of the NEG",
+			enableIPv6NodeNEGEndpoints: false,
+			wantZone1: negtypes.NewNetworkEndpointSet(
+				negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2},
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodeInformer := zonegetter.FakeNodeInformer()
+			zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+			if err != nil {
+				t.Fatalf("failed to initialize zone getter: %v", err)
+			}
+			zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+			zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+
+			nodeIndexer := nodeInformer.GetIndexer()
+			updateNodes(t, []string{testInstance1, testInstance2, testInstance3, testInstance4}, nil, nil, nil, nodeIndexer)
+			setNodeInternalIPs(t, nodeIndexer, testInstance1, ipv6NodeAddress)
+
+			syncerKey := negtypes.NegSyncerKey{
+				Namespace: testServiceNamespace,
+				Name:      testServiceName,
+				NegType:   negtypes.VmIpEndpointType,
+			}
+			ec := GetEndpointsCalculator(
+				nil, nodeIndexer, nil,
+				zoneGetter,
+				syncerKey,
+				negtypes.L4LocalMode,
+				klog.TODO(),
+				false, // enableDualStackNEG
+				tc.enableIPv6NodeNEGEndpoints,
+				metricscollector.FakeSyncerMetrics(),
+				&network.NetworkInfo{IsDefault: true, K8sNetwork: "default", SubnetworkURL: defaultTestSubnetURL},
+				negtypes.L4InternalLB,
+				metrics.NewNegMetrics(),
+			)
+
+			got, _, _, err := ec.CalculateEndpoints(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), nil)
+			if err != nil {
+				t.Fatalf("CalculateEndpoints() returned error: %v", err)
+			}
+
+			gotZone1 := got[negtypes.NEGLocation{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}]
+			if diff := cmp.Diff(tc.wantZone1, gotZone1); diff != "" {
+				t.Errorf("CalculateEndpoints() endpoints in %s (-want +got):\n%s", negtypes.TestZone1, diff)
+			}
+		})
+	}
+}
+
+// setNodeInternalIPs replaces the NodeInternalIP addresses of a node already in the
+// indexer, so a test can give it an address family the fake fixtures do not provide.
+func setNodeInternalIPs(t *testing.T, nodeIndexer cache.Indexer, nodeName string, addresses ...string) {
+	t.Helper()
+	obj, exists, err := nodeIndexer.GetByKey(nodeName)
+	if err != nil || !exists {
+		t.Fatalf("Failed to get node %s in nodeLister, exists: %v, err: %v", nodeName, exists, err)
+	}
+	node, ok := obj.(*v1.Node)
+	if !ok {
+		t.Fatalf("Failed to cast %v as type Node", obj)
+	}
+	node.Status.Addresses = nil
+	for _, address := range addresses {
+		node.Status.Addresses = append(node.Status.Addresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: address})
+	}
+	if err := nodeIndexer.Update(node); err != nil {
+		t.Fatalf("Failed to update node %q, err: %v", nodeName, err)
+	}
+}

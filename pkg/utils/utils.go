@@ -42,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog/v2"
+	netutils "k8s.io/utils/net"
 )
 
 const (
@@ -398,26 +399,45 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
-// GetNodePrimaryIP returns a primary internal IP address of the node.
-func GetNodePrimaryIP(inputNode *api_v1.Node, logger klog.Logger) string {
-	ip, err := getPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
-	if err != nil {
-		logger.Error(err, "Failed to get IP address for node", "nodeName", inputNode.Name)
+// CanonicalIP returns address in the canonical form defined by RFC 5952, or ""
+// if address does not parse as an IP address. The parser matches the one behind
+// netutils.IsIPv4String/IsIPv6String so that classification and
+// canonicalization always agree.
+//
+// Every place that stores an IP address on a type used as a map or set key must
+// normalize it through this single helper: two spellings of the same address
+// compare unequal, which turns into an endless diff between the two sides.
+func CanonicalIP(address string) string {
+	ip := netutils.ParseIPSloppy(address)
+	if ip == nil {
+		return ""
 	}
-	return ip
+	return ip.String()
 }
 
-// getPreferredNodeAddress returns the address of the provided node, using the provided preference order.
-// If none of the preferred address types are found, an error is returned.
-func getPreferredNodeAddress(node *api_v1.Node, preferredAddressTypes []api_v1.NodeAddressType) (string, error) {
-	for _, addressType := range preferredAddressTypes {
-		for _, address := range node.Status.Addresses {
-			if address.Type == addressType {
-				return address.Address, nil
-			}
+// GetNodeInternalIPs extracts the IPv4 and IPv6 internal addresses of a node.
+//
+// It returns at most one address per family. An address is returned only if it parses
+// as that family, and it is returned in the canonical RFC 5952 form. If several
+// addresses of the same family are present, the first one in iteration order wins.
+// Either return value may be "".
+func GetNodeInternalIPs(inputNode *api_v1.Node) (ipv4, ipv6 string) {
+	if inputNode == nil {
+		return "", ""
+	}
+	for _, address := range inputNode.Status.Addresses {
+		if address.Type != api_v1.NodeInternalIP {
+			continue
+		}
+		if ipv4 == "" && netutils.IsIPv4String(address.Address) {
+			ipv4 = CanonicalIP(address.Address)
+			continue
+		}
+		if ipv6 == "" && netutils.IsIPv6String(address.Address) {
+			ipv6 = CanonicalIP(address.Address)
 		}
 	}
-	return "", fmt.Errorf("no matching node IP")
+	return ipv4, ipv6
 }
 
 // NewNamespaceIndexer returns a new Indexer for use by SharedIndexInformers

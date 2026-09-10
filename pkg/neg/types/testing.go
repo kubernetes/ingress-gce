@@ -71,11 +71,12 @@ type TestContext struct {
 	GKENetworkParamSetInformer cache.SharedIndexInformer
 	NodeTopologyInformer       cache.SharedIndexInformer
 
-	KubeSystemUID            types.UID
-	ResyncPeriod             time.Duration
-	NumGCWorkers             int
-	EnableDualStackNEG       bool
-	IncludeDrainNodesL4Local bool
+	KubeSystemUID              types.UID
+	ResyncPeriod               time.Duration
+	NumGCWorkers               int
+	EnableDualStackNEG         bool
+	EnableIPv6NodeNEGEndpoints bool
+	IncludeDrainNodesL4Local   bool
 
 	NegMetrics *metrics.NegMetrics
 }
