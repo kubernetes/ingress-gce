@@ -26,6 +26,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/flags"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
 )
@@ -135,8 +136,8 @@ func (nr *NetworksResolver) ServiceNetwork(service *apiv1.Service) (*NetworkInfo
 	if !exists {
 		return nil, l4utils.NewUserError(fmt.Errorf("network %s does not exist", networkName))
 	}
-	network := obj.(*networkv1.Network)
-	if network == nil {
+	network, ok := obj.(*networkv1.Network)
+	if !ok || network == nil {
 		return nil, fmt.Errorf("cannot convert to Network (%T)", obj)
 	}
 	svcLogger.Info("Found network for service", "network", network.Name)
@@ -227,6 +228,10 @@ func GetNodeIPForNetwork(node *apiv1.Node, network string) string {
 	}
 	for _, northInterface := range northInterfaces {
 		if northInterface.Network == network {
+			// If both IPv6 and IPv4 are defined prefer IPv4
+			if flags.F.EnableMultiNetworkingIPv6 && northInterface.IpAddress == "" && northInterface.IPv6Address != "" {
+				return northInterface.IPv6Address
+			}
 			return northInterface.IpAddress
 		}
 	}

@@ -32,6 +32,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -460,6 +461,7 @@ func TestRefersGKENetworkParamSet(t *testing.T) {
 }
 
 func TestNodeIPForNetwork(t *testing.T) {
+	// No t.Parallel - flag updates
 	cases := []struct {
 		desc    string
 		node    *apiv1.Node
@@ -514,14 +516,112 @@ func TestNodeIPForNetwork(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			got := GetNodeIPForNetwork(tc.node, tc.network)
-			if tc.want != got {
-				t.Errorf("GetNodeIPForNetwork(%+v, %q) wanted %v but got %v", tc.node, tc.network, tc.want, got)
-			}
-		})
+	t.Run("ipv4_only", func(t *testing.T) {
+		for _, tc := range cases {
+			t.Run(tc.desc, func(t *testing.T) {
+				t.Parallel()
+				got := GetNodeIPForNetwork(tc.node, tc.network)
+				if tc.want != got {
+					t.Errorf("GetNodeIPForNetwork(%+v, %q) wanted %v but got %v", tc.node, tc.network, tc.want, got)
+				}
+			})
+		}
+	})
+
+	ipv6Cases := []struct {
+		desc    string
+		node    *apiv1.Node
+		network string
+		want    string
+	}{
+		{
+			desc:    "ipv6_only",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{
+							Network:     "test-network",
+							IPv6Address: "fe80::face:beef:cafe:babe",
+						},
+					}),
+				}},
+			},
+			want: "fe80::face:beef:cafe:babe",
+		},
+		{
+			desc:    "annotation that has the network",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{
+							Network:     "another-network",
+							IPv6Address: "2001:db8::1000",
+						},
+						{
+							Network:     "test-network",
+							IPv6Address: "2001:db8::1",
+						},
+					}),
+				}},
+			},
+			want: "2001:db8::1",
+		},
+		{
+			desc:    "annotation that does not have the network",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{
+							Network:     "another-network",
+							IPv6Address: "2001:db8::1",
+						},
+						{
+							Network:     "other-network",
+							IPv6Address: "2001:db8::1",
+						},
+					}),
+				}},
+			},
+			want: "",
+		},
+		{
+			desc:    "annotation that has both ipv4 and ipv6 addresses",
+			network: "test-network",
+			node: &apiv1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node", Annotations: map[string]string{
+					networkv1.NorthInterfacesAnnotationKey: northInterfacesAnnotation(t, networkv1.NorthInterfacesAnnotation{
+						{
+							Network:     "test-network",
+							IpAddress:   "192.168.0.1",
+							IPv6Address: "2001:db8::1",
+						},
+					}),
+				}},
+			},
+			want: "192.168.0.1",
+		},
 	}
+	ipv6Cases = append(ipv6Cases, cases...)
+	t.Run("dualstack", func(t *testing.T) {
+		old := flags.F.EnableMultiNetworkingIPv6
+		flags.F.EnableMultiNetworkingIPv6 = true
+		t.Cleanup(func() {
+			flags.F.EnableMultiNetworkingIPv6 = old
+		})
+
+		for _, tc := range ipv6Cases {
+			t.Run(tc.desc, func(t *testing.T) {
+				t.Parallel()
+				got := GetNodeIPForNetwork(tc.node, tc.network)
+				if tc.want != got {
+					t.Errorf("GetNodeIPForNetwork(%+v, %q) wanted %v but got %v", tc.node, tc.network, tc.want, got)
+				}
+			})
+		}
+	})
 }
 
 func TestIsConnectedToNetwork(t *testing.T) {

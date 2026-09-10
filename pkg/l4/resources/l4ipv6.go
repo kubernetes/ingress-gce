@@ -19,9 +19,10 @@ package resources
 import (
 	"errors"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/l4/backends"
 	"strings"
 	"time"
+
+	"k8s.io/ingress-gce/pkg/l4/backends"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -38,8 +39,8 @@ import (
 // - IPv6 Forwarding Rule
 // - IPv6 Firewall
 // it also adds IPv6 address to LB status
-func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) {
-	ipv6fr, fwdRuleSyncStatus, err := l4.ensureIPv6ForwardingRule(bsLink, options, existingIPv6FwdRule, ipv6AddressToUse)
+func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv6AddressToUse string) {
+	ipv6fr, fwdRuleSyncStatus, err := l4.ensureIPv6ForwardingRule(bsLink, options, existingIPv6FwdRule, subnetworkURL, ipv6AddressToUse)
 	syncResult.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv6Resources: Failed to ensure ipv6 forwarding rule")
