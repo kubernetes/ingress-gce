@@ -164,6 +164,7 @@ var F = struct {
 	EnableL4DenyFirewallExplicitlySet bool
 	EnableL4NetLBRBSByDefault         bool
 	EnableBYOIPv6                     bool
+	EnablePSCIPv6FRSupport            bool
 	// ===============================
 	// DEPRECATED FLAGS
 	// ===============================
@@ -389,6 +390,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL4NetLBRBSByDefault, "enable-l4-netlb-rbs-by-default", false, "Enable L4 NetLB Regional Backend Services by default for new L4 NetLB services.")
 	flag.BoolVar(&F.EnableNEGPreprovisioning, "enable-neg-preprovisioning", false, "Enable support for NEG pre-provisioning.")
 	flag.BoolVar(&F.EnableBYOIPv6, "enable-byo-ipv6", false, "Enable Bring Your Own IPv6 (BYOIPv6) feature for ip-collection annotations.")
+	flag.BoolVar(&F.EnablePSCIPv6FRSupport, "enable-psc-ipv6-fr-support", false, "Enable IPv6 FR support for PSC ServiceAttachments.")
 }
 
 func Validate() {
