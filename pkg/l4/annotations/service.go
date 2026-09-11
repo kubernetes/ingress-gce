@@ -114,6 +114,13 @@ const (
 	// IPCollectionV6AnnotationKey is the annotation key for BYOIP IPv6 IP collection.
 	// The value of this annotation must be a full resource URL.
 	IPCollectionV6AnnotationKey = "networking.gke.io/ip-collection-v6"
+
+	// ExternalHealthCheckKey is the annotation key for external health check addresses of Standalone NEG LB.
+	// The value is a comma-separated list of VIP:port entries (IPv6 VIPs as [addr]:port), where port is
+	// the port of the GCE HTTP health check of the load balancer. The annotation is managed by the
+	// Standalone NEG controller: user edits are overwritten, and the annotation is removed when no VIP
+	// needs the health check traffic to be redirected.
+	ExternalHealthCheckKey = "networking.gke.io/external-hc"
 )
 
 // Service represents Service annotations.
