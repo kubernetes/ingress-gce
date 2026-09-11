@@ -90,6 +90,130 @@ var (
 	optionalFields = []string{"ReconcileConnections"}
 )
 
+// SubnetStackMap is a struct that holds the subnet names grouped by their stack types
+// It can be used to check if all subnets support a certain stack type or if they have mixed stack types
+type SubnetStackMap struct {
+	IPv4Only []string
+	IPv6Only []string
+	IPv4IPv6 []string
+}
+
+// AllSupportIPv6 returns true if all subnets support IPv6
+func (st *SubnetStackMap) AllSupportIPv6() bool {
+	return len(st.IPv4Only) == 0
+}
+
+// AllSupportIPv4 returns true if all subnets support IPv4
+func (st *SubnetStackMap) AllSupportIPv4() bool {
+	return len(st.IPv6Only) == 0
+}
+
+// Add adds a subnet to the SubnetStackMap
+func (st *SubnetStackMap) Add(subnetObj *ga.Subnetwork) {
+	switch subnetObj.StackType {
+	case "IPV4_IPV6":
+		st.IPv4IPv6 = append(st.IPv4IPv6, subnetObj.Name)
+	case "IPV6_ONLY":
+		st.IPv6Only = append(st.IPv6Only, subnetObj.Name)
+	default:
+		// Covers "IPV4_ONLY", or missing value or any unknown stack types
+		st.IPv4Only = append(st.IPv4Only, subnetObj.Name)
+	}
+}
+
+// GetSubnetStackMap creates a new SubnetStackMap from a slice of subnets
+func GetSubnetStackMap(subnets []*ga.Subnetwork) *SubnetStackMap {
+	st := &SubnetStackMap{}
+	for _, subnetObj := range subnets {
+		st.Add(subnetObj)
+	}
+	return st
+}
+
+// ForwardingRuleStackMap is a struct that holds the forwarding rule names mapped to their stack types
+type ForwardingRuleStackMap struct {
+	IPv4 string
+	IPv6 string
+}
+
+// StackType returns the supported stack type based on existing forwarding rules
+// It can be "IPV4_ONLY", "IPV6_ONLY", or "IPV4_IPV6"
+func (f ForwardingRuleStackMap) StackType() string {
+	if f.IPv4 != "" && f.IPv6 != "" {
+		return "IPV4_IPV6"
+	}
+	if f.IPv6 != "" {
+		return "IPV6_ONLY"
+	}
+	return "IPV4_ONLY"
+}
+
+// GetCompatibleForwardingRule matches the forwarding rule stack type to the subnet stack types:
+// - IPv4 FR can be used with IPV4_ONLY and IPV4_IPV6 subnets.
+// - IPv6 FR can be used with IPV6_ONLY and IPV4_IPV6 subnets.
+// If service has both IPv4 and IPv6 FR then the final used FR is identified by stack of provided subnets
+func (f ForwardingRuleStackMap) GetCompatibleForwardingRule(subnetsStack *SubnetStackMap) (string, error) {
+	switch f.StackType() {
+	case "IPV4_IPV6":
+		if subnetsStack.AllSupportIPv4() {
+			// SA with IPv4 FR is more preferable since it support both IPv4/IPv6 Consumer Endpoints
+			return f.IPv4, nil
+		}
+		if subnetsStack.AllSupportIPv6() {
+			return f.IPv6, nil
+		}
+		return "", fmt.Errorf("unable to use IPv4 or IPv6 ForwardingRules because subnets with mixed stack types are present: %+v", subnetsStack)
+	case "IPV4_ONLY":
+		if subnetsStack.AllSupportIPv4() {
+			return f.IPv4, nil
+		}
+		return "", fmt.Errorf("unable to use IPv4 ForwardingRule with IPV6_ONLY subnets: %v", subnetsStack.IPv6Only)
+	case "IPV6_ONLY":
+		if subnetsStack.AllSupportIPv6() {
+			return f.IPv6, nil
+		}
+		return "", fmt.Errorf("unable to use IPv6 ForwardingRule with IPV4_ONLY subnets: %v", subnetsStack.IPv4Only)
+	default:
+		return "", fmt.Errorf("unknown stack type: %s", f.StackType())
+	}
+}
+
+// GetForwardingRuleStackMap gets the ForwardingRule names from the service annotations
+// It supports:
+// - IPv4 and IPv6 ForwardingRule annotations
+// - TCP and UDP ForwardingRule annotations
+// - ILB Subsetting and non-ILB Subsetting annotations
+// It ignores L3 forwarding rules as they cannot be used as PSC backends.
+func GetForwardingRuleStackMap(svc *v1.Service) (ForwardingRuleStackMap, error) {
+	var frNames ForwardingRuleStackMap
+	var ok bool
+
+	if _, ok = svc.Annotations[annotations.L3ForwardingRuleKey]; ok {
+		return frNames, fmt.Errorf("Service %s manages L3 ForwardingRule and cannot be used as PSC backend", svc.Name)
+	}
+	if _, ok := svc.Annotations[annotations.L3ForwardingRuleIPv6Key]; ok {
+		return frNames, fmt.Errorf("Service %s manages L3 ForwardingRule and cannot be used as PSC backend", svc.Name)
+	}
+
+	frNames.IPv6, ok = svc.Annotations[annotations.TCPForwardingRuleIPv6Key]
+	if !ok {
+		frNames.IPv6, _ = svc.Annotations[annotations.UDPForwardingRuleIPv6Key]
+	}
+
+	frNames.IPv4, ok = svc.Annotations[annotations.TCPForwardingRuleKey]
+	if !ok {
+		frNames.IPv4, ok = svc.Annotations[annotations.UDPForwardingRuleKey]
+	}
+
+	if frNames.IPv4 == "" && frNames.IPv6 == "" {
+		// Previous annotations only exist for ILB Subsetting LBs. If no annotation exists,
+		// fallback to finding the name by regenerating the name using the svc resource
+		frNames.IPv4 = cloudprovider.DefaultLoadBalancerName(svc)
+	}
+
+	return frNames, nil
+}
+
 // Controller is a private service connect (psc) controller
 // It watches ServiceAttachment resources and creates, deletes, and manages
 // corresponding GCE Service Attachment resources
@@ -324,16 +448,52 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return err
 	}
 
-	var frURL string
-	frURL, err = c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
+	// Get the K8s Service referenced by the ServiceAttachment.
+	svcName := updatedCR.Spec.ResourceRef.Name
+	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
+	svc0bj, exists, err := c.serviceLister.GetByKey(svcKey)
 	if err != nil {
-		return fmt.Errorf("failed to find forwarding rule: %w", err)
+		return fmt.Errorf("errored getting service %s/%s: %w", namespace, svcName, err)
+	}
+	if !exists {
+		return fmt.Errorf("failed to get Service %s/%s: %w", namespace, svcName, ServiceNotFoundError)
+	}
+	svc := svc0bj.(*v1.Service)
+
+	// Get ForwardingRule names from Service annotation (TCP/UDP, IPv4/IPv6, ignore L3 FRs)
+	frNames, err := GetForwardingRuleStackMap(svc)
+	if err != nil {
+		return err
 	}
 
-	var subnetURLs []string
-	subnetURLs, err = c.getSubnetURLs(updatedCR.Spec.NATSubnets)
+	// Verify that NAT subnets are specified
+	if len(updatedCR.Spec.NATSubnets) == 0 {
+		return fmt.Errorf("nat subnets must be specified")
+	}
+	subnets, err := c.getSubnets(updatedCR.Spec.NATSubnets)
 	if err != nil {
 		return fmt.Errorf("failed to find nat subnets: %w", err)
+	}
+
+	subnetsStack := GetSubnetStackMap(subnets)
+
+	// Select which FR name to use based on stack types of the subnets, verify stack types matching
+	frName, err := frNames.GetCompatibleForwardingRule(subnetsStack)
+	if err != nil {
+		return fmt.Errorf("failed to match forwarding rule to subnets: %w", err)
+	}
+
+	// Verify the selected ForwardingRule exists in GCE
+	var frURL string
+	frURL, err = c.getForwardingRule(svc, frName)
+	if err != nil {
+		return fmt.Errorf("failed to find forwarding rule %s: %w", frName, err)
+	}
+
+	// Get the subnet URLs from the subnets
+	subnetURLs := make([]string, len(subnets))
+	for i, subnet := range subnets {
+		subnetURLs[i] = subnet.SelfLink
 	}
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
@@ -504,31 +664,8 @@ func (c *Controller) deleteServiceAttachment(sa *sav1.ServiceAttachment) {
 // getForwardingRule returns the URL of the forwarding rule based by using the service resource
 // and querying GCE. On ILB subsetting services, the forwarding rule annotation is used to find
 // the forwarding rule name. Otherwise the name is generated based on the service resource.
-func (c *Controller) getForwardingRule(namespace, svcName string) (string, error) {
+func (c *Controller) getForwardingRule(svc *v1.Service, frName string) (string, error) {
 
-	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
-	obj, exists, err := c.serviceLister.GetByKey(svcKey)
-	if err != nil {
-		return "", fmt.Errorf("errored getting service %s/%s: %w", namespace, svcName, err)
-	}
-
-	if !exists {
-		return "", fmt.Errorf("failed to get Service %s/%s: %w", namespace, svcName, ServiceNotFoundError)
-	}
-
-	svc := obj.(*v1.Service)
-
-	// Check for annotation that has forwarding rule name on the service resource by looking for
-	// the TCP or UDP key. If it exists, then use the value as the forwarding rule name.
-	frName, ok := svc.Annotations[annotations.TCPForwardingRuleKey]
-	if !ok {
-		if frName, ok = svc.Annotations[annotations.UDPForwardingRuleKey]; !ok {
-			// The annotation only exists for ILB Subsetting LBs. If no annotation exists, fallback
-			// to finding the name by regenerating the name using the svc resource
-			frName = cloudprovider.DefaultLoadBalancerName(svc)
-			c.logger.V(2).Info("no forwarding rule annotation exists, falling back to autogenerated forwarding rule name", "serviceKey", klog.KRef(svc.Namespace, svc.Name), "forwardingRuleName", frName)
-		}
-	}
 	fwdRule, err := c.cloud.Compute().ForwardingRules().Get(context2.Background(), meta.RegionalKey(frName, c.cloud.Region()))
 	if err != nil {
 		return "", fmt.Errorf("failed to get Forwarding Rule %s: %w", frName, err)
@@ -551,23 +688,26 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 }
 
 // getSubnetURLs will query GCE and gather all the URLs of the provided subnet names
-func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
-	var subnetURLs []string
+func (c *Controller) getSubnets(subnets []string) ([]*ga.Subnetwork, error) {
+	var subnetObjs []*ga.Subnetwork
+	region := c.cloud.Region()
 	for _, subnetName := range subnets {
 		// For shared vpc cases, users must specify full resource path of the subnet
-		_, err := cloud.ParseResourceURL(subnetName)
+		var key *meta.Key
+		id, err := cloud.ParseResourceURL(subnetName)
 		if err == nil {
-			subnetURLs = append(subnetURLs, subnetName)
-			continue
+			key = id.Key
+		} else {
+			key = meta.RegionalKey(subnetName, region)
 		}
-		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), meta.RegionalKey(subnetName, c.cloud.Region()))
+		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), key)
 		if err != nil {
-			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %w", c.cloud.Region(), subnetName, err)
+			return nil, fmt.Errorf("failed to find Subnetwork %s/%s: %w", region, subnetName, err)
 		}
-		subnetURLs = append(subnetURLs, subnet.SelfLink)
+		subnetObjs = append(subnetObjs, subnet)
 
 	}
-	return subnetURLs, nil
+	return subnetObjs, nil
 }
 
 // updateServiceAttachmentStatus updates the CR's annotation and status with the GCE Service Attachment URL
