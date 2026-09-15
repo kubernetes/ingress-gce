@@ -15,6 +15,7 @@ package patch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -448,5 +449,64 @@ func newTestService(namespace, name string) *apiv1.Service {
 				},
 			},
 		},
+	}
+}
+
+// TestAddResourceVersionPrecondition checks that the observed resourceVersion
+// lands in the patch body - where the API server treats it as a precondition
+// and rejects the patch with a Conflict on mismatch - and that an empty
+// version leaves the patch unconditional.
+func TestAddResourceVersionPrecondition(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc            string
+		patch           string
+		resourceVersion string
+		want            string
+	}{
+		{
+			desc:            "patch without metadata gains the precondition",
+			patch:           `{"status":{"conditions":[]}}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"resourceVersion":"42"},"status":{"conditions":[]}}`,
+		},
+		{
+			desc:            "existing metadata fields are preserved",
+			patch:           `{"metadata":{"finalizers":[]}}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"finalizers":[],"resourceVersion":"42"}}`,
+		},
+		{
+			desc:            "empty patch gains the precondition",
+			patch:           `{}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"resourceVersion":"42"}}`,
+		},
+		{
+			desc:            "empty resourceVersion leaves the patch unconditional",
+			patch:           `{"status":{}}`,
+			resourceVersion: "",
+			want:            `{"status":{}}`,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := AddResourceVersionPrecondition([]byte(tc.patch), tc.resourceVersion)
+			if err != nil {
+				t.Fatalf("AddResourceVersionPrecondition(%q, %q) returned error: %v", tc.patch, tc.resourceVersion, err)
+			}
+			// Compare the decoded patches: the byte layout of the JSON
+			// encoding is not part of the contract.
+			var gotPatch, wantPatch map[string]interface{}
+			if err := json.Unmarshal(got, &gotPatch); err != nil {
+				t.Fatalf("json.Unmarshal(%s) = %v, want nil", got, err)
+			}
+			if err := json.Unmarshal([]byte(tc.want), &wantPatch); err != nil {
+				t.Fatalf("json.Unmarshal(%s) = %v, want nil", tc.want, err)
+			}
+			if diff := cmp.Diff(wantPatch, gotPatch); diff != "" {
+				t.Errorf("AddResourceVersionPrecondition(%q, %q) returned unexpected patch (-want +got):\n%s", tc.patch, tc.resourceVersion, diff)
+			}
+		})
 	}
 }

@@ -59,6 +59,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -263,10 +264,14 @@ func NewController(
 	logger klog.Logger,
 	negMetrics *metrics.NegMetrics,
 	syncerMetrics *syncMetrics.SyncerMetrics,
+	svcNegConsistencyStore consistency.ConsistencyStore,
 ) (*Controller, error) {
 	if svcNegClient == nil {
 		return nil, fmt.Errorf("svcNegClient is nil")
 	}
+	// Every SvcNeg CR write made through this client is recorded in the
+	// consistency store, so no write path has to remember to record.
+	svcNegClient = negtypes.NewRecordingSvcNegClient(svcNegClient, svcNegConsistencyStore)
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -327,6 +332,7 @@ func NewController(
 		logger,
 		negMetrics,
 		includeDrainNodesL4Local,
+		svcNegConsistencyStore,
 	)
 
 	negLookup := readiness.NewCompositeNegLookup(manager)
@@ -475,6 +481,18 @@ func NewController(
 		DeleteFunc: negController.enqueueService,
 		UpdateFunc: func(old, cur interface{}) {
 			negController.enqueueService(cur)
+		},
+	})
+	svcNegInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		// The informer observing that a CR is gone is the moment its record
+		// stops mattering, and the only signal that covers deletions this
+		// controller did not perform (kubectl, garbage collection), so the
+		// record is cleared here rather than at the delete call sites.
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			clearReplacedSvcNegConsistencyRecord(svcNegConsistencyStore, oldObj, newObj)
+		},
+		DeleteFunc: func(obj interface{}) {
+			clearSvcNegConsistencyRecord(svcNegConsistencyStore, obj)
 		},
 	})
 	endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -714,7 +732,10 @@ func (c *Controller) processNextServiceWorkItem() bool {
 	defer c.serviceQueue.Done(key)
 	err := c.processService(key.(string))
 	c.handleErr(err, key)
-	c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
+	// A consistency stall is a requeue signal, not a controller error.
+	if !consistency.IsStall(err) {
+		c.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
+	}
 	return true
 }
 
@@ -796,7 +817,9 @@ func (c *Controller) processService(key string) error {
 			return utilerrors.NewAggregate([]error{err, bindingErr})
 		}
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
-		c.syncerMetrics.SetNegService(key, negUsage)
+		if !consistency.IsStall(err) {
+			c.syncerMetrics.SetNegService(key, negUsage)
+		}
 		return utilerrors.NewAggregate([]error{err, bindingErr})
 	}
 	// do not need Neg
@@ -1131,9 +1154,53 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	return err
 }
 
+// clearSvcNegConsistencyRecord drops the consistency record for a deleted
+// SvcNeg CR, unwrapping informer tombstones. SvcNeg CRs churn with the
+// services that own them, so records left behind would accumulate for the
+// lifetime of the controller. The UID guard keeps a deletion event for an old
+// incarnation from dropping the record of a recreated CR.
+func clearSvcNegConsistencyRecord(store consistency.ConsistencyStore, obj interface{}) {
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		obj = tombstone.Obj
+	}
+	cr, ok := obj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+	if !ok {
+		return
+	}
+	store.Clear(negtypes.SvcNegRef(cr.Namespace, cr.Name), cr.UID)
+}
+
+// clearReplacedSvcNegConsistencyRecord drops the consistency record of a
+// SvcNeg CR that was deleted and recreated under the same name without the
+// informer observing the deletion. After a relist the informer reports that
+// as an update whose old and new objects have different UIDs, not as a
+// delete event.
+func clearReplacedSvcNegConsistencyRecord(store consistency.ConsistencyStore, oldObj, newObj interface{}) {
+	oldCR, ok := oldObj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+	if !ok {
+		return
+	}
+	newCR, ok := newObj.(*svcnegv1beta1.ServiceNetworkEndpointGroup)
+	if !ok || oldCR.UID == newCR.UID {
+		return
+	}
+	store.Clear(negtypes.SvcNegRef(oldCR.Namespace, oldCR.Name), oldCR.UID)
+}
+
 func (c *Controller) handleErr(err error, key interface{}) {
 	if err == nil {
 		c.serviceQueue.Forget(key)
+		return
+	}
+
+	// A stale cache is an expected, transient condition rather than a
+	// failure: requeue quietly instead of warning on the service and
+	// counting it as a processing error. processService aggregates its
+	// errors, so the stall has to be recognized with IsStall rather than
+	// errors.As; an error that also carries a real failure is not a stall.
+	if consistency.IsStall(err) {
+		c.logger.V(2).Info("Informer cache has not caught up with the controller's writes yet, requeuing service", "service", key, "reason", err.Error())
+		c.serviceQueue.AddRateLimited(key)
 		return
 	}
 

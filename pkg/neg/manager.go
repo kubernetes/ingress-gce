@@ -49,6 +49,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -78,6 +79,9 @@ type syncerManager struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	svcNegLister        cache.Indexer
+	// svcNegConsistencyStore gates reads of SvcNeg CRs on the informer having
+	// observed this controller's own writes to them.
+	svcNegConsistencyStore consistency.ConsistencyStore
 
 	// TODO: lock per service instead of global lock
 	mu sync.Mutex
@@ -159,7 +163,8 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger,
 	negMetrics *metrics.NegMetrics,
-	includeDrainNodesL4Local bool) *syncerManager {
+	includeDrainNodesL4Local bool,
+	svcNegConsistencyStore consistency.ConsistencyStore) *syncerManager {
 
 	var vmIpPortZoneMap map[string]struct{}
 	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger, negMetrics)
@@ -175,6 +180,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		serviceLister:              serviceLister,
 		endpointSliceLister:        endpointSliceLister,
 		svcNegLister:               svcNegLister,
+		svcNegConsistencyStore:     svcNegConsistencyStore,
 		svcPortMap:                 make(map[serviceKey]negtypes.PortInfoMap),
 		svcPreprovisioningZonesMap: make(map[serviceKey]sets.String),
 		syncerMap:                  make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
@@ -240,7 +246,8 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Start/ensure a syncer is running for each port in newPorts.
 	var wg sync.WaitGroup
 	var stateMu sync.Mutex
-	errListSyncerStart := []error{}
+	var errListSyncerStart []error
+	var errListStall []error
 	for svcPort, portInfo := range newPorts {
 
 		// Start each syncer in parallel to avoid waiting for blocking ensureSvcNegCR()
@@ -258,7 +265,12 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			defer stateMu.Unlock()
 
 			if err != nil {
-				errListSyncerStart = append(errListSyncerStart, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err))
+				wrappedErr := fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for port: %w ", namespace, portInfo.NegName, svcPort.ServicePort, err)
+				if consistency.IsStall(err) {
+					errListStall = append(errListStall, wrappedErr)
+				} else {
+					errListSyncerStart = append(errListSyncerStart, wrappedErr)
+				}
 				return
 			}
 
@@ -294,6 +306,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					portInfo.NetworkInfo,
 					manager.zoneGetter,
 					manager.negMetrics,
+					manager.svcNegConsistencyStore,
 					manager.logger,
 				)
 
@@ -338,11 +351,14 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	wg.Wait()
 
 	errorSyncers := len(errListSyncerStart)
-	successfulSyncers := len(newPorts) - errorSyncers
+	successfulSyncers := len(newPorts) - errorSyncers - len(errListStall)
 
 	errList = append(errList, errListSyncerStart...)
+	errList = append(errList, errListStall...)
 	err := utilerrors.NewAggregate(errList)
-	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
+	if !consistency.IsStall(err) {
+		manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
+	}
 
 	return successfulSyncers, errorSyncers, err
 }
@@ -764,7 +780,12 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 			if errs := ensureExistingNegRef(updatedCR, deletedNegs); len(errs) != 0 {
 				errList = append(errList, errs...)
 			}
-			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR, manager.negMetrics); err != nil {
+			// The CR comes from the lister without consulting the
+			// consistency store, so the precondition is what keeps a
+			// stale read from overwriting newer NEG references. It is
+			// only sent when consistency checking is enabled.
+			observedRV := negtypes.SvcNegPreconditionRV(manager.svcNegConsistencyStore, svcNegCR)
+			if _, err := patchNegStatus(manager.svcNegClient, *svcNegCR, *updatedCR, observedRV, manager.negMetrics); err != nil {
 				errList = append(errList, err)
 			}
 		}
@@ -905,6 +926,12 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	}
 
 	svcnegKey := fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName)
+	// Do not decide create-vs-update from a cache that has not yet observed
+	// this controller's own writes: a stale miss would retry the create and
+	// a stale hit would build the update from an outdated CR.
+	if err := manager.svcNegConsistencyStore.EnsureReady(negtypes.SvcNegRef(svcKey.namespace, portInfo.NegName)); err != nil {
+		return err
+	}
 	obj, exists, err = manager.svcNegLister.GetByKey(svcnegKey)
 	if err != nil {
 		return fmt.Errorf("Error retrieving existing negs: %s", err)
@@ -987,7 +1014,9 @@ func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expected
 func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup, logger klog.Logger, m *metrics.NegMetrics) error {
 	updatedCR := negCR.DeepCopy()
 	updatedCR.Finalizers = []string{}
-	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR, m); err != nil {
+	// No resourceVersion precondition: the finalizers are cleared whatever
+	// the CR currently holds, so a stale read cannot lose anything here.
+	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR, "", m); err != nil {
 		return fmt.Errorf("failed to patch neg status: %w", err)
 	}
 
@@ -1007,11 +1036,19 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 	return nil
 }
 
-// patchNegStatus patches the specified NegCR status with the provided new status
-func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1beta1.ServiceNetworkEndpointGroup, m *metrics.NegMetrics) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+// patchNegStatus patches the specified NegCR status with the provided new status.
+// observedRV, when not empty, is sent as a resourceVersion precondition, so the
+// API server rejects the patch with a Conflict if the CR has changed since it
+// was read. A merge patch replaces arrays wholesale, so without it a patch
+// computed from a stale read overwrites NEG references written in between.
+func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1beta1.ServiceNetworkEndpointGroup, observedRV string, m *metrics.NegMetrics) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	patchBytes, err := patch.MergePatchBytes(oldNeg, newNeg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
+	}
+	patchBytes, err = patch.AddResourceVersionPrecondition(patchBytes, observedRV)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add resourceVersion precondition: %s", err)
 	}
 	start := time.Now()
 	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(oldNeg.Namespace).Patch(context.Background(), oldNeg.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})

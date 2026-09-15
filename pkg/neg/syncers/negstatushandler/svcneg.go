@@ -19,6 +19,8 @@ package negstatushandler
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sync/atomic"
 
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -38,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -52,7 +56,14 @@ type SvcNegStatusHandler struct {
 	networkInfo  network.NetworkInfo
 	zoneGetter   *zonegetter.ZoneGetter
 	negMetrics   *metrics.NegMetrics
-	logger       klog.Logger
+	// svcNegConsistencyStore reports whether the informer has observed this
+	// controller's writes to the CR.
+	svcNegConsistencyStore consistency.ConsistencyStore
+	// lastPatched is the CR as returned by this handler's latest status
+	// patch. It stands in for the informer's copy until the informer has
+	// observed that patch; see getSvcNegFromStore.
+	lastPatched atomic.Pointer[negv1beta1.ServiceNetworkEndpointGroup]
+	logger      klog.Logger
 }
 
 func NewSvcNegStatusHandler(
@@ -63,17 +74,19 @@ func NewSvcNegStatusHandler(
 	networkInfo network.NetworkInfo,
 	zoneGetter *zonegetter.ZoneGetter,
 	negMetrics *metrics.NegMetrics,
+	svcNegConsistencyStore consistency.ConsistencyStore,
 	logger klog.Logger,
 ) *SvcNegStatusHandler {
 	return &SvcNegStatusHandler{
-		svcNEGClient: client,
-		svcNEGLister: lister,
-		namespace:    namespace,
-		svcNegName:   svcNegName,
-		networkInfo:  networkInfo,
-		zoneGetter:   zoneGetter,
-		negMetrics:   negMetrics,
-		logger:       logger.WithValues("svcneg", klog.KRef(namespace, svcNegName)),
+		svcNEGClient:           client,
+		svcNEGLister:           lister,
+		namespace:              namespace,
+		svcNegName:             svcNegName,
+		networkInfo:            networkInfo,
+		zoneGetter:             zoneGetter,
+		negMetrics:             negMetrics,
+		svcNegConsistencyStore: svcNegConsistencyStore,
+		logger:                 logger.WithValues("svcneg", klog.KRef(namespace, svcNegName)),
 	}
 }
 
@@ -151,18 +164,20 @@ func (h *SvcNegStatusHandler) ReportStatus(negs []*composite.NetworkEndpointGrou
 		negObjRefs[i] = negRef
 	}
 
-	svcNeg := origSvcNeg.DeepCopy()
-	if flags.F.EnableMultiSubnetClusterPhase1 {
-		nonActiveNegRefs := h.getNonActiveNegRefs(origSvcNeg.Status.NetworkEndpointGroups, negObjRefs, h.zoneGetter.ListSubnetsInDefaultNetwork(h.logger), h.networkInfo.SubnetworkURL)
-		negObjRefs = append(negObjRefs, nonActiveNegRefs...)
-	}
-	svcNeg.Status.NetworkEndpointGroups = negObjRefs
-
 	initializedCondition := h.getInitializedCondition(utilerrors.NewAggregate(errList))
-	finalCondition := h.ensureCondition(svcNeg, initializedCondition)
-	h.negMetrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origSvcNeg.GetCreationTimestamp().Time))
-
-	_, err = h.patchSvcNegStatus(origSvcNeg.Status, svcNeg.Status)
+	var initializationTime time.Duration
+	err = h.patchSvcNegStatusWithRetry(origSvcNeg, func(current *negv1beta1.ServiceNetworkEndpointGroup) negv1beta1.ServiceNetworkEndpointGroupStatus {
+		svcNeg := current.DeepCopy()
+		svcNeg.Status.NetworkEndpointGroups = negObjRefs
+		if flags.F.EnableMultiSubnetClusterPhase1 {
+			nonActiveNegRefs := h.getNonActiveNegRefs(current.Status.NetworkEndpointGroups, negObjRefs, h.zoneGetter.ListSubnetsInDefaultNetwork(h.logger), h.networkInfo.SubnetworkURL)
+			svcNeg.Status.NetworkEndpointGroups = slices.Concat(negObjRefs, nonActiveNegRefs)
+		}
+		finalCondition := h.ensureCondition(svcNeg, initializedCondition)
+		initializationTime = finalCondition.LastTransitionTime.Sub(current.GetCreationTimestamp().Time)
+		return svcNeg.Status
+	})
+	h.negMetrics.PublishNegInitializationMetrics(initializationTime)
 	if err != nil {
 		h.logger.Error(err, "Error updating SvcNeg CR")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -180,22 +195,19 @@ func (h *SvcNegStatusHandler) ReportSyncStatus(syncErr error) (needInit bool, er
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false, err
 	}
-	svcNeg := origSvcNeg.DeepCopy()
 
 	ts := metav1.Now()
-	if _, _, exists := h.findCondition(svcNeg.Status.Conditions, negv1beta1.Initialized); !exists {
-		needInit = true
-	}
-	h.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(svcNeg.Status.LastSyncTime.Time))
+	h.negMetrics.PublishNegSyncerStalenessMetrics(ts.Sub(origSvcNeg.Status.LastSyncTime.Time))
 
-	h.ensureCondition(svcNeg, h.getSyncedCondition(syncErr))
-	svcNeg.Status.LastSyncTime = ts
-
-	if len(svcNeg.Status.NetworkEndpointGroups) == 0 {
-		needInit = true
-	}
-
-	_, err = h.patchSvcNegStatus(origSvcNeg.Status, svcNeg.Status)
+	syncedCondition := h.getSyncedCondition(syncErr)
+	err = h.patchSvcNegStatusWithRetry(origSvcNeg, func(current *negv1beta1.ServiceNetworkEndpointGroup) negv1beta1.ServiceNetworkEndpointGroupStatus {
+		svcNeg := current.DeepCopy()
+		_, _, initialized := h.findCondition(svcNeg.Status.Conditions, negv1beta1.Initialized)
+		needInit = !initialized || len(svcNeg.Status.NetworkEndpointGroups) == 0
+		h.ensureCondition(svcNeg, syncedCondition)
+		svcNeg.Status.LastSyncTime = ts
+		return svcNeg.Status
+	})
 	if err != nil {
 		h.logger.Error(err, "Error updating SvcNeg CR")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
@@ -213,6 +225,13 @@ func (h *SvcNegStatusHandler) LastSyncTime() (time.Time, error) {
 	return svcNegCR.Status.LastSyncTime.Time, nil
 }
 
+// getSvcNegFromStore returns the SvcNeg CR that the status is computed from.
+// That is the informer's copy, except while the informer has not yet
+// observed this handler's latest status patch: in that window it returns the
+// API server's response to that patch. A status patch is a JSON merge patch,
+// which replaces arrays wholesale, so one computed from the stale copy would
+// drop the conditions and NEG references the previous patch wrote. The
+// returned object is shared and must not be modified.
 func (h *SvcNegStatusHandler) getSvcNegFromStore() (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	n, exists, err := h.svcNEGLister.GetByKey(fmt.Sprintf("%s/%s", h.namespace, h.svcNegName))
 	if err != nil {
@@ -221,21 +240,77 @@ func (h *SvcNegStatusHandler) getSvcNegFromStore() (*negv1beta1.ServiceNetworkEn
 	if !exists {
 		return nil, fmt.Errorf("svcneg %s/%s is not in store", h.namespace, h.svcNegName)
 	}
+	cached := n.(*negv1beta1.ServiceNetworkEndpointGroup)
 
-	return n.(*negv1beta1.ServiceNetworkEndpointGroup), nil
+	last := h.lastPatched.Load()
+	if last == nil || last.UID != cached.UID {
+		// Nothing was patched yet, or the CR has been recreated since.
+		return cached, nil
+	}
+	if err := h.svcNegConsistencyStore.EnsureReady(negtypes.SvcNegRef(h.namespace, h.svcNegName)); err == nil {
+		// The informer has observed every write this controller made to
+		// the CR, so its copy is at least as new as the last patch.
+		h.lastPatched.CompareAndSwap(last, nil)
+		return cached, nil
+	}
+	return last, nil
 }
 
-// patchSvcNegStatus patches the specified SvcNeg status with the provided new status
-func (h *SvcNegStatusHandler) patchSvcNegStatus(oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
-	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
+// patchSvcNegStatusWithRetry patches the status of the SvcNeg CR to the one
+// newStatus computes from current, the CR the handler read.
+//
+// With consistency checking enabled the patch is conditional on the
+// resourceVersion of current (see patchSvcNegStatus). A Conflict then means
+// the CR changed after it was read, and the informer may not have observed
+// that change yet, so the status is recomputed from a live read and the
+// patch is sent again. Without the retry the report would be lost: the
+// syncer only logs a failed status report.
+func (h *SvcNegStatusHandler) patchSvcNegStatusWithRetry(current *negv1beta1.ServiceNetworkEndpointGroup, newStatus func(current *negv1beta1.ServiceNetworkEndpointGroup) negv1beta1.ServiceNetworkEndpointGroupStatus) error {
+	retrying := false
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if retrying {
+			h.logger.V(2).Info("SvcNeg CR changed since it was read, retrying the status patch from a live read")
+			start := time.Now()
+			live, err := h.svcNEGClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(h.namespace).Get(context.Background(), h.svcNegName, metav1.GetOptions{})
+			h.negMetrics.PublishK8sRequestCountMetrics(start, metrics.GetRequest, err)
+			if err != nil {
+				return fmt.Errorf("getting svcneg %s/%s to retry its status patch: %w", h.namespace, h.svcNegName, err)
+			}
+			current = live
+		}
+		retrying = true
+		_, err := h.patchSvcNegStatus(current, newStatus(current))
+		return err
+	})
+}
+
+// patchSvcNegStatus patches the status of the SvcNeg CR from the one in orig,
+// the CR the new status was computed from, to newStatus. With consistency
+// checking enabled, orig's resourceVersion is sent as a precondition so the
+// API server rejects the patch with a Conflict if the CR changed since it
+// was read: a merge patch replaces arrays wholesale, so a patch built from a
+// stale read would otherwise drop newer conditions.
+func (h *SvcNegStatusHandler) patchSvcNegStatus(orig *negv1beta1.ServiceNetworkEndpointGroup, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: orig.Status}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %w", err)
+	}
+	patchBytes, err = patch.AddResourceVersionPrecondition(patchBytes, negtypes.SvcNegPreconditionRV(h.svcNegConsistencyStore, orig))
+	if err != nil {
+		return nil, fmt.Errorf("failed to add resourceVersion precondition: %w", err)
 	}
 
 	start := time.Now()
 	svcNeg, err := h.svcNEGClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(h.namespace).Patch(context.Background(), h.svcNegName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	h.negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
-	return svcNeg, err
+	if err != nil {
+		// The CR this handler last saw may be what made the patch fail,
+		// e.g. on a Conflict, so do not compute the next one from it.
+		h.lastPatched.Store(nil)
+		return svcNeg, err
+	}
+	h.lastPatched.Store(svcNeg)
+	return svcNeg, nil
 }
 
 // ensureCondition will update the condition on the SvcNeg object if necessary

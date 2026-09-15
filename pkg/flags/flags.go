@@ -342,7 +342,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnablePinhole, "enable-pinhole", true, "Enable Pinhole firewall feature")
 	flag.BoolVar(&F.EnableL4ILBDualStack, "enable-l4ilb-dual-stack", true, "Enable Dual-Stack handling for L4 Internal Load Balancers")
 	flag.BoolVar(&F.EnableL4NetLBDualStack, "enable-l4netlb-dual-stack", true, "Enable Dual-Stack handling for L4 External Load Balancers")
-	flag.BoolVar(&F.EnableConsistencyStore, "enable-consistency-store", false, "Enable the consistency store for the L4 controllers: after a controller writes a Service, syncs of that Service are requeued until the informer cache has observed the write.")
+	flag.BoolVar(&F.EnableConsistencyStore, "enable-consistency-store", false, "Enable the consistency store for the L4 and NEG controllers: after a controller writes a Service or a ServiceNetworkEndpointGroup, syncs of that object are requeued until the informer cache has observed the write, and ServiceNetworkEndpointGroup status patches carry a resourceVersion precondition so that one computed from a stale read is rejected.")
 	// StrongSessionAffinity is a restricted feature that is enabled on
 	// allow-listed projects only. If you need access to this feature for your
 	// External L4 Load Balancer, please contact Google Cloud support team.

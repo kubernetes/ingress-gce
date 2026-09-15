@@ -19,6 +19,7 @@ package neg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -27,14 +28,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
@@ -45,8 +49,10 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -57,6 +63,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -186,6 +193,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 }
 
@@ -2624,6 +2632,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create test controller: %v", err)
@@ -2791,6 +2800,7 @@ func TestControllerNEGBinding(t *testing.T) {
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create test controller: %v", err)
@@ -3155,5 +3165,262 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 				t.Errorf("negBindingUpdateRequiresSync() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestClearSvcNegConsistencyRecord covers the handler of the SvcNeg informer
+// delete event: the plain object, the tombstone an informer delivers when
+// the final state is unknown, and the UID that keeps a deletion event for an
+// old incarnation from dropping the record of a CR recreated since. Clearing
+// on the informer event rather than at the delete call sites is what also
+// covers deletions this controller did not perform.
+func TestClearSvcNegConsistencyRecord(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace = "test-ns"
+		negName   = "test-neg"
+	)
+	negCR := &negv1beta1.ServiceNetworkEndpointGroup{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: negName, UID: "neg-uid"}}
+	ref := negtypes.SvcNegRef(namespace, negName)
+
+	for _, tc := range []struct {
+		desc        string
+		deleted     interface{}
+		wantCleared bool
+	}{
+		{
+			desc:        "CR",
+			deleted:     negCR,
+			wantCleared: true,
+		},
+		{
+			desc:        "tombstone",
+			deleted:     cache.DeletedFinalStateUnknown{Key: namespace + "/" + negName, Obj: negCR},
+			wantCleared: true,
+		},
+		{
+			desc:        "old incarnation",
+			deleted:     &negv1beta1.ServiceNetworkEndpointGroup{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: negName, UID: "old-uid"}},
+			wantCleared: false,
+		},
+		{
+			desc:        "unexpected type",
+			deleted:     "not-a-cr",
+			wantCleared: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// A write at 200 that the informer, at 100, has not observed.
+			store, _ := newSvcNegConsistencyStore("100")
+			store.WroteAt(ref, negCR.UID, "200")
+
+			clearSvcNegConsistencyRecord(store, tc.deleted)
+
+			if gotCleared := store.EnsureReady(ref) == nil; gotCleared != tc.wantCleared {
+				t.Errorf("clearSvcNegConsistencyRecord(store, %T): record cleared = %t, want %t", tc.deleted, gotCleared, tc.wantCleared)
+			}
+		})
+	}
+}
+
+// TestClearReplacedSvcNegConsistencyRecord covers the handler of the informer
+// update event, which is how a relist reports a CR that was deleted and
+// recreated while the informer was not watching.
+func TestClearReplacedSvcNegConsistencyRecord(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace   = "test-ns"
+		negName     = "test-neg"
+		recordedUID = types.UID("neg-uid")
+	)
+	newCR := func(uid types.UID) *negv1beta1.ServiceNetworkEndpointGroup {
+		return &negv1beta1.ServiceNetworkEndpointGroup{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: negName, UID: uid}}
+	}
+	ref := negtypes.SvcNegRef(namespace, negName)
+
+	for _, tc := range []struct {
+		desc        string
+		oldObj      interface{}
+		newObj      interface{}
+		wantCleared bool
+	}{
+		{
+			desc:        "recreated under the same name",
+			oldObj:      newCR(recordedUID),
+			newObj:      newCR("new-uid"),
+			wantCleared: true,
+		},
+		{
+			desc:        "same incarnation updated",
+			oldObj:      newCR(recordedUID),
+			newObj:      newCR(recordedUID),
+			wantCleared: false,
+		},
+		{
+			desc:        "record is of the new incarnation",
+			oldObj:      newCR("old-uid"),
+			newObj:      newCR(recordedUID),
+			wantCleared: false,
+		},
+		{
+			desc:        "unexpected type",
+			oldObj:      "not-a-cr",
+			newObj:      newCR("new-uid"),
+			wantCleared: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// A write at 200 that the informer, at 100, has not observed.
+			store, _ := newSvcNegConsistencyStore("100")
+			store.WroteAt(ref, recordedUID, "200")
+
+			clearReplacedSvcNegConsistencyRecord(store, tc.oldObj, tc.newObj)
+
+			if gotCleared := store.EnsureReady(ref) == nil; gotCleared != tc.wantCleared {
+				t.Errorf("clearReplacedSvcNegConsistencyRecord(store, %T, %T): record cleared = %t, want %t", tc.oldObj, tc.newObj, gotCleared, tc.wantCleared)
+			}
+		})
+	}
+}
+
+// alwaysStaleStore is a ConsistencyStore whose informer never catches up.
+type alwaysStaleStore struct {
+	consistency.ConsistencyStore
+}
+
+func (alwaysStaleStore) EnsureReady(ref consistency.ObjectRef) error {
+	return &consistency.ConsistencyError{ObjectRef: ref, Message: "informer cache is stale"}
+}
+
+// TestHandleErrRequeuesStallQuietly drives a stall the way it reaches
+// handleErr in production: out of processService, which aggregates its
+// errors. The stall must be requeued without a warning event on the service.
+func TestHandleErrRequeuesStallQuietly(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("newTestController() = %v, want nil", err)
+	}
+	defer controller.stop()
+	controller.manager.(*syncerManager).svcNegConsistencyStore = alwaysStaleStore{consistency.NewNoopConsistencyStore()}
+	controller.serviceLister.Add(newTestService(controller, false, []int32{80}))
+	key := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+
+	err = controller.processService(key)
+	if !consistency.IsStall(err) {
+		t.Fatalf("processService(%q) with a stale SvcNeg cache = %v, want a consistency stall", key, err)
+	}
+
+	recorder := record.NewFakeRecorder(10)
+	controller.recorder = recorder
+	controller.handleErr(err, key)
+
+	select {
+	case event := <-recorder.Events:
+		t.Errorf("handleErr() of a consistency stall emitted event %q, want none", event)
+	default:
+	}
+	if got := controller.serviceQueue.NumRequeues(key); got != 1 {
+		t.Errorf("NumRequeues(%q) after handleErr() of a consistency stall = %d, want 1", key, got)
+	}
+}
+
+// TestHandleErrReportsStallCombinedWithFailure verifies that a stall does not
+// hide a real failure reported in the same error.
+func TestHandleErrReportsStallCombinedWithFailure(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("newTestController() = %v, want nil", err)
+	}
+	defer controller.stop()
+	controller.serviceLister.Add(newTestService(controller, false, []int32{80}))
+	key := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	recorder := record.NewFakeRecorder(10)
+	controller.recorder = recorder
+
+	stall := &consistency.ConsistencyError{Message: "informer cache is stale"}
+	controller.handleErr(utilerrors.NewAggregate([]error{stall, errors.New("binding failed")}), key)
+
+	wantPrefix := apiv1.EventTypeWarning + " ProcessServiceFailed "
+	select {
+	case event := <-recorder.Events:
+		if !strings.HasPrefix(event, wantPrefix) {
+			t.Errorf("handleErr() of a stall combined with a failure emitted event %q, want prefix %q", event, wantPrefix)
+		}
+	default:
+		t.Errorf("handleErr() of a stall combined with a failure emitted no event, want one with prefix %q", wantPrefix)
+	}
+}
+
+// TestProcessNextServiceWorkItemSkipsMetricsAndEventsOnStall verifies the full
+// worker loop on a consistency stall: processNextServiceWorkItem requeues the
+// service without emitting a warning event, without incrementing controller or
+// manager error metrics, and without recording ErrorNeg in syncerMetrics.
+func TestProcessNextServiceWorkItemSkipsMetricsAndEventsOnStall(t *testing.T) {
+	t.Parallel()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("newTestController() = %v, want nil", err)
+	}
+	defer controller.stop()
+
+	reg := prometheus.NewRegistry()
+	factory := mtmetrics.NewMTMetricFactory("test-stall-metrics", reg, mtmetrics.NewGlobalMetricsTracker())
+	t.Cleanup(factory.Cleanup)
+	negMetrics, err := metrics.NewNegMetricsWithFactory(factory)
+	if err != nil {
+		t.Fatalf("NewNegMetricsWithFactory() = %v, want nil", err)
+	}
+	controller.negMetrics = negMetrics
+	mgr := controller.manager.(*syncerManager)
+	mgr.negMetrics = negMetrics
+	mgr.svcNegConsistencyStore = alwaysStaleStore{consistency.NewNoopConsistencyStore()}
+
+	recorder := record.NewFakeRecorder(10)
+	controller.recorder = recorder
+
+	if err := controller.serviceLister.Add(newTestService(controller, false, []int32{80})); err != nil {
+		t.Fatalf("serviceLister.Add() = %v, want nil", err)
+	}
+	key := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	controller.serviceQueue.Add(key)
+
+	if !controller.processNextServiceWorkItem() {
+		t.Fatal("processNextServiceWorkItem() = false, want true")
+	}
+
+	select {
+	case event := <-recorder.Events:
+		t.Errorf("processNextServiceWorkItem() on stall emitted event %q, want none", event)
+	default:
+	}
+	if got := controller.serviceQueue.NumRequeues(key); got != 1 {
+		t.Errorf("NumRequeues(%q) after stall = %d, want 1", key, got)
+	}
+	if state, ok := controller.syncerMetrics.GetNegService(key); ok {
+		t.Errorf("syncerMetrics.GetNegService(%q) after stall = (%+v, true), want (_, false)", key, state)
+	}
+
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("reg.Gather() = %v, want nil", err)
+	}
+	for _, mf := range mfs {
+		switch mf.GetName() {
+		case "neg_controller_error_count", "neg_controller_manager_process_duration_seconds":
+			if len(mf.GetMetric()) != 0 {
+				t.Errorf("metric %q recorded %d series on a consistency stall, want 0", mf.GetName(), len(mf.GetMetric()))
+			}
+		}
 	}
 }

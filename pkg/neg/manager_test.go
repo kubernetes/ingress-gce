@@ -18,6 +18,7 @@ package neg
 
 import (
 	context2 "context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -37,6 +38,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -57,6 +59,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
@@ -122,6 +125,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		klog.TODO(),
 		metrics.FakeNegMetrics(),
 		false,
+		consistency.NewNoopConsistencyStore(),
 	)
 	return manager, testContext.Cloud, testContext, nil
 }
@@ -2353,6 +2357,7 @@ func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
 			klog.TODO(),
 			metrics.FakeNegMetrics(),
 			wantDrain,
+			consistency.NewNoopConsistencyStore(),
 		)
 
 		key := manager.getSyncerKey("ns", "svc", portKey, portInfo)
@@ -2716,6 +2721,173 @@ func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
 			}
 			if deleted != tc.expectDelete {
 				t.Errorf("NEG deleted = %v, want %v", deleted, tc.expectDelete)
+			}
+		})
+	}
+}
+
+// newSvcNegConsistencyStore returns a real ConsistencyStore for SvcNeg CRs,
+// wired to a fake informer store whose ResourceVersion the test controls.
+func newSvcNegConsistencyStore(rv string) (consistency.ConsistencyStore, *consistency.FakeRVGetter) {
+	getter := consistency.NewFakeRVGetter(rv)
+	store := consistency.NewConsistencyStore(map[schema.GroupResource]consistency.LastSyncRVGetter{
+		negtypes.SvcNegGroupResource: getter,
+	}, klog.TODO())
+	return store, getter
+}
+
+// TestEnsureSvcNegCRStallsOnStaleCache covers the gate in ensureSvcNegCR:
+// while the informer has not observed a write this controller made to the
+// CR, it must report a consistency stall rather than decide create-vs-update
+// from a stale read, and it must proceed once the informer has caught up.
+func TestEnsureSvcNegCRStallsOnStaleCache(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace = "test-ns"
+		svcName   = "test-svc"
+		negName   = "test-neg"
+	)
+	manager, _, testContext, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("NewTestSyncerManager() = %v, want nil", err)
+	}
+	// The informer has observed ResourceVersion 100.
+	store, getter := newSvcNegConsistencyStore("100")
+	manager.svcNegConsistencyStore = store
+	// Stand in for the informer once it has caught up: make a created CR
+	// visible in the lister, so that ensureSvcNegCR does not wait for it.
+	testContext.SvcNegClient.(*negfake.Clientset).PrependReactor("create", "servicenetworkendpointgroups", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		cr := action.(k8stesting.CreateAction).GetObject().(*negv1beta1.ServiceNetworkEndpointGroup)
+		return false, nil, manager.svcNegLister.Add(cr)
+	})
+
+	svc := &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: svcName, UID: "svc-uid"}}
+	if err := testContext.ServiceInformer.GetIndexer().Add(svc); err != nil {
+		t.Fatalf("adding the service to the informer = %v, want nil", err)
+	}
+	svcKey := serviceKey{namespace: namespace, name: svcName}
+	portInfo := negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Port: 80}, NegName: negName}
+	svcNegs := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace)
+
+	// A write at 200 that the informer has not observed. The lister has no
+	// such CR, so without the gate this would be taken for a missing CR.
+	store.WroteAt(negtypes.SvcNegRef(namespace, negName), "neg-uid", "200")
+	if err := manager.ensureSvcNegCR(svcKey, portInfo); !consistency.IsStall(err) {
+		t.Fatalf("ensureSvcNegCR() before the informer observed the write = %v, want a consistency stall", err)
+	}
+	if _, err := svcNegs.Get(context2.TODO(), negName, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("Get(%q) after a stalled ensureSvcNegCR() = %v, want NotFound: the CR must not be created from a stale read", negName, err)
+	}
+
+	getter.SetRV("200")
+	if err := manager.ensureSvcNegCR(svcKey, portInfo); err != nil {
+		t.Fatalf("ensureSvcNegCR() after the informer observed the write = %v, want nil", err)
+	}
+	if _, err := svcNegs.Get(context2.TODO(), negName, metav1.GetOptions{}); err != nil {
+		t.Errorf("Get(%q) after ensureSvcNegCR() = %v, want the CR to have been created", negName, err)
+	}
+}
+
+func TestGarbageCollectSendsPreconditionWhenConsistencyEnabled(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name                string
+		enabled             bool
+		wantResourceVersion string
+	}{
+		{
+			name:                "consistency_enabled",
+			enabled:             true,
+			wantResourceVersion: "150",
+		},
+		{
+			name:                "consistency_disabled",
+			enabled:             false,
+			wantResourceVersion: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			manager, testCloud, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("NewTestSyncerManager() = %v, want nil", err)
+			}
+			if tc.enabled {
+				manager.svcNegConsistencyStore, _ = newSvcNegConsistencyStore("150")
+			} else {
+				manager.svcNegConsistencyStore = consistency.NewNoopConsistencyStore()
+			}
+
+			svc := &v1.Service{
+				TypeMeta:   metav1.TypeMeta{Kind: "Service", APIVersion: "v1"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName, UID: "svc-uid"},
+			}
+			if err := manager.serviceLister.Add(svc); err != nil {
+				t.Fatalf("serviceLister.Add() = %v, want nil", err)
+			}
+
+			const port80 = int32(80)
+			negName := manager.namer.NEG(testServiceNamespace, testServiceName, port80)
+			desc := (&utils.StandardNEGDescription{
+				ClusterUID:  KubeSystemUID,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
+				Port:        fmt.Sprint(port80),
+			}).String()
+			zones := []string{negtypes.TestZone1, negtypes.TestZone2}
+			for _, zone := range zones {
+				if err := manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+					Version:             meta.VersionGA,
+					Name:                negName,
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					Description:         desc,
+				}, zone, klog.TODO()); err != nil {
+					t.Fatalf("CreateNetworkEndpointGroup(%q, %q) = %v, want nil", negName, zone, err)
+				}
+			}
+			// Fail deletion in TestZone1 so TestZone2 is deleted while the SvcNeg CR
+			// remains alive and GC patches Status.NetworkEndpointGroups via patchNegStatus.
+			mockNEG := testCloud.Compute().(*cloud.MockGCE).NetworkEndpointGroups().(*cloud.MockNetworkEndpointGroups)
+			mockNEG.DeleteError[*meta.ZonalKey(negName, negtypes.TestZone1)] = fmt.Errorf("neg-gc-error")
+
+			cr := createNegCR(svc, serviceKey{namespace: testServiceNamespace, name: testServiceName}, negtypes.PortInfo{
+				PortTuple: negtypes.SvcPortTuple{Port: port80},
+				NegName:   negName,
+			})
+			cr.ResourceVersion = "150"
+			cr.Status.NetworkEndpointGroups = getNegObjectRefs(t, manager.cloud, zones, negName, meta.VersionGA)
+
+			svcNegFake := manager.svcNegClient.(*negfake.Clientset)
+			if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(t.Context(), &cr, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("ServiceNetworkEndpointGroups.Create() = %v, want nil", err)
+			}
+			populateSvcNegCache(t, manager, manager.svcNegClient, testServiceNamespace)
+
+			var gotPatch []byte
+			svcNegFake.PrependReactor("patch", "servicenetworkendpointgroups", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				gotPatch = action.(k8stesting.PatchAction).GetPatch()
+				return false, nil, nil
+			})
+
+			if err := manager.GC(); err == nil {
+				t.Fatal("GC() = nil, want error from TestZone1 deletion failure")
+			}
+			if len(gotPatch) == 0 {
+				t.Fatal("GC() sent no SvcNeg status patch, want one clearing the deleted NEG ref")
+			}
+			var decoded struct {
+				Metadata struct {
+					ResourceVersion string `json:"resourceVersion"`
+				} `json:"metadata"`
+			}
+			if err := json.Unmarshal(gotPatch, &decoded); err != nil {
+				t.Fatalf("json.Unmarshal(%s) = %v, want nil", gotPatch, err)
+			}
+			if decoded.Metadata.ResourceVersion != tc.wantResourceVersion {
+				t.Errorf("GC() status patch metadata.resourceVersion = %q, want %q", decoded.Metadata.ResourceVersion, tc.wantResourceVersion)
 			}
 		})
 	}
