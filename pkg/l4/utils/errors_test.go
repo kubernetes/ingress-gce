@@ -123,6 +123,54 @@ func TestIsConstraintViolationError(t *testing.T) {
 	}
 }
 
+func TestIsInternalForwardingRuleQuotaExceededError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "internal forwarding rule quota exceeded",
+			err: &googleapi.Error{
+				Code:    http.StatusForbidden,
+				Message: "QUOTA_EXCEEDED - Quota 'INTERNAL_FORWARDING_RULES_PER_NETWORK' exceeded.  Limit: 500.0 globally.",
+			},
+			want: true,
+		},
+		{
+			desc: "different quota exceeded",
+			err: &googleapi.Error{
+				Code:    http.StatusForbidden,
+				Message: "QUOTA_EXCEEDED - Quota 'CPUS' exceeded.  Limit: 24.0 in region us-central1.",
+			},
+			want: false,
+		},
+		{
+			desc: "permission denied is also 403",
+			err: &googleapi.Error{
+				Code:    http.StatusForbidden,
+				Message: "Required 'compute.forwardingRules.create' permission",
+			},
+			want: false,
+		},
+		{
+			desc: "quota text without a 403 is not a quota error",
+			err:  fmt.Errorf("QUOTA_EXCEEDED - Quota 'INTERNAL_FORWARDING_RULES_PER_NETWORK' exceeded."),
+			want: false,
+		},
+		{desc: "non-googleapi error", err: fmt.Errorf("some other error"), want: false},
+		{desc: "nil", err: nil, want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsInternalForwardingRuleQuotaExceededError(tc.err); got != tc.want {
+				t.Errorf("IsInternalForwardingRuleQuotaExceededError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestIsIPOutOfRangeError(t *testing.T) {
 	testCases := []struct {
 		desc string

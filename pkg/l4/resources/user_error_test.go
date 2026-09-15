@@ -64,6 +64,13 @@ func TestIsUserError(t *testing.T) {
 			want: true,
 		},
 		{
+			err: &googleapi.Error{
+				Code:    http.StatusForbidden,
+				Message: "QUOTA_EXCEEDED - Quota 'INTERNAL_FORWARDING_RULES_PER_NETWORK' exceeded.  Limit: 500.0 globally.",
+			},
+			want: true,
+		},
+		{
 
 			err:  &googleapi.Error{Code: 400, Message: "Requested internal IP address is outside the network/subnetwork range"},
 			want: true,

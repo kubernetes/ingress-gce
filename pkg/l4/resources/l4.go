@@ -712,6 +712,10 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
+		if l4utils.IsInternalForwardingRuleQuotaExceededError(err) {
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "QuotaExceeded",
+				"Quota 'INTERNAL_FORWARDING_RULES_PER_NETWORK' exceeded. Request a quota increase for the load balancer to be provisioned.")
+		}
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = err
 		return

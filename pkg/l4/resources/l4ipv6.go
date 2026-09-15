@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
@@ -43,6 +44,10 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 	syncResult.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv6Resources: Failed to ensure ipv6 forwarding rule")
+		if l4utils.IsInternalForwardingRuleQuotaExceededError(err) {
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeWarning, "QuotaExceeded",
+				"Quota 'INTERNAL_FORWARDING_RULES_PER_NETWORK' exceeded. Request a quota increase for the load balancer to be provisioned.")
+		}
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
 		syncResult.Error = err
 		return
