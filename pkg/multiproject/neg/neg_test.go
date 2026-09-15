@@ -14,6 +14,7 @@ import (
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	"k8s.io/ingress-gce/pkg/neg"
@@ -91,6 +92,7 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 	// Stub newNEGController to capture the stopCh passed in and to construct a minimal controller
 	// that can run without panics.
 	var capturedStopCh <-chan struct{}
+	var capturedStore consistency.ConsistencyStore
 	orig := newNEGController
 	newNEGController = func(kc kubernetes.Interface, sc svcnegclient.Interface, nbc negbindingclient.Interface, ec kubernetes.Interface, uid types.UID,
 		ing cache.SharedIndexInformer, svc cache.SharedIndexInformer, pod cache.SharedIndexInformer, node cache.SharedIndexInformer,
@@ -101,10 +103,18 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 		stopCh <-chan struct{}, l klog.Logger, negMetrics *metrics.NegMetrics, syncerMetrics *syncMetrics.SyncerMetrics,
 		consistencyStore consistency.ConsistencyStore) (*neg.Controller, error) {
 		capturedStopCh = stopCh
+		capturedStore = consistencyStore
 		return neg.NewController(kc, sc, nbc, ec, uid, ing, svc, pod, node, es, sn, nbi, netInf, gke, nt, synced, l4, defSP, cloud, zg, nm,
 			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, enableNEGBinding, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics, consistencyStore)
 	}
 	t.Cleanup(func() { newNEGController = orig })
+
+	// The controller must receive a functioning consistency store when the
+	// flag is on; StartNEGController builds it from the per-ProviderConfig
+	// filtered SvcNeg informer.
+	oldFlag := flags.F.EnableConsistencyStore
+	flags.F.EnableConsistencyStore = true
+	t.Cleanup(func() { flags.F.EnableConsistencyStore = oldFlag })
 
 	testCases := []struct {
 		name string
@@ -147,6 +157,9 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 
 			if capturedStopCh == nil {
 				t.Fatalf("capturedStopCh is nil; stub did not run")
+			}
+			if capturedStore == nil || consistency.IsNoop(capturedStore) {
+				t.Errorf("controller received store %v with --enable-consistency-store on, want a functioning consistency store", capturedStore)
 			}
 			select {
 			case <-capturedStopCh:
