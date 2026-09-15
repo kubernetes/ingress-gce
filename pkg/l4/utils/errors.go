@@ -108,6 +108,16 @@ func IsConstraintViolationError(err error) bool {
 	return gceutils.IsHTTPErrorCode(err, http.StatusPreconditionFailed) && strings.Contains(err.Error(), "Constraint") && strings.Contains(err.Error(), "violated")
 }
 
+// IsInternalForwardingRuleQuotaExceededError checks if the error is an internal forwarding rule quota exceeded error returned by GCP.
+func IsInternalForwardingRuleQuotaExceededError(err error) bool {
+	if !gceutils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "QUOTA_EXCEEDED") &&
+		strings.Contains(errStr, "INTERNAL_FORWARDING_RULES_PER_NETWORK")
+}
+
 // IsIPConfigurationError checks if wrapped error is an IP configuration error.
 func IsIPConfigurationError(err error) bool {
 	var ipConfigError *IPConfigurationError
