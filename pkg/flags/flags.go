@@ -150,6 +150,8 @@ var F = struct {
 	EnableIPV6OnlyNEG                           bool
 	MultiProjectOwnerLabelKey                   string
 	OverrideHealthCheckSourceCIDRs              string
+	OverrideL4ILBHealthCheckSourceCIDRs         string
+	OverrideL4NetLBHealthCheckSourceCIDRs       string
 	ManageL4LBLogging                           bool
 	EnableNEGsForIngress                        bool
 	L4ILBLegacyHeadStartTime                    time.Duration
@@ -374,6 +376,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
 	flag.StringVar(&F.OverrideHealthCheckSourceCIDRs, "override-health-check-src-cidrs", "", "Overrides the default source IP ranges used when configuring firewall rules to allow health check probes for L7 load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-health-check-src-cidrs=130.211.0.0/22,35.191.0.0/16")
+	flag.StringVar(&F.OverrideL4ILBHealthCheckSourceCIDRs, "override-l4-ilb-health-check-src-cidrs", "", "Overrides the default source IPv4/v6 ranges used when configuring firewall rules to allow health check probes for L4 ILB load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-l4-ilb-health-check-src-cidrs=35.191.192.0/18,2600:2d00:1:b029:0:2b::/96")
+	flag.StringVar(&F.OverrideL4NetLBHealthCheckSourceCIDRs, "override-l4-netlb-health-check-src-cidrs", "", "Overrides the default source IPv4/v6 ranges used when configuring firewall rules to allow health check probes for L4 NetLB load balancers. Provide the ranges as a comma-separated list of CIDRs. Example: --override-l4-netlb-health-check-src-cidrs=209.85.204.0/22,2600:1901:8001::/48")
 	flag.BoolVar(&F.ManageL4LBLogging, "manage-l4lb-logging", false, "Manage L4 ILB/NetLB logging.")
 	flag.BoolVar(&F.ReadOnlyMode, "read-only-controllers", false, "When enabled, this flag runs the IG, NEG, L4 ILB, and L4 NetLB controllers in a read-only mode. This prevents them from executing any mutating API calls (e.g., create, update, delete), allowing you to safely observe controller behavior without modifying resources. The Ingress controller is exempt from this mode.")
 	flag.BoolVar(&F.EnableNEGsForIngress, "enable-negs-for-ingress", true, "Allow the NEG controller to create NEGs for Ingress services.")
@@ -399,6 +403,12 @@ func Validate() {
 
 	if err := validation.ValidateHealthCheckSourceCIDRs(F.OverrideHealthCheckSourceCIDRs); err != nil {
 		klog.Fatalf("Invalid --override-health-check-src-cidrs flag: %v", err)
+	}
+	if err := validation.ValidateHealthCheckSourceCIDRs(F.OverrideL4ILBHealthCheckSourceCIDRs); err != nil {
+		klog.Fatalf("Invalid --override-l4-ilb-health-check-src-cidrs flag: %v", err)
+	}
+	if err := validation.ValidateHealthCheckSourceCIDRs(F.OverrideL4NetLBHealthCheckSourceCIDRs); err != nil {
+		klog.Fatalf("Invalid --override-l4-netlb-health-check-src-cidrs flag: %v", err)
 	}
 
 	if F.EnableL4DenyFirewall && (!F.EnablePinhole || !F.EnableL4DenyFirewallRollbackCleanup) {
