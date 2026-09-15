@@ -306,36 +306,43 @@ func (lc *StandaloneNEGLBController) forwardingRule(frRawName string, key *meta.
 }
 
 // validateLoadBalancer ensures that its forwarding rule and backend services are valid.
-func (lc *StandaloneNEGLBController) validateLoadBalancer(parsedFR parsedForwardingRule, targetNEGs sets.Set[cloud.ResourceMapKey], bsValidationCache map[string]error, svcLogger klog.Logger) (addresses []string, scheme string, err error) {
+func (lc *StandaloneNEGLBController) validateLoadBalancer(parsedFR parsedForwardingRule, targetNEGs sets.Set[cloud.ResourceMapKey], bsValidationCache map[string]error, bsCache map[string]*composite.BackendService, svcLogger klog.Logger) (addresses []string, scheme string, bs *composite.BackendService, err error) {
 	fr, err := lc.forwardingRule(parsedFR.rawName, parsedFR.key, svcLogger)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	if err := validateForwardingRule(fr, parsedFR.rawName); err != nil {
 		svcLogger.Error(err, "invalid forwarding rule", "frName", parsedFR.rawName)
-		return nil, fr.LoadBalancingScheme, l4utils.NewUserError(err)
+		return nil, fr.LoadBalancingScheme, nil, l4utils.NewUserError(err)
 	}
 
 	bsURL := fr.BackendService
 	var bsErr error
 	if cachedErr, ok := bsValidationCache[bsURL]; ok {
 		bsErr = cachedErr
+		if bsErr == nil {
+			bs = bsCache[bsURL]
+		}
 	} else {
-		bs, resourceID, err := lc.backendService(fr, svcLogger)
+		var resourceID *cloud.ResourceID
+		bs, resourceID, err = lc.backendService(fr, svcLogger)
 		if err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		bsErr = lc.validateBackendService(bs, resourceID, targetNEGs, svcLogger)
 		bsValidationCache[bsURL] = bsErr
+		if bsErr == nil {
+			bsCache[bsURL] = bs
+		}
 	}
 	if bsErr != nil {
-		errWithContext := fmt.Errorf("forwarding rule %s: %w", parsedFR.rawName, bsErr)
+		errWithContext := fmt.Errorf("backend service %s validation failed: %w", bsURL, bsErr)
 		svcLogger.Error(errWithContext, "invalid backend service for forwarding rule", "frName", parsedFR.rawName, "bsURL", bsURL)
-		return nil, fr.LoadBalancingScheme, errWithContext
+		return nil, fr.LoadBalancingScheme, nil, errWithContext
 	}
 
-	return frAddresses(fr), fr.LoadBalancingScheme, nil
+	return frAddresses(fr), fr.LoadBalancingScheme, bs, nil
 }
 
 func (lc *StandaloneNEGLBController) backendService(fr *composite.ForwardingRule, svcLogger klog.Logger) (*composite.BackendService, *cloud.ResourceID, error) {
@@ -363,6 +370,17 @@ func (lc *StandaloneNEGLBController) backendService(fr *composite.ForwardingRule
 	return bs, resourceID, nil
 }
 
+// parseHCURL parses the name and region of a health check from its SelfLink, e.g.
+// https://www.googleapis.com/compute/VERSION/projects/PROJECT/regions/REGION/healthChecks/NAME
+func parseHCURL(hcPath string) (string, string, error) {
+	parts := strings.Split(hcPath, "/")
+	n := len(parts)
+	if n < 4 || parts[n-2] != "healthChecks" || parts[n-1] == "" || parts[n-4] != "regions" || parts[n-3] == "" {
+		return "", "", fmt.Errorf("invalid health check SelfLink %s", hcPath)
+	}
+	return parts[n-1], parts[n-3], nil
+}
+
 func (lc *StandaloneNEGLBController) validateBackendService(bs *composite.BackendService, resourceID *cloud.ResourceID, targetNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) error {
 	if !backendServiceHasNEGAttached(bs, targetNEGs) {
 		return l4utils.NewUserError(l4utils.NewBackendNotAttachedError(resourceID.Key.Name))
@@ -371,20 +389,24 @@ func (lc *StandaloneNEGLBController) validateBackendService(bs *composite.Backen
 	return nil
 }
 
-func (lc *StandaloneNEGLBController) healthCheckPort(bs *composite.BackendService, svc *v1.Service, svcLogger klog.Logger) string {
+func (lc *StandaloneNEGLBController) healthCheckPort(bs *composite.BackendService, svc *v1.Service, svcLogger klog.Logger) (string, error) {
 	hcs := bs.HealthChecks
 	// Currently, at most one health check can be specified for each backend service.
 	if len(hcs) == 0 {
-		return ""
+		return "", nil
 	}
-	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcs[0], bs.Region), meta.VersionBeta, svcLogger)
+	hcName, hcRegion, err := parseHCURL(hcs[0])
+	if err != nil {
+		return "", err
+	}
+
+	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, hcRegion), meta.VersionBeta, svcLogger)
 	if err != nil || hc.Type != "HTTP" {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoHTTPHealthChecks", "Backend service has no HTTP health checks")
 		svcLogger.V(4).Info(fmt.Sprintf("Backend Service %s has no HTTP health checks", bs.Name))
-		svcLogger.Info(fmt.Sprintf("errr: %v", err))
-		return ""
+		return "", err
 	}
-	return fmt.Sprintf("%d", hc.HttpHealthCheck.Port)
+	return fmt.Sprintf("%d", hc.HttpHealthCheck.Port), nil
 }
 
 // backendServiceHasNEGAttached checks if the backend service has any of
@@ -520,10 +542,11 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 
 	bsValidationCache := make(map[string]error)
+	bsCache := make(map[string]*composite.BackendService)
 	var healthCheckAddrs []string
 
 	for _, parsed := range parsedRules {
-		addresses, lbScheme, err := lc.validateLoadBalancer(parsed, targetNEGs, bsValidationCache, svcLogger)
+		addresses, lbScheme, bs, err := lc.validateLoadBalancer(parsed, targetNEGs, bsValidationCache, bsCache, svcLogger)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -534,12 +557,10 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		}
 		schemes.Insert(lbScheme)
 
-		fr, err := lc.forwardingRule(parsed.rawName, parsed.key, svcLogger)
+		hcPort, err := lc.healthCheckPort(bs, svc, svcLogger)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
 		}
-		bs, _, err := lc.backendService(fr, svcLogger)
-		hcPort := lc.healthCheckPort(bs, svc, svcLogger)
 
 		for _, a := range addresses {
 			if a == "" {
