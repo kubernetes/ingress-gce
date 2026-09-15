@@ -71,6 +71,33 @@ func MergePatchBytes(old, cur interface{}) ([]byte, error) {
 	return patchBytes, nil
 }
 
+// AddResourceVersionPrecondition returns patchBytes with
+// metadata.resourceVersion set to resourceVersion. The API server treats a
+// resourceVersion carried in a merge patch as a precondition and rejects the
+// patch with a Conflict if the object has changed since it was read, so a
+// patch computed from a stale read fails instead of overwriting a newer
+// write. An empty resourceVersion returns the patch unchanged, leaving it
+// unconditional.
+func AddResourceVersionPrecondition(patchBytes []byte, resourceVersion string) ([]byte, error) {
+	if resourceVersion == "" {
+		return patchBytes, nil
+	}
+	var patch map[string]interface{}
+	if err := json.Unmarshal(patchBytes, &patch); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal patch: %v", err)
+	}
+	if patch == nil {
+		patch = map[string]interface{}{}
+	}
+	metadata, ok := patch["metadata"].(map[string]interface{})
+	if !ok {
+		metadata = map[string]interface{}{}
+		patch["metadata"] = metadata
+	}
+	metadata["resourceVersion"] = resourceVersion
+	return json.Marshal(patch)
+}
+
 // PatchServiceObjectMetadata patches the given service's metadata based on new
 // service metadata. On success it returns the service as stored by the API
 // server, including its updated ResourceVersion; on error the returned service

@@ -340,6 +340,12 @@ func TestNoopConsistencyStore(t *testing.T) {
 	t.Parallel()
 
 	store := NewNoopConsistencyStore()
+	if !IsNoop(store) {
+		t.Errorf("IsNoop(NewNoopConsistencyStore()) = false, want true")
+	}
+	if realStore, _ := newTestStore("100"); IsNoop(realStore) {
+		t.Errorf("IsNoop(NewConsistencyStore(...)) = true, want false")
+	}
 	ref := svcRef("ns", "svc")
 	store.WroteAt(ref, "uid-1", "100")
 	if err := store.EnsureReady(ref); err != nil {
