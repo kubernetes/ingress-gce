@@ -55,6 +55,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
 )
@@ -175,6 +176,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 }
 
@@ -2576,6 +2578,7 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create test controller: %v", err)
@@ -2739,6 +2742,7 @@ func TestControllerNEGBinding(t *testing.T) {
 		klog.TODO(),
 		testContext.NegMetrics,
 		metricscollector.FakeSyncerMetrics(),
+		consistency.NewNoopConsistencyStore(),
 	)
 	if err != nil {
 		t.Fatalf("failed to create test controller: %v", err)

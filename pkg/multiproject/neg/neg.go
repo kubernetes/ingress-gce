@@ -21,6 +21,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -207,6 +208,10 @@ func createNEGController(
 		logger,
 		negMetrics,
 		syncerMetrics,
+		// TODO: the multi-project NEG controller runs against per-project
+		// informers that are created here rather than in ControllerContext,
+		// so it does not yet participate in the consistency store.
+		consistency.NewNoopConsistencyStore(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)

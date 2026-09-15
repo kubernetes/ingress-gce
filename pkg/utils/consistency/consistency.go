@@ -212,6 +212,14 @@ var _ ConsistencyStore = &noopConsistencyStore{}
 // in tests.
 func NewNoopConsistencyStore() ConsistencyStore { return &noopConsistencyStore{} }
 
+// IsNoop reports whether store is the no-op store, i.e. whether consistency
+// checking is disabled. Callers use it to fall back to older mitigations
+// that a functioning store replaces.
+func IsNoop(store ConsistencyStore) bool {
+	_, ok := store.(*noopConsistencyStore)
+	return ok
+}
+
 func (n *noopConsistencyStore) EnsureReady(ref ObjectRef) error                              { return nil }
 func (n *noopConsistencyStore) WroteAt(ref ObjectRef, uid types.UID, resourceVersion string) {}
 func (n *noopConsistencyStore) Clear(ref ObjectRef, uid types.UID)                           {}

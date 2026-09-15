@@ -818,6 +818,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		logger,
 		negMetrics,
 		syncerMetrics,
+		negtypes.NewSvcNegConsistencyStore(ctx.SvcNegInformer, logger),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)

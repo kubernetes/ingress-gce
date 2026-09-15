@@ -27,6 +27,7 @@ import (
 	svcnegfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	klog "k8s.io/klog/v2"
@@ -97,10 +98,11 @@ func TestStartNEGController_StopJoin(t *testing.T) {
 		synced func() bool, l4 namer.L4ResourcesNamer, defSP utils.ServicePort, cloud negtypes.NetworkEndpointGroupCloud, zg *zonegetter.ZoneGetter, nm negtypes.NetworkEndpointGroupNamer,
 		resync time.Duration, gc time.Duration, workers int, enableRR bool, runL4 bool, nonGCP bool, dualStack bool, lp labels.PodLabelPropagationConfig,
 		multiNetworking bool, ingressRegional bool, runNetLB bool, readOnly bool, enableNEGsForIngress bool, enableNEGBinding bool, includeDrainNodesL4Local bool,
-		stopCh <-chan struct{}, l klog.Logger, negMetrics *metrics.NegMetrics, syncerMetrics *syncMetrics.SyncerMetrics) (*neg.Controller, error) {
+		stopCh <-chan struct{}, l klog.Logger, negMetrics *metrics.NegMetrics, syncerMetrics *syncMetrics.SyncerMetrics,
+		consistencyStore consistency.ConsistencyStore) (*neg.Controller, error) {
 		capturedStopCh = stopCh
 		return neg.NewController(kc, sc, nbc, ec, uid, ing, svc, pod, node, es, sn, nbi, netInf, gke, nt, synced, l4, defSP, cloud, zg, nm,
-			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, enableNEGBinding, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics)
+			resync, gc, workers, enableRR, runL4, nonGCP, dualStack, lp, multiNetworking, ingressRegional, runNetLB, readOnly, enableNEGsForIngress, enableNEGBinding, includeDrainNodesL4Local, stopCh, l, negMetrics, syncerMetrics, consistencyStore)
 	}
 	t.Cleanup(func() { newNEGController = orig })
 

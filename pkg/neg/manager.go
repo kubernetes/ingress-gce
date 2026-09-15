@@ -49,6 +49,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -78,6 +79,9 @@ type syncerManager struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	svcNegLister        cache.Indexer
+	// consistencyStore gates reads of SvcNeg CRs on the informer having
+	// observed this controller's own writes to them.
+	consistencyStore consistency.ConsistencyStore
 
 	// TODO: lock per service instead of global lock
 	mu sync.Mutex
@@ -149,7 +153,8 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger,
 	negMetrics *metrics.NegMetrics,
-	includeDrainNodesL4Local bool) *syncerManager {
+	includeDrainNodesL4Local bool,
+	consistencyStore consistency.ConsistencyStore) *syncerManager {
 
 	var vmIpPortZoneMap map[string]struct{}
 	updateZoneMap(&vmIpPortZoneMap, negtypes.NodeFilterForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger, negMetrics)
@@ -165,6 +170,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		serviceLister:              serviceLister,
 		endpointSliceLister:        endpointSliceLister,
 		svcNegLister:               svcNegLister,
+		consistencyStore:           consistencyStore,
 		svcPortMap:                 make(map[serviceKey]negtypes.PortInfoMap),
 		svcPreprovisioningZonesMap: make(map[serviceKey]sets.String),
 		syncerMap:                  make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
@@ -281,6 +287,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					portInfo.NetworkInfo,
 					manager.zoneGetter,
 					manager.negMetrics,
+					manager.consistencyStore,
 					manager.logger,
 				)
 
@@ -886,6 +893,12 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	}
 
 	svcnegKey := fmt.Sprintf("%s/%s", svcKey.namespace, portInfo.NegName)
+	// Do not decide create-vs-update from a cache that has not yet observed
+	// this controller's own writes: a stale miss would retry the create and
+	// a stale hit would build the update from an outdated CR.
+	if err := manager.consistencyStore.EnsureReady(negtypes.SvcNegRef(svcKey.namespace, portInfo.NegName)); err != nil {
+		return err
+	}
 	obj, exists, err = manager.svcNegLister.GetByKey(svcnegKey)
 	if err != nil {
 		return fmt.Errorf("Error retrieving existing negs: %s", err)
@@ -899,20 +912,27 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		if err != nil {
 			return err
 		}
-
-		// Try to wait until svneg becomes available in the local svcNegLister
-		waitTime := 5 * time.Second
-		pollErr := wait.PollUntilContextTimeout(context.Background(), 200*time.Millisecond, waitTime, true, func(ctx context.Context) (bool, error) {
-			_, newObjExists, getErr := manager.svcNegLister.GetByKey(svcnegKey)
-			if newObjExists {
-				return true, nil
+		if consistency.IsNoop(manager.consistencyStore) {
+			// With the consistency store disabled the next sync has
+			// nothing to stall on, so keep the old behavior: wait here
+			// until the CR appears in the local store.
+			waitTime := 5 * time.Second
+			pollErr := wait.PollUntilContextTimeout(context.Background(), 200*time.Millisecond, waitTime, true, func(ctx context.Context) (bool, error) {
+				_, newObjExists, getErr := manager.svcNegLister.GetByKey(svcnegKey)
+				if newObjExists {
+					return true, nil
+				}
+				return false, getErr
+			})
+			if pollErr != nil {
+				// not a flow blocking error, still can proceed with the reconciliation loop
+				manager.logger.Error(pollErr, fmt.Sprintf("Timed out (%s) waiting for svcneg to be available in the local store", waitTime), "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName), "service", svcKey.Key())
 			}
-			return false, getErr
-		})
-		if pollErr != nil {
-			// not a flow blocking error, still can proceed with the reconciliation loop
-			manager.logger.Error(pollErr, fmt.Sprintf("Timed out (%s) waiting for svcneg to be available in the local store", waitTime), "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName), "service", svcKey.Key())
+			return nil
 		}
+		// With the store enabled the recording client noted the create's
+		// ResourceVersion, so the next sync stalls on EnsureReady until
+		// the informer has caught up instead of this one sleeping for it.
 		return nil
 	}
 	negCR := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
@@ -993,6 +1013,15 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1bet
 	patchBytes, err := patch.MergePatchBytes(oldNeg, newNeg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
+	}
+	// A merge patch replaces arrays wholesale, so one computed from a stale
+	// read would drop newer conditions. The consistency store keeps this
+	// controller from patching over its own unobserved writes; the
+	// resourceVersion precondition makes the API server reject a patch
+	// built from a read that is stale for any other reason.
+	patchBytes, err = patch.AddResourceVersionPrecondition(patchBytes, oldNeg.ResourceVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add resourceVersion precondition: %s", err)
 	}
 	start := time.Now()
 	neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(oldNeg.Namespace).Patch(context.Background(), oldNeg.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
