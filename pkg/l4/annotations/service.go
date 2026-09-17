@@ -114,6 +114,9 @@ const (
 	// IPCollectionV6AnnotationKey is the annotation key for BYOIP IPv6 IP collection.
 	// The value of this annotation must be a full resource URL.
 	IPCollectionV6AnnotationKey = "networking.gke.io/ip-collection-v6"
+
+	// ExternalHealthCheckKey is the annotation key for external healthcheck addressess for Standalone NEG LB.
+	ExternalHealthCheckKey = "networking.gke.io/external-hc"
 )
 
 // Service represents Service annotations.
