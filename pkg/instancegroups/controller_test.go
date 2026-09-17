@@ -2,6 +2,7 @@ package instancegroups
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -164,7 +165,7 @@ func TestSync(t *testing.T) {
 	fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), secondNode, meta_v1.CreateOptions{})
 	// The counter = 1 because it synced only once (for the first Create() call)
 	expectedSyncedNodesCounter += 1
-	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
+	verifyExpectedSyncerCount(t, fakeManager.getSyncedNodes(), expectedSyncedNodesCounter)
 
 	// Update both nodes
 	firstNode.Annotations["key"] = "true"
@@ -175,13 +176,13 @@ func TestSync(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	// nodes were updated
 	expectedSyncedNodesCounter += 1
-	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
+	verifyExpectedSyncerCount(t, fakeManager.getSyncedNodes(), expectedSyncedNodesCounter)
 
 	// no real update
 	fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), firstNode, meta_v1.UpdateOptions{})
 	// Nothing should change
 	time.Sleep(2 * time.Second)
-	verifyExpectedSyncerCount(t, fakeManager.syncedNodes, expectedSyncedNodesCounter)
+	verifyExpectedSyncerCount(t, fakeManager.getSyncedNodes(), expectedSyncedNodesCounter)
 }
 
 func verifyExpectedSyncerCount(t *testing.T, syncedNodes [][]string, expectedCount int) {
@@ -191,24 +192,41 @@ func verifyExpectedSyncerCount(t *testing.T, syncedNodes [][]string, expectedCou
 }
 
 type IGManagerFake struct {
+	// mu guards syncedNodes, which is written by the controller's queue
+	// goroutine and read by the test goroutine.
+	mu          sync.Mutex
 	syncedNodes [][]string
 }
 
+func (igmf *IGManagerFake) getSyncedNodes() [][]string {
+	igmf.mu.Lock()
+	defer igmf.mu.Unlock()
+	return append([][]string{}, igmf.syncedNodes...)
+}
+
 func (igmf *IGManagerFake) Sync(nodeNames []string, logger klog.Logger) error {
+	igmf.mu.Lock()
+	defer igmf.mu.Unlock()
 	igmf.syncedNodes = append(igmf.syncedNodes, nodeNames)
 	return nil
 }
 
 func (igmf *IGManagerFake) InstanceGroupsExist(name string, logger klog.Logger) (exist bool, err error) {
+	igmf.mu.Lock()
+	defer igmf.mu.Unlock()
 	return len(igmf.syncedNodes) > 0, nil
 }
 
 func (igmf *IGManagerFake) EnsureInstanceGroupsAndPorts(name string, ports []int64, logger klog.Logger) ([]*compute.InstanceGroup, error) {
+	igmf.mu.Lock()
+	defer igmf.mu.Unlock()
 	igmf.syncedNodes = append(igmf.syncedNodes, []string{name})
 	return []*compute.InstanceGroup{}, nil
 }
 
 func (igmf *IGManagerFake) DeleteInstanceGroup(name string, logger klog.Logger) error {
+	igmf.mu.Lock()
+	defer igmf.mu.Unlock()
 	igmf.syncedNodes = append(igmf.syncedNodes, []string{name})
 	return nil
 }
