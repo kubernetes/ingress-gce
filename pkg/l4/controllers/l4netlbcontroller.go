@@ -240,20 +240,25 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 }
 
 // needsDeletion return true if svc required deleting RBS based NetLB
-func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) bool {
+func (lc *L4NetLBController) needsDeletion(svc *v1.Service, svcLogger klog.Logger) (bool, error) {
 	// Check if service was provisioned by RBS controller before -- if it has rbs finalizer, rbs loadBalancerClass or rbs forwarding rule
 	if !utils.HasL4NetLBFinalizerV2(svc) && !utils.HasL4NetLBFinalizerV3(svc) &&
-		!lc.hasRBSForwardingRule(svc, svcLogger) &&
 		!annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass) {
-		return false
+		hasRBSFwdRule, err := lc.hasRBSForwardingRule(svc, svcLogger)
+		if err != nil {
+			return false, err
+		}
+		if !hasRBSFwdRule {
+			return false, nil
+		}
 	}
 	// handles service deletion
 	if svc.ObjectMeta.DeletionTimestamp != nil {
-		return true
+		return true, nil
 	}
 	// handles NetLB to ILB migration
 	needsNetLB, _ := annotations.WantsL4NetLB(svc)
-	return !needsNetLB
+	return !needsNetLB, nil
 }
 
 // needsPeriodicEnqueue return true if svc required periodic enqueue
@@ -361,7 +366,17 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 
 	warnL4FinalizerRemoved(lc.ctx, oldSvc, newSvc)
 
-	if !lc.isRBSBasedService(newSvc, svcLogger) && !lc.isRBSBasedService(oldSvc, svcLogger) {
+	newIsRBS, err := lc.isRBSBasedService(newSvc, svcLogger)
+	if err != nil {
+		svcLogger.Error(err, "Failed to verify if service is RBS based, enqueueing service to retry in sync")
+		return true, false
+	}
+	oldIsRBS, err := lc.isRBSBasedService(oldSvc, svcLogger)
+	if err != nil {
+		svcLogger.Error(err, "Failed to verify if previous version of service is RBS based, enqueueing service to retry in sync")
+		return true, false
+	}
+	if !newIsRBS && !oldIsRBS {
 		svcLogger.V(4).Info("Ignoring non RBS based NetLB service")
 		return false, false
 	}
@@ -372,7 +387,15 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service, sv
 		lc.ctx.Recorder(newSvc.Namespace).Event(newSvc, v1.EventTypeWarning, ReasonL4LBConfigAnnotationRemoved, "L4LBConfig annotation has been removed")
 	}
 
-	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc, svcLogger) {
+	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) {
+		return true, false
+	}
+	needsDeletion, err := lc.needsDeletion(newSvc, svcLogger)
+	if err != nil {
+		svcLogger.Error(err, "Failed to verify if service needs deletion, enqueueing service to retry in sync")
+		return true, false
+	}
+	if needsDeletion {
 		return true, false
 	}
 	needsResync := lc.needsPeriodicEnqueue(newSvc, oldSvc)
@@ -390,46 +413,55 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 	return false
 }
 
-// isRBSBasedService checks if service has either RBS annotation, loadBalancerClass, finalizer or RBSForwardingRule
-func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.Logger) bool {
+// isRBSBasedService checks if service has either RBS annotation, loadBalancerClass, finalizer or RBSForwardingRule.
+// It returns an error if the service type could not be determined, for example when a GCE API call fails.
+func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service, svcLogger klog.Logger) (bool, error) {
 	// Check if the type=LoadBalancer, so we don't execute API calls o non-LB services
 	// this call is nil-safe
 	if !utils.IsLoadBalancerServiceType(svc) {
 		svcLogger.V(4).Info("Service is not of type LoadBalancer")
-		return false
+		return false, nil
 	}
 	if svc.Spec.LoadBalancerClass != nil {
 		svcLogger.V(4).Info("Service has LoadBalancerClass annotation", "loadBalancerClass", *svc.Spec.LoadBalancerClass)
-		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass)
+		return annotations.HasLoadBalancerClass(svc, annotations.RegionalExternalLoadBalancerClass), nil
 	}
 	if utils.HasL4NetLBFinalizerV2(svc) || utils.HasL4NetLBFinalizerV3(svc) {
 		svcLogger.V(4).Info("Service has L4 NetLB RBS finalizer")
-		return true
+		return true, nil
 	}
 	if annotations.HasRBSAnnotation(svc) {
 		svcLogger.V(4).Info("Service has RBS annotation")
-		return true
+		return true, nil
 	}
-	if lc.hasLegacyControllerOwnership(svc, svcLogger) {
+	hasLegacyOwnership, err := lc.hasLegacyControllerOwnership(svc, svcLogger)
+	if err != nil {
+		return false, err
+	}
+	if hasLegacyOwnership {
 		svcLogger.V(4).Info("Service has legacy controller ownership")
-		return false
+		return false, nil
 	}
 	if lc.enableRBSDefault {
 		svcLogger.V(4).Info("RBS is enabled by default, treating service as RBS based")
-		return true
+		return true, nil
 	}
-	if lc.hasRBSForwardingRule(svc, svcLogger) {
+	hasRBSFwdRule, err := lc.hasRBSForwardingRule(svc, svcLogger)
+	if err != nil {
+		return false, err
+	}
+	if hasRBSFwdRule {
 		svcLogger.V(4).Info("Service has RBS forwarding rule")
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
-func (lc *L4NetLBController) hasLegacyControllerOwnership(svc *v1.Service, svcLogger klog.Logger) bool {
+func (lc *L4NetLBController) hasLegacyControllerOwnership(svc *v1.Service, svcLogger klog.Logger) (bool, error) {
 	// Check for legacy finalizer
 	if utils.HasL4NetLBFinalizerV1(svc) {
 		svcLogger.V(4).Info("Service has Legacy L4 NetLB finalizer", "finalizers", svc.ObjectMeta.Finalizers)
-		return true
+		return true, nil
 	}
 
 	// Check if forwarding rule points to a target pool
@@ -438,7 +470,11 @@ func (lc *L4NetLBController) hasLegacyControllerOwnership(svc *v1.Service, svcLo
 
 func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string, svcLogger klog.Logger) (bool, error) {
 	svcLogger.Info("Checking for legacy target pool service with RBS annotation or finalizers", "finalizers", service.ObjectMeta.Finalizers)
-	if lc.hasLegacyControllerOwnership(service, svcLogger) {
+	hasLegacyOwnership, err := lc.hasLegacyControllerOwnership(service, svcLogger)
+	if err != nil {
+		return false, err
+	}
+	if hasLegacyOwnership {
 		if utils.HasL4NetLBRBSFinalizers(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
@@ -458,24 +494,26 @@ func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, k
 	return false, nil
 }
 
-func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service, svcLogger klog.Logger) bool {
+// hasTargetPoolForwardingRule checks if the service load balancer has a forwarding rule pointing to a target pool.
+// It returns an error if the forwarding rule could not be fetched, since in that case we cannot tell
+// whether the service is owned by the legacy Target Pool controller.
+func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service, svcLogger klog.Logger) (bool, error) {
 	frName := utils.LegacyForwardingRuleName(service)
 	if lc.hasForwardingRuleAnnotation(service, frName) {
 		svcLogger.V(4).Info("Service does not have Target Pool forwarding rule annotation", "forwardingRule", frName)
-		return false
+		return false, nil
 	}
 
 	existingFR, err := lc.forwardingRules.Get(frName)
 	if err != nil {
-		svcLogger.Error(err, "Error getting forwarding rule", "forwardingRule", frName)
-		return false
+		return false, fmt.Errorf("failed to get forwarding rule %s: %w", frName, err)
 	}
 	if existingFR != nil && existingFR.Target != "" {
 		svcLogger.V(4).Info("Service has Target Pool forwarding rule", "forwardingRule", frName, "targetPool", strings.Split(existingFR.Target, "/")[len(strings.Split(existingFR.Target, "/"))-1])
-		return true
+		return true, nil
 	}
 	svcLogger.V(4).Info("Service does not have Target Pool forwarding rule", "forwardingRule", frName)
-	return false
+	return false, nil
 }
 
 func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.Service, key string, svcLogger klog.Logger) error {
@@ -510,19 +548,19 @@ func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service, svcLogger 
 	return nil
 }
 
-// hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
-func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service, svcLogger klog.Logger) bool {
+// hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service.
+// It returns an error if the forwarding rule could not be fetched.
+func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service, svcLogger klog.Logger) (bool, error) {
 	frName := utils.LegacyForwardingRuleName(svc)
 	// to optimize number of api calls, at first, check if forwarding rule exists in annotation
 	if lc.hasForwardingRuleAnnotation(svc, frName) {
-		return true
+		return true, nil
 	}
 	existingFR, err := lc.forwardingRules.Get(frName)
 	if err != nil {
-		svcLogger.Error(err, "Error getting forwarding rule", "forwardingRule", frName)
-		return false
+		return false, fmt.Errorf("failed to get forwarding rule %s: %w", frName, err)
 	}
-	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
+	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != "", nil
 }
 
 func (lc *L4NetLBController) SystemHealth() error {
@@ -617,7 +655,11 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 	}
 	isResync := lc.serviceVersions.IsResync(key, svc.ResourceVersion, svcLogger)
 	svcLogger.Info("Processing update operation for service", "resync", isResync, "resourceVersion", svc.ResourceVersion)
-	if lc.needsDeletion(svc, svcLogger) {
+	needsDeletion, err := lc.needsDeletion(svc, svcLogger)
+	if err != nil {
+		return fmt.Errorf("failed to check if L4 External LoadBalancer resources need to be deleted for service %s: %w", key, err)
+	}
+	if needsDeletion {
 		svcLogger.V(3).Info("Deleting L4 External LoadBalancer resources for service")
 		result := lc.garbageCollectRBSNetLB(key, svc, svcLogger)
 		if result == nil {
@@ -652,7 +694,11 @@ func (lc *L4NetLBController) sync(key string, svcLogger klog.Logger) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Logger) *resources.L4NetLBSyncResult {
 	// check again that rbs is enabled.
-	if !lc.isRBSBasedService(service, svcLogger) {
+	isRBSBased, err := lc.isRBSBasedService(service, svcLogger)
+	if err != nil {
+		return &resources.L4NetLBSyncResult{Error: fmt.Errorf("failed to verify that service %s/%s is RBS based: %w", service.Namespace, service.Name, err)}
+	}
+	if !isRBSBased {
 		svcLogger.Info("Skipping syncInternal. Service does not have RBS enabled")
 		return nil
 	}
@@ -695,7 +741,6 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 	}
 
 	var nodes []*v1.Node
-	var err error
 	if usesNegBackends {
 		nodes, err = lc.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
 	} else {

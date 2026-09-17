@@ -114,6 +114,12 @@ func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwa
 	return true, &fwRule, nil
 }
 
+// GetForwardingRuleUnauthorizedErrorHook simulates a transient authentication failure, for example
+// an expired OAuth access token, on a forwarding rule GET.
+func GetForwardingRuleUnauthorizedErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
+	return true, nil, &googleapi.Error{Code: http.StatusUnauthorized, Message: "Request had invalid authentication credentials"}
+}
+
 func GetRBSForwardingRuleInStandardTier(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, *compute.ForwardingRule, error) {
 	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierStandard.ToGCEValue()}
 	return true, &fwRule, nil
