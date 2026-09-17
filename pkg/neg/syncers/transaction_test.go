@@ -61,6 +61,7 @@ import (
 	"k8s.io/ingress-gce/pkg/nodetopology"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -4525,6 +4526,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		netInfo,
 		fakeZoneGetter,
 		testContext.NegMetrics,
+		consistency.NewNoopConsistencyStore(),
 		klog.TODO(),
 	)
 	statusReporter := negstatushandler.NewTestSvcNegStatusHandler(handler)

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -41,9 +42,9 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/resources"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
-	"slices"
 )
 
 const (
@@ -105,23 +106,25 @@ type parsedForwardingRule struct {
 
 // StandaloneNEGLBController manages services with CustomNegLoadBalancerClass.
 type StandaloneNEGLBController struct {
-	ctx       *ccontext.ControllerContext
-	svcQueue  utils.TaskQueue
-	logger    klog.Logger
-	namer     namer.L4ResourcesNamer
-	stopCh    <-chan struct{}
-	hasSynced func() bool
+	ctx              *ccontext.ControllerContext
+	svcQueue         utils.TaskQueue
+	logger           klog.Logger
+	namer            namer.L4ResourcesNamer
+	stopCh           <-chan struct{}
+	hasSynced        func() bool
+	consistencyStore consistency.ConsistencyStore
 }
 
 // NewStandaloneNEGLBController creates a new instance of StandaloneNEGLBController.
-func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *StandaloneNEGLBController {
+func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger, consistencyStore consistency.ConsistencyStore) *StandaloneNEGLBController {
 	logger = logger.WithName("StandaloneNEGLBController")
 	lc := &StandaloneNEGLBController{
-		ctx:       ctx,
-		stopCh:    stopCh,
-		namer:     ctx.L4Namer,
-		hasSynced: ctx.HasSynced,
-		logger:    logger,
+		consistencyStore: consistencyStore,
+		ctx:              ctx,
+		stopCh:           stopCh,
+		namer:            ctx.L4Namer,
+		hasSynced:        ctx.HasSynced,
+		logger:           logger,
 	}
 	lc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, lc.syncWrapper, logger)
 
@@ -146,19 +149,14 @@ func NewStandaloneNEGLBController(ctx *ccontext.ControllerContext, stopCh <-chan
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			svc, ok := obj.(*v1.Service)
-			if !ok {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					logger.Error(nil, "Unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
-					return
-				}
-				svc, ok = tombstone.Obj.(*v1.Service)
-				if !ok {
-					logger.Error(nil, "Unexpected object type in tombstone in DeleteFunc", "type", fmt.Sprintf("%T", tombstone.Obj))
-					return
-				}
+			svc := serviceFromDeleteEvent(obj)
+			if svc == nil {
+				logger.Error(nil, "Unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
+				return
 			}
+			// Drop the ConsistencyStore record so a deleted service does
+			// not leak an entry or stall a future recreation.
+			lc.consistencyStore.Clear(serviceRef(svc.Namespace, svc.Name), svc.UID)
 			if lc.shouldProcess(svc) {
 				lc.enqueue(svc)
 			}
@@ -220,11 +218,23 @@ func (lc *StandaloneNEGLBController) sync(key string, svcLogger klog.Logger) err
 	start := time.Now()
 	l4metrics.PublishL4controllerLastSyncTime(StandaloneNEGLBControllerName)
 
+	if namespace, name, keyErr := cache.SplitMetaNamespaceKey(key); keyErr == nil {
+		// Do not reconcile from a cache that has not yet observed this
+		// controller's own writes to the service; requeue instead.
+		if err := lc.consistencyStore.EnsureReady(serviceRef(namespace, name)); err != nil {
+			svcLogger.V(2).Info("Informer cache has not caught up with the controller's writes yet, requeuing service", "reason", err.Error())
+			return err
+		}
+	}
+
 	obj, exists, err := lc.ctx.ServiceInformer.GetIndexer().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("failed to lookup service for key %s: %w", key, err)
 	}
 	if !exists || obj == nil {
+		if namespace, name, keyErr := cache.SplitMetaNamespaceKey(key); keyErr == nil {
+			lc.consistencyStore.Clear(serviceRef(namespace, name), "")
+		}
 		svcLogger.V(3).Info("Ignoring sync of non-existent service")
 		lc.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
 		return nil
@@ -438,7 +448,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		svcLogger.V(4).Info("Service has no forwarding rule reference; skipping")
 		cond := NewConditionExternalIPProgrammedFalse(NoForwardingRuleRef)
-		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		svc, err = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +469,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			reason = NoForwardingRuleRef
 		}
 		cond := NewConditionExternalIPProgrammedFalse(reason)
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		var clearErr error
+		svc, clearErr = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if len(errs) > 0 {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule: %v", errors.Join(errs...))
 			allErrs := append([]error{clearErr}, errs...)
@@ -530,7 +541,8 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			firstErr = errs[0]
 		}
 		cond := NewConditionExternalIPProgrammedFalse(classifyError(firstErr))
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		var clearErr error
+		svc, clearErr = lc.updateServiceStatus(svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		allErrs := append([]error{clearErr}, errs...)
 		return schemes, joinMaybeUserErrors(allErrs...)
 	}
@@ -549,7 +561,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 	cond := NewConditionExternalIPProgrammedTrue(ips)
 
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
+	if svc, err = lc.updateServiceStatus(svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
 		return schemes, err
 	}
 
@@ -593,7 +605,8 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 	}
 
 	conditionsToRemove := []string{ExternalIPProgrammed}
-	return updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger)
+	_, err := lc.updateServiceStatus(svc, newStatus, nil, conditionsToRemove, svcLogger)
+	return err
 }
 
 func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes sets.Set[string], syncErr error, start time.Time) {
@@ -675,4 +688,17 @@ func messageForReason(reason lbConditionReason) string {
 	default:
 		return "An unexpected error occurred while programming external IPs"
 	}
+}
+
+// updateServiceStatus delegates to the shared helper and records the
+// resulting ResourceVersion in the ConsistencyStore, so the next sync of the
+// service can be stalled until the informer cache has observed the write.
+// It returns the freshest known version of the service (the passed-in
+// service if nothing was written); the result is never nil.
+func (lc *StandaloneNEGLBController) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus, newConditions []metav1.Condition, conditionsToRemove []string, svcLogger klog.Logger) (*v1.Service, error) {
+	newSvc, err := updateServiceStatus(lc.ctx, svc, newStatus, newConditions, conditionsToRemove, svcLogger)
+	if err == nil {
+		recordServiceWrite(lc.consistencyStore, svc.UID, newSvc)
+	}
+	return newSvc, err
 }

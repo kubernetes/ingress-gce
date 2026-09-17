@@ -57,6 +57,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 )
@@ -120,6 +121,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		klog.TODO(),
 		metrics.NewNegMetrics(),
 		false,
+		consistency.NewNoopConsistencyStore(),
 	)
 	return manager, testContext.Cloud, testContext, nil
 }
@@ -2334,6 +2336,7 @@ func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
 			klog.TODO(),
 			metrics.NewNegMetrics(),
 			wantDrain,
+			consistency.NewNoopConsistencyStore(),
 		)
 
 		key := manager.getSyncerKey("ns", "svc", portKey, portInfo)
