@@ -23,6 +23,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
@@ -114,7 +115,7 @@ func TestGetPodLabelMap(t *testing.T) {
 			expectErr: true,
 		},
 	} {
-		ret, err := GetPodLabelMap(pod, tc.lpConfig)
+		ret, err := GetPodLabelMap(pod, tc.lpConfig, metrics.NewNegMetrics())
 		if !reflect.DeepEqual(ret, tc.expect) {
 			t.Errorf("For test case %q, got label map %+v, want %+v", tc.desc, ret, tc.expect)
 		}

@@ -47,7 +47,7 @@ func TestOnStoppedLeadingClosesRootStop(t *testing.T) {
 			buildRunner: func(ro runOption) (*leaderelection.LeaderElectionConfig, error) {
 				var ctx *ingctx.ControllerContext
 				var sh *systemhealth.SystemHealth
-				return makeNEGRunnerWithLeaderElection(ctx, sh, ro, le, klog.TODO())
+				return makeNEGRunnerWithLeaderElection(ctx, sh, ro, le, klog.TODO(), nil, nil)
 			},
 		},
 		{

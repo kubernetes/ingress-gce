@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
+	metrics "github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
@@ -209,7 +209,7 @@ func (m *manager) ForceCleanupTenant(pcKey string) {
 	m.deletingMu.Unlock()
 
 	if tenantUID != "" {
-		mtmetrics.DefaultMultiGatherer.Unregister(tenantUID)
-		mtmetrics.DefaultGlobalTracker.ResetTenant(tenantUID)
+		metrics.DefaultMultiGatherer.Unregister(tenantUID)
+		metrics.DefaultGlobalTracker.ResetTenant(tenantUID)
 	}
 }
