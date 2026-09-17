@@ -72,6 +72,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		fwdRuleExists        bool
 		connectionPreference string
 		resourceRef          v1.TypedLocalObjectReference
+		customFwdRuleIPAddr  string
 		incorrectIPAddr      bool
 		invalidSubnet        bool
 		expectErr            bool
@@ -136,6 +137,17 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			connectionPreference: "ACCEPT_AUTOMATIC",
 			resourceRef:          validRef,
 			expectErr:            true,
+			readOnlyMode:         false,
+		},
+		{
+			desc:                 "forwarding rule has ipv6 address with cidr suffix",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			customFwdRuleIPAddr:  "1.2.3.4/96", // svc creates with frIPAddr (1.2.3.4), fwd rule gets created with customFwdRuleIPAddr
+			expectErr:            false,
 			readOnlyMode:         false,
 		},
 		{
@@ -368,7 +380,11 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			var rule *composite.ForwardingRule
 			if tc.fwdRuleExists {
 				var err error
-				if rule, err = createForwardingRule(fakeCloud, frName, frIPAddr); err != nil {
+				fwdIP := frIPAddr
+				if tc.customFwdRuleIPAddr != "" {
+					fwdIP = tc.customFwdRuleIPAddr
+				}
+				if rule, err = createForwardingRule(fakeCloud, frName, fwdIP); err != nil {
 					t.Errorf("%s", err)
 				}
 			}
@@ -1494,40 +1510,54 @@ func TestFilterError(t *testing.T) {
 	}
 }
 
-func TestGetSubnetURLs(t *testing.T) {
+func TestGetSubnets(t *testing.T) {
 	testcases := []struct {
 		desc           string
 		subnet         string
-		createSubnet   bool
+		createName     string
+		inject403Err   bool
 		expectErr      bool
 		expectedSubnet string
 	}{
 		{
 			desc:           "subnet is in the host project",
 			subnet:         "my-subnet",
-			createSubnet:   true,
+			createName:     "my-subnet",
 			expectErr:      false,
 			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/my-subnet",
 		},
 		{
 			desc:           "subnet is the resource url path",
 			subnet:         "projects/test-project/regions/us-central1/subnetworks/subnet-1",
-			createSubnet:   false,
-			expectErr:      false,
-			expectedSubnet: "projects/test-project/regions/us-central1/subnetworks/subnet-1",
-		},
-		{
-			desc:           "subnet is a fully qualified resource url",
-			subnet:         "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
-			createSubnet:   false,
+			createName:     "subnet-1",
 			expectErr:      false,
 			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
 		},
 		{
-			desc:         "subnet does not exist in host project",
-			subnet:       "my-subnet",
-			createSubnet: false,
-			expectErr:    true,
+			desc:           "subnet is a fully qualified resource url",
+			subnet:         "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+			createName:     "subnet-1",
+			expectErr:      false,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+		},
+		{
+			desc:       "subnet does not exist in host project",
+			subnet:     "my-subnet",
+			createName: "",
+			expectErr:  true,
+		},
+		{
+			desc:       "subnet is a fully qualified resource url and Get returns 404 NOT FOUND",
+			subnet:     "https://www.googleapis.com/compute/v1/projects/test-project-host/regions/us-central1/subnetworks/subnet-1",
+			createName: "",
+			expectErr:  true,
+		},
+		{
+			desc:           "subnet is a fully qualified resource url and Get returns 403 FORBIDDEN",
+			subnet:         "https://www.googleapis.com/compute/v1/projects/test-project-host/regions/us-central1/subnetworks/subnet-1",
+			createName:     "",
+			inject403Err:   true,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project-host/regions/us-central1/subnetworks/subnet-1",
 		},
 	}
 	for _, tc := range testcases {
@@ -1537,29 +1567,37 @@ func TestGetSubnetURLs(t *testing.T) {
 				t.Fatalf("failed to initialize the controller: %v", err)
 			}
 
-			if tc.createSubnet {
-				_, err := createNatSubnet(controller.cloud, tc.subnet)
+			if tc.inject403Err {
+				mockGCE := controller.cloud.Compute().(*cloud.MockGCE)
+				mockSubnets := mockGCE.Subnetworks().(*cloud.MockSubnetworks)
+				mockSubnets.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockSubnetworks, options ...cloud.Option) (bool, *ga.Subnetwork, error) {
+					return true, nil, &googleapi.Error{Code: http.StatusForbidden, Message: "Forbidden"}
+				}
+			}
+
+			if tc.createName != "" {
+				_, err := createNatSubnet(controller.cloud, tc.createName)
 				if err != nil {
 					t.Errorf("failed to create nat subnet: %s", err)
 				}
 			}
 
-			subnets, err := controller.getSubnetURLs([]string{tc.subnet})
+			subnets, err := controller.getSubnets([]string{tc.subnet})
 			if err == nil && tc.expectErr {
-				t.Fatalf("getSubnetURLs() returned no error, but expected an error")
+				t.Fatalf("getSubnets() returned no error, but expected an error")
 			} else if err != nil && !tc.expectErr {
-				t.Fatalf("getSubnetURLs() returned unexpected error: %s", err)
+				t.Fatalf("getSubnets() returned an error but expected none: %s", err)
 			}
 
-			if tc.expectedSubnet != "" && !tc.expectErr {
+			if err == nil {
 				if len(subnets) != 1 {
-					t.Fatalf("got %d subnets, should be 1", len(subnets))
+					t.Fatalf("getSubnets() expected to return list of 1 subnet, but got %d", len(subnets))
 				}
-
-				if subnets[0] != tc.expectedSubnet {
-					t.Fatalf("getSubnetURLs() returned %s, but wanted %s", subnets[0], tc.expectedSubnet)
+				if subnets[0].SelfLink != tc.expectedSubnet {
+					t.Errorf("getSubnets() expected to return %s but got %s", tc.expectedSubnet, subnets[0].SelfLink)
 				}
 			}
+
 		})
 	}
 }
@@ -1989,6 +2027,379 @@ func TestCheckUnsyncedFields(t *testing.T) {
 			got := detectUnsyncedFields(tc.existingSA, tc.updatedCR)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("checkUnsyncedFields() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSubnetStackMap(t *testing.T) {
+	testcases := []struct {
+		desc     string
+		subnets  []*ga.Subnetwork
+		wantIPv4 bool
+		wantIPv6 bool
+	}{
+		{
+			desc: "all ipv4 only",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_ONLY"},
+				{Name: "subnet-2", StackType: "IPV4_ONLY"},
+			},
+			wantIPv4: true,
+			wantIPv6: false,
+		},
+		{
+			desc: "all ipv4 only with empty string",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_ONLY"},
+				{Name: "subnet-2", StackType: ""},
+			},
+			wantIPv4: true,
+			wantIPv6: false,
+		},
+		{
+			desc: "all ipv6 only",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV6_ONLY"},
+				{Name: "subnet-2", StackType: "IPV6_ONLY"},
+			},
+			wantIPv4: false,
+			wantIPv6: true,
+		},
+		{
+			desc: "all ipv4_ipv6",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_IPV6"},
+			},
+			wantIPv4: true,
+			wantIPv6: true,
+		},
+		{
+			desc: "mixed ipv4_only and ipv6_only",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_ONLY"},
+				{Name: "subnet-2", StackType: "IPV6_ONLY"},
+			},
+			wantIPv4: false,
+			wantIPv6: false,
+		},
+		{
+			desc: "mixed ipv4_ipv6 and ipv6_only",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_IPV6"},
+				{Name: "subnet-2", StackType: "IPV6_ONLY"},
+			},
+			wantIPv4: false,
+			wantIPv6: true,
+		},
+		{
+			desc: "mixed ipv4_ipv6 and ipv4_only",
+			subnets: []*ga.Subnetwork{
+				{Name: "subnet-1", StackType: "IPV4_IPV6"},
+				{Name: "subnet-2", StackType: "IPV4_ONLY"},
+			},
+			wantIPv4: true,
+			wantIPv6: false,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			st := GetSubnetStackMap(tc.subnets)
+			if got := st.AllSupportIPv4(); got != tc.wantIPv4 {
+				t.Errorf("AllSupportIPv4() = %v, want %v", got, tc.wantIPv4)
+			}
+			if got := st.AllSupportIPv6(); got != tc.wantIPv6 {
+				t.Errorf("AllSupportIPv6() = %v, want %v", got, tc.wantIPv6)
+			}
+		})
+	}
+}
+
+func TestForwardingRuleStackMap(t *testing.T) {
+	testcases := []struct {
+		desc        string
+		frMap       ForwardingRuleStackMap
+		subnets     []*ga.Subnetwork
+		wantFRName  string
+		expectError bool
+	}{
+		{
+			desc:       "ipv4_ipv6 fr, ipv4_only subnets",
+			frMap:      ForwardingRuleStackMap{IPv4: "fr-ipv4", IPv6: "fr-ipv6"},
+			subnets:    []*ga.Subnetwork{{Name: "s1", StackType: "IPV4_ONLY"}},
+			wantFRName: "fr-ipv4",
+		},
+		{
+			desc:       "ipv4_ipv6 fr, ipv6_only subnets",
+			frMap:      ForwardingRuleStackMap{IPv4: "fr-ipv4", IPv6: "fr-ipv6"},
+			subnets:    []*ga.Subnetwork{{Name: "s1", StackType: "IPV6_ONLY"}},
+			wantFRName: "fr-ipv6",
+		},
+		{
+			desc:        "ipv4_ipv6 fr, mixed subnets",
+			frMap:       ForwardingRuleStackMap{IPv4: "fr-ipv4", IPv6: "fr-ipv6"},
+			subnets:     []*ga.Subnetwork{{Name: "s1", StackType: "IPV6_ONLY"}, {Name: "s2", StackType: "IPV4_ONLY"}},
+			expectError: true,
+		},
+		{
+			desc:       "ipv4_ipv6 fr, ipv4_ipv6 subnets",
+			frMap:      ForwardingRuleStackMap{IPv4: "fr-ipv4", IPv6: "fr-ipv6"},
+			subnets:    []*ga.Subnetwork{{Name: "s1", StackType: "IPV4_IPV6"}},
+			wantFRName: "fr-ipv4", // It prefers IPv4 as per code
+		},
+		{
+			desc:       "ipv4_only fr, ipv4_only subnets",
+			frMap:      ForwardingRuleStackMap{IPv4: "fr-ipv4"},
+			subnets:    []*ga.Subnetwork{{Name: "s1", StackType: "IPV4_ONLY"}},
+			wantFRName: "fr-ipv4",
+		},
+		{
+			desc:        "ipv4_only fr, ipv6_only subnets",
+			frMap:       ForwardingRuleStackMap{IPv4: "fr-ipv4"},
+			subnets:     []*ga.Subnetwork{{Name: "s1", StackType: "IPV6_ONLY"}},
+			expectError: true,
+		},
+		{
+			desc:       "ipv6_only fr, ipv6_only subnets",
+			frMap:      ForwardingRuleStackMap{IPv6: "fr-ipv6"},
+			subnets:    []*ga.Subnetwork{{Name: "s1", StackType: "IPV6_ONLY"}},
+			wantFRName: "fr-ipv6",
+		},
+		{
+			desc:        "ipv6_only fr, ipv4_only subnets",
+			frMap:       ForwardingRuleStackMap{IPv6: "fr-ipv6"},
+			subnets:     []*ga.Subnetwork{{Name: "s1", StackType: "IPV4_ONLY"}},
+			expectError: true,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			st := GetSubnetStackMap(tc.subnets)
+			got, err := tc.frMap.GetCompatibleForwardingRule(st)
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("GetCompatibleForwardingRule() returned no error, but expected one")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("GetCompatibleForwardingRule() returned unexpected error: %s", err)
+				}
+				if got != tc.wantFRName {
+					t.Errorf("GetCompatibleForwardingRule() = %s, want %s", got, tc.wantFRName)
+				}
+			}
+		})
+	}
+}
+
+func TestGetForwardingRuleStackMap(t *testing.T) {
+	flags.F.EnablePSCIPv6FRSupport = true
+	testcases := []struct {
+		desc        string
+		svc         *v1.Service
+		wantMap     ForwardingRuleStackMap
+		expectError bool
+	}{
+		{
+			desc: "no annotations",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					UID:  "uid-1",
+				},
+			},
+			wantMap: ForwardingRuleStackMap{IPv4: "auid1"},
+		},
+		{
+			desc: "tcp ipv4 annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.TCPForwardingRuleKey: "fr-tcp-ipv4",
+					},
+				},
+			},
+			wantMap: ForwardingRuleStackMap{IPv4: "fr-tcp-ipv4"},
+		},
+		{
+			desc: "udp ipv4 annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.UDPForwardingRuleKey: "fr-udp-ipv4",
+					},
+				},
+			},
+			wantMap: ForwardingRuleStackMap{IPv4: "fr-udp-ipv4"},
+		},
+		{
+			desc: "tcp ipv6 annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.TCPForwardingRuleIPv6Key: "fr-tcp-ipv6",
+					},
+				},
+			},
+			wantMap: ForwardingRuleStackMap{IPv6: "fr-tcp-ipv6"},
+		},
+		{
+			desc: "both tcp annotations",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.TCPForwardingRuleKey:     "fr-tcp-ipv4",
+						annotations.TCPForwardingRuleIPv6Key: "fr-tcp-ipv6",
+					},
+				},
+			},
+			wantMap: ForwardingRuleStackMap{IPv4: "fr-tcp-ipv4", IPv6: "fr-tcp-ipv6"},
+		},
+		{
+			desc: "L3 forwarding rule IPv4 error",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.L3ForwardingRuleKey: "l3-fr",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			desc: "L3 forwarding rule IPv6 error",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "svc-1",
+					Annotations: map[string]string{
+						annotations.L3ForwardingRuleIPv6Key: "l3-fr-ipv6",
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := GetForwardingRuleStackMap(tc.svc)
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("GetForwardingRuleStackMap() returned no error, but expected one")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("GetForwardingRuleStackMap() returned unexpected error: %s", err)
+				}
+				if got != tc.wantMap {
+					t.Errorf("GetForwardingRuleStackMap() = %+v, want %+v", got, tc.wantMap)
+				}
+			}
+		})
+	}
+	flags.F.EnablePSCIPv6FRSupport = false
+}
+
+func TestGetForwardingRule(t *testing.T) {
+	testcases := []struct {
+		desc      string
+		fwdRuleIP string
+		svcIPs    []string
+		expectErr bool
+	}{
+		{
+			desc:      "IPv4 exact match",
+			fwdRuleIP: "1.2.3.4",
+			svcIPs:    []string{"1.2.3.4"},
+			expectErr: false,
+		},
+		{
+			desc:      "IPv4 mismatch",
+			fwdRuleIP: "1.2.3.4",
+			svcIPs:    []string{"5.6.7.8"},
+			expectErr: true,
+		},
+		{
+			desc:      "IPv6 exact match",
+			fwdRuleIP: "fd20::1",
+			svcIPs:    []string{"fd20::1"},
+			expectErr: false,
+		},
+		{
+			desc:      "IPv6 with CIDR on fwdRule",
+			fwdRuleIP: "fd20:0:0:0::1/96",
+			svcIPs:    []string{"fd20::1"},
+			expectErr: false,
+		},
+		{
+			desc:      "IPv6 with extra zeros on service",
+			fwdRuleIP: "fd20::1",
+			svcIPs:    []string{"fd20:0:0:0:0:0:0:1"},
+			expectErr: false,
+		},
+		{
+			desc:      "IPv6 mismatch",
+			fwdRuleIP: "fd20::1",
+			svcIPs:    []string{"fd20::2"},
+			expectErr: true,
+		},
+		{
+			desc:      "Mock invalid IP fallback match",
+			fwdRuleIP: "mock-ip-address",
+			svcIPs:    []string{"mock-ip-address"},
+			expectErr: false,
+		},
+		{
+			desc:      "Mock invalid IP mismatch",
+			fwdRuleIP: "mock-ip-address",
+			svcIPs:    []string{"mock-ip-address-2"},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller, err := newTestController("ZONAL", false)
+			if err != nil {
+				t.Fatalf("failed to initialize the controller: %v", err)
+			}
+
+			frName := "test-fr"
+			if _, err := createForwardingRule(controller.cloud, frName, tc.fwdRuleIP); err != nil {
+				t.Fatalf("failed to create forwarding rule: %v", err)
+			}
+
+			svc := &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      "test-svc",
+				},
+				Status: v1.ServiceStatus{
+					LoadBalancer: v1.LoadBalancerStatus{
+						Ingress: []v1.LoadBalancerIngress{},
+					},
+				},
+			}
+			for _, ip := range tc.svcIPs {
+				svc.Status.LoadBalancer.Ingress = append(svc.Status.LoadBalancer.Ingress, v1.LoadBalancerIngress{IP: ip})
+			}
+
+			selfLink, err := controller.getForwardingRule(svc, frName)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected an error but got nil, selfLink: %s", selfLink)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if selfLink == "" {
+					t.Fatalf("expected a selfLink but got empty string")
+				}
 			}
 		})
 	}
