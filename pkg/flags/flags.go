@@ -122,6 +122,7 @@ var F = struct {
 	EnableL4StrongSessionAffinity               bool
 	EnableNEGLabelPropagation                   bool
 	EnableMultiNetworking                       bool
+	EnableMultiNetworkingIPv6                   bool
 	MaxIGSize                                   int
 	EnableDegradedMode                          bool
 	EnableDegradedModeMetrics                   bool
