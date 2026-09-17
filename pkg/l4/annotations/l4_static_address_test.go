@@ -1,7 +1,9 @@
 package annotations
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"google.golang.org/api/compute/v1"
@@ -43,6 +45,7 @@ func TestAddressFromAnnotation(t *testing.T) {
 		wantIPv6Address   string
 		wantIPv4Name      string
 		wantIPv6Name      string
+		expectErr         error
 	}{
 		{
 			desc: "Single existing IPv4 address",
@@ -113,6 +116,24 @@ func TestAddressFromAnnotation(t *testing.T) {
 			wantIPv4Name:    ipv4Address.Name,
 			wantIPv6Name:    ipv6Address.Name,
 		},
+		{
+			desc:              "Invalid IPv4 literal address instead of name",
+			reservedAddresses: []compute.Address{},
+			annotationVal:     "1.2.3.4",
+			expectErr:         ErrInvalidStaticIPName,
+		},
+		{
+			desc:              "Invalid address name starting with dash",
+			reservedAddresses: []compute.Address{},
+			annotationVal:     "-my-address",
+			expectErr:         ErrInvalidStaticIPName,
+		},
+		{
+			desc:              "Invalid address name exceeding 63 characters",
+			reservedAddresses: []compute.Address{},
+			annotationVal:     strings.Repeat("a", 64),
+			expectErr:         ErrInvalidStaticIPName,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -132,27 +153,37 @@ func TestAddressFromAnnotation(t *testing.T) {
 
 			// Verify getting expected IPv4 address from annotation.
 			ipv4Addr, ipv4Name, err := FromService(svc).IPv4AddressAnnotation(fakeGCE)
-			if err != nil {
-				t.Fatalf("IPv4AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
-			}
-			if ipv4Addr != tc.wantIPv4Address {
-				t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Addr, tc.wantIPv4Address)
-			}
-			if ipv4Name != tc.wantIPv4Name {
-				t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Name, tc.wantIPv4Name)
+			if tc.expectErr != nil {
+				if err == nil {
+					t.Fatalf("IPv4AddressAnnotation(..., %s) expected error %v, got nil", tc.annotationVal, tc.expectErr)
+				}
+				if !errors.Is(err, tc.expectErr) {
+					t.Errorf("IPv4AddressAnnotation(..., %s) error %v should wrap %v", tc.annotationVal, err, tc.expectErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("IPv4AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
+				}
+				if ipv4Addr != tc.wantIPv4Address {
+					t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Addr, tc.wantIPv4Address)
+				}
+				if ipv4Name != tc.wantIPv4Name {
+					t.Errorf("IPv4AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv4Name, tc.wantIPv4Name)
+				}
+
+				// Verify getting expected IPv6 address from annotation.
+				ipv6Addr, ipv6Name, err := FromService(svc).IPv6AddressAnnotation(fakeGCE)
+				if err != nil {
+					t.Fatalf("IPv6AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
+				}
+				if ipv6Addr != tc.wantIPv6Address {
+					t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Addr, tc.wantIPv6Address)
+				}
+				if ipv6Name != tc.wantIPv6Name {
+					t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Name, tc.wantIPv6Name)
+				}
 			}
 
-			// Verify getting expected IPv6 address from annotation.
-			ipv6Addr, ipv6Name, err := FromService(svc).IPv6AddressAnnotation(fakeGCE)
-			if err != nil {
-				t.Fatalf("IPv6AddressAnnotation(..., %s) returned error %v", tc.annotationVal, err)
-			}
-			if ipv6Addr != tc.wantIPv6Address {
-				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Addr, tc.wantIPv6Address)
-			}
-			if ipv6Name != tc.wantIPv6Name {
-				t.Errorf("IPv6AddressAnnotation(..., %s) returned %s, not equal to expected = %s", tc.annotationVal, ipv6Name, tc.wantIPv6Name)
-			}
 		})
 	}
 }
