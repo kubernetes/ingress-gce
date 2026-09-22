@@ -1925,7 +1925,7 @@ func TestL4SyncerUpdates(t *testing.T) {
 			svcName := "svc1"
 			manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: svcNamespace, Name: svcName}})
 
-			initialPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.fromTrafficPolicy), defaultNetwork, tc.fromLBType)
+			initialPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.fromTrafficPolicy), "", defaultNetwork, tc.fromLBType)
 
 			_, _, err = manager.EnsureSyncers(svcNamespace, svcName, initialPortInfoMap)
 			if err != nil {
@@ -1940,7 +1940,7 @@ func TestL4SyncerUpdates(t *testing.T) {
 				t.Errorf("initialSyncer for LB type: %s, local: %v, was expected to be running but is is not", tc.fromLBType, tc.fromTrafficPolicy)
 			}
 
-			updatedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.toTrafficPolicy), defaultNetwork, tc.toLBType)
+			updatedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(svcNamespace, svcName, testContext.L4Namer, bool(tc.toTrafficPolicy), "", defaultNetwork, tc.toLBType)
 
 			rebuildSvcNegCache(t, manager, manager.svcNegClient, svcNamespace)
 
@@ -2616,5 +2616,90 @@ func TestUpdatePreprovisioningZones(t *testing.T) {
 	}
 	if _, ok = manager.svcPreprovisioningZonesMap[key]; ok {
 		t.Errorf("expected key to be deleted")
+	}
+}
+
+// TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG verifies GC never removes a NEG
+// that is not provably ours, even when its name collides with a name we manage.
+func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
+	flags.F.EnableL4CustomStandaloneNEGNames = true
+	defer func() { flags.F.EnableL4CustomStandaloneNEGNames = false }()
+
+	const (
+		negName   = "my-custom-neg"
+		testZone  = "zone1"
+		namespace = "test-ns"
+		svcName   = "test-svc"
+		port      = "0"
+	)
+
+	testCases := []struct {
+		desc         string
+		existingDesc string
+		expectDelete bool
+	}{
+		{
+			desc:         "custom named NEG with empty description is kept",
+			existingDesc: "",
+			expectDelete: false,
+		},
+		{
+			desc: "NEG owned by another cluster is kept",
+			existingDesc: utils.StandardNEGDescription{
+				ClusterUID: "another-cluster-uid", Namespace: namespace, ServiceName: svcName, Port: port,
+			}.String(),
+			expectDelete: false,
+		},
+		{
+			desc: "NEG owned by another service is kept",
+			existingDesc: utils.StandardNEGDescription{
+				ClusterUID: string(KubeSystemUID), Namespace: namespace, ServiceName: "another-svc", Port: port,
+			}.String(),
+			expectDelete: false,
+		},
+		{
+			desc: "NEG owned by another namespace is kept",
+			existingDesc: utils.StandardNEGDescription{
+				ClusterUID: string(KubeSystemUID), Namespace: "another-ns", ServiceName: svcName, Port: port,
+			}.String(),
+			expectDelete: false,
+		},
+		{
+			desc: "our own NEG is deleted",
+			existingDesc: utils.StandardNEGDescription{
+				ClusterUID: string(KubeSystemUID), Namespace: namespace, ServiceName: svcName, Port: port,
+			}.String(),
+			expectDelete: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err := manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+				Version:             meta.VersionGA,
+				Name:                negName,
+				NetworkEndpointType: string(negtypes.VmIpEndpointType),
+				Description:         tc.existingDesc,
+			}, testZone, klog.TODO()); err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
+
+			expectedDesc := &utils.StandardNEGDescription{
+				ClusterUID: KubeSystemUID, Namespace: namespace, ServiceName: svcName, Port: port,
+			}
+			if err := manager.ensureDeleteNetworkEndpointGroup(negName, testZone, expectedDesc); err != nil {
+				t.Fatalf("ensureDeleteNetworkEndpointGroup() = %v, want nil", err)
+			}
+
+			_, err = manager.cloud.GetNetworkEndpointGroup(negName, testZone, meta.VersionGA, klog.TODO())
+			deleted := utils.IsNotFoundError(err)
+			if err != nil && !deleted {
+				t.Fatalf("GetNetworkEndpointGroup() = %v", err)
+			}
+			if deleted != tc.expectDelete {
+				t.Errorf("NEG deleted = %v, want %v", deleted, tc.expectDelete)
+			}
+		})
 	}
 }

@@ -170,7 +170,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, networkInfo *network.NetworkInfo, l4LBType L4LBType) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool, customNegName string, networkInfo *network.NetworkInfo, l4LBType L4LBType) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -182,7 +182,10 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 		if local {
 			mode = L4LocalMode
 		}
-		negName := namer.L4Backend(namespace, name)
+		negName := customNegName
+		if negName == "" {
+			negName = namer.L4Backend(namespace, name)
+		}
 		ret[PortInfoMapKey{svcPortTuple.Port}] = PortInfo{
 			PortTuple:        svcPortTuple,
 			NegName:          negName,

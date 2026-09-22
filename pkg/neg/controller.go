@@ -917,7 +917,20 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		l4LBType = negtypes.L4ExternalLB
 	}
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
+	var customNegName string
+	if flags.F.EnableL4CustomStandaloneNEGNames && wantsStandaloneNEGLB {
+		customName, err := l4annotations.StandaloneNEGName(service)
+		if err != nil {
+			c.recorder.Event(service, apiv1.EventTypeWarning, "InvalidNEGName", err.Error())
+			return err
+		}
+		if customNegName != "" {
+			negUsage.CustomNamedNeg = 1
+			customNegName = customName
+		}
+	}
+
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, customNegName, networkInfo, l4LBType))
 }
 
 // netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
