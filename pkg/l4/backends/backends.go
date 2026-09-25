@@ -343,6 +343,20 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.Version = selectApiVersionForUpdate(apiVersion, expectedBS.Version)
 	}
 
+	// L4 ILB and L4 NetLB use the same Backend Service name. During migration
+	// between the two (e.g. NetLB -> ILB), the Backend Service of the previous
+	// LB type might still exist until the other controller garbage collects it.
+	// LoadBalancingScheme is immutable, so an update would always be rejected by GCE.
+	// Return an error to retry the sync once the old Backend Service is deleted.
+	if currentBS.LoadBalancingScheme != "" && currentBS.LoadBalancingScheme != expectedBS.LoadBalancingScheme {
+		beLogger.Info("EnsureL4BackendService: existing backend service has a different load balancing scheme, waiting for it to be deleted", "currentScheme", currentBS.LoadBalancingScheme, "expectedScheme", expectedBS.LoadBalancingScheme)
+		return nil, l4utils.ResourceResync, &LoadBalancingSchemeMismatchError{
+			Name:           params.Name,
+			CurrentScheme:  currentBS.LoadBalancingScheme,
+			ExpectedScheme: expectedBS.LoadBalancingScheme,
+		}
+	}
+
 	if backendSvcEqual(expectedBS, currentBS, p.useConnectionTrackingPolicy, params.LogConfigControlEnabled) {
 		beLogger.V(2).Info("EnsureL4BackendService: backend service did not change, skipping update")
 		return currentBS, l4utils.ResourceResync, nil
@@ -363,6 +377,21 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 
 	updatedBS, err := composite.GetBackendService(p.cloud, key, expectedBS.Version, beLogger)
 	return updatedBS, l4utils.ResourceUpdate, err
+}
+
+// LoadBalancingSchemeMismatchError is returned when the existing Backend Service
+// has a different LoadBalancingScheme than expected. This happens when a service
+// migrates between L4 ILB and L4 NetLB, and the Backend Service of the previous
+// LB type has not been deleted yet. The scheme is immutable, so the Backend Service
+// can not be updated and the sync should be retried.
+type LoadBalancingSchemeMismatchError struct {
+	Name           string
+	CurrentScheme  string
+	ExpectedScheme string
+}
+
+func (e *LoadBalancingSchemeMismatchError) Error() string {
+	return fmt.Sprintf("backend service %s has load balancing scheme %s, expected %s; waiting for it to be deleted", e.Name, e.CurrentScheme, e.ExpectedScheme)
 }
 
 func readAPIVersionFromL4Description(description string, beLogger klog.Logger) meta.Version {

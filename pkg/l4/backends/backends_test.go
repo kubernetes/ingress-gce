@@ -1,6 +1,8 @@
 package backends
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -1500,5 +1503,76 @@ func TestEnsureL4BackendServiceNetLBWithDisabledZonalAffinityIsNotUpdated(t *tes
 	}
 	if syncStatus != l4utils.ResourceResync {
 		t.Errorf("EnsureL4BackendService() sync status = %v, want %v (no update)", syncStatus, l4utils.ResourceResync)
+	}
+}
+
+func TestEnsureL4BackendServiceDoesNotUpdateLoadBalancingScheme(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		currentScheme string
+		desiredScheme string
+	}{
+		{
+			desc:          "NetLB to ILB migration",
+			currentScheme: string(cloud.SchemeExternal),
+			desiredScheme: string(cloud.SchemeInternal),
+		},
+		{
+			desc:          "ILB to NetLB migration",
+			currentScheme: string(cloud.SchemeInternal),
+			desiredScheme: string(cloud.SchemeExternal),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+
+			namespacedName := types.NamespacedName{Name: "test-service", Namespace: "test-ns"}
+			bsName := l4namer.L4Backend(namespacedName.Namespace, namespacedName.Name)
+			params := L4BackendServiceParams{
+				Name:            bsName,
+				HealthCheckLink: l4namer.L4HealthCheck(namespacedName.Namespace, namespacedName.Name, false),
+				Protocol:        "TCP",
+				SessionAffinity: string(v1.ServiceAffinityNone),
+				Scheme:          tc.currentScheme,
+				NamespacedName:  namespacedName,
+				NetworkInfo:     network.DefaultNetwork(fakeGCE),
+			}
+			if _, _, err := backendPool.EnsureL4BackendService(params, klog.TODO()); err != nil {
+				t.Fatalf("EnsureL4BackendService(scheme=%s) returned error %v, want nil", tc.currentScheme, err)
+			}
+
+			updateCalled := false
+			fakeGCE.Compute().(*cloud.MockGCE).MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, obj *compute.BackendService, m *cloud.MockRegionBackendServices, o ...cloud.Option) error {
+				updateCalled = true
+				return mock.UpdateRegionBackendServiceHook(ctx, key, obj, m, o...)
+			}
+
+			params.Scheme = tc.desiredScheme
+			bs, _, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+			var mismatchErr *LoadBalancingSchemeMismatchError
+			if !errors.As(err, &mismatchErr) {
+				t.Errorf("EnsureL4BackendService(scheme=%s) returned error %v, want LoadBalancingSchemeMismatchError", tc.desiredScheme, err)
+			}
+			if bs != nil {
+				t.Errorf("EnsureL4BackendService(scheme=%s) returned backend service %v, want nil", tc.desiredScheme, bs)
+			}
+			if updateCalled {
+				t.Errorf("EnsureL4BackendService(scheme=%s) called Update on backend service with scheme %s, want no update", tc.desiredScheme, tc.currentScheme)
+			}
+
+			// Once the old backend service is deleted, the new one should be created.
+			if err := backendPool.Delete(bsName, meta.VersionGA, meta.Regional, klog.TODO()); err != nil {
+				t.Fatalf("backendPool.Delete(%s) returned error %v", bsName, err)
+			}
+			bs, _, err = backendPool.EnsureL4BackendService(params, klog.TODO())
+			if err != nil {
+				t.Fatalf("EnsureL4BackendService(scheme=%s) after deletion returned error %v, want nil", tc.desiredScheme, err)
+			}
+			if bs.LoadBalancingScheme != tc.desiredScheme {
+				t.Errorf("BackendService.LoadBalancingScheme = %s, want %s", bs.LoadBalancingScheme, tc.desiredScheme)
+			}
+		})
 	}
 }
