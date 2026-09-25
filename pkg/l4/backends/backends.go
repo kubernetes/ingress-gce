@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	api_v1 "k8s.io/api/core/v1"
@@ -295,12 +296,16 @@ func (p *Pool) EnsureL4BackendService(params L4BackendServiceParams, beLogger kl
 		expectedBS.LogConfig = currentBS.LogConfig
 	}
 
-	if params.EnableZonalAffinity {
-		beLogger.V(2).Info("EnsureL4BackendService: using Zonal Affinity", "spillover", ZonalAffinityEnabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
-		expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityEnabledTrafficPolicy()
-	} else {
-		beLogger.V(2).Info("EnsureL4BackendService: not using Zonal Affinity", "spillover", ZonalAffinityDisabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
-		expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityDisabledTrafficPolicy()
+	// Zonal Affinity is only supported for internal passthrough load balancers.
+	// For external (NetLB) backend services the field must not be set at all.
+	if params.Scheme == string(cloud.SchemeInternal) {
+		if params.EnableZonalAffinity {
+			beLogger.V(2).Info("EnsureL4BackendService: using Zonal Affinity", "spillover", ZonalAffinityEnabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
+			expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityEnabledTrafficPolicy()
+		} else {
+			beLogger.V(2).Info("EnsureL4BackendService: not using Zonal Affinity", "spillover", ZonalAffinityDisabledSpillover, "spilloverRatio", DefaultZonalAffinitySpilloverRatio)
+			expectedBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityDisabledTrafficPolicy()
+		}
 	}
 
 	// We need this configuration only for Strong Session Affinity feature
