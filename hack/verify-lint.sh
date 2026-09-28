@@ -25,7 +25,6 @@ cd "${REPO_ROOT}"
 # Set gobin here, install dependencies after this
 cd "hack/tools"
 export GOBIN=$PWD/bin
-export PATH=$GOBIN:$PATH
 # Install golangci-lint & linter
 echo "Installing golangci-lint forbidigo"
 echo
@@ -35,7 +34,7 @@ cd "../.."
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache
 echo -n "Checking linters: "
-ERRS=$(golangci-lint run ./... 2>&1 || true)
+ERRS=$("${GOBIN}/golangci-lint" run ./... 2>&1 || true)
 if [ -n "${ERRS}" ]; then
     echo "FAIL"
     echo "${ERRS}"
