@@ -24,7 +24,6 @@ SCRIPT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INGRESS_GCE_REPO_ROOT=$(cd "${SCRIPT_ROOT}/.." && pwd)
 
 export GOBIN="${SCRIPT_ROOT}/tools/bin"
-export PATH="${GOBIN}:${PATH}"
 GOPATH="$(go env GOPATH)"
 export GOPATH
 
