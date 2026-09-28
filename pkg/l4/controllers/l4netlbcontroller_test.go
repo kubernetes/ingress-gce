@@ -168,6 +168,26 @@ func deleteNetLBService(lc *L4NetLBController, svc *v1.Service) {
 	lc.ctx.ServiceInformer.GetIndexer().Delete(svc)
 }
 
+// needsDeletion calls lc.needsDeletion and fails the test if it returns an error.
+func needsDeletion(t *testing.T, lc *L4NetLBController, svc *v1.Service) bool {
+	t.Helper()
+	needsDeletion, err := lc.needsDeletion(svc, klog.TODO())
+	if err != nil {
+		t.Fatalf("lc.needsDeletion(%v) returned error %v, want nil", svc, err)
+	}
+	return needsDeletion
+}
+
+// isRBSBasedService calls lc.isRBSBasedService and fails the test if it returns an error.
+func isRBSBasedService(t *testing.T, lc *L4NetLBController, svc *v1.Service) bool {
+	t.Helper()
+	isRBS, err := lc.isRBSBasedService(svc, klog.TODO())
+	if err != nil {
+		t.Fatalf("lc.isRBSBasedService(%v) returned error %v, want nil", svc, err)
+	}
+	return isRBS
+}
+
 func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRange string, expectedPorts []string) error {
 	if len(svc.Spec.Ports) == 0 {
 		return fmt.Errorf("There are no ports in service!")
@@ -995,13 +1015,13 @@ func TestProcessServiceDeletion(t *testing.T) {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
 		t.Errorf("Expected L4 External LoadBalancer finalizer")
 	}
-	if lc.needsDeletion(svc, klog.TODO()) {
+	if needsDeletion(t, lc, svc) {
 		t.Errorf("Service should not be marked for deletion")
 	}
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if !lc.needsDeletion(svc, klog.TODO()) {
+	if !needsDeletion(t, lc, svc) {
 		t.Errorf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
@@ -1042,13 +1062,13 @@ func TestProcessNEGServiceDeletion(t *testing.T) {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV3) {
 		t.Errorf("Expected L4 External LoadBalancer finalizer")
 	}
-	if lc.needsDeletion(svc, klog.TODO()) {
+	if needsDeletion(t, lc, svc) {
 		t.Errorf("Service should not be marked for deletion")
 	}
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if !lc.needsDeletion(svc, klog.TODO()) {
+	if !needsDeletion(t, lc, svc) {
 		t.Errorf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
@@ -1139,11 +1159,11 @@ func TestServiceNeedsDeletionChecks(t *testing.T) {
 				delete(svc.Annotations, annotations.TCPForwardingRuleKey)
 			}
 
-			if tc.needsDeletion && !lc.needsDeletion(svc, klog.TODO()) {
+			if tc.needsDeletion && !needsDeletion(t, lc, svc) {
 				t.Errorf("Service should be marked for deletion")
 			}
 
-			if !tc.needsDeletion && lc.needsDeletion(svc, klog.TODO()) {
+			if !tc.needsDeletion && needsDeletion(t, lc, svc) {
 				t.Errorf("Service should not be marked for deletion")
 			}
 		})
@@ -1177,13 +1197,13 @@ func TestProcessRBSServiceTypeTransition(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			lc := newL4NetLBServiceController()
 			svc := createAndSyncNetLBSvcWithInstanceGroups(t, lc)
-			if lc.needsDeletion(svc, klog.TODO()) {
+			if needsDeletion(t, lc, svc) {
 				t.Errorf("Service should not be marked for deletion")
 			}
 
 			svc.Spec.Type = tc.finalType
 			updateNetLBService(lc, svc)
-			if !lc.needsDeletion(svc, klog.TODO()) {
+			if !needsDeletion(t, lc, svc) {
 				t.Errorf("RBS after switching to %v should be marked for deletion", tc.finalType)
 			}
 
@@ -1276,7 +1296,7 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 	// Mark the service for deletion by updating timestamp
 	ilbSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, ilbSvc)
-	if lc.needsDeletion(ilbSvc, klog.TODO()) {
+	if needsDeletion(t, lc, ilbSvc) {
 		t.Fatalf("Service should not be marked for deletion!")
 	}
 }
@@ -1374,7 +1394,7 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		}
 		svc.DeletionTimestamp = &metav1.Time{}
 		updateNetLBService(lc, svc)
-		if !lc.needsDeletion(svc, klog.TODO()) {
+		if !needsDeletion(t, lc, svc) {
 			t.Fatalf("Service should be marked for deletion")
 		}
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
@@ -1744,13 +1764,37 @@ func TestIsRBSBasedService(t *testing.T) {
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
 			addNetLBService(controller, svc)
 			// When
-			result := controller.isRBSBasedService(svc, klog.TODO())
+			result := isRBSBasedService(t, controller, svc)
 
 			// Then
 			if result != testCase.expectRBSService {
 				t.Errorf("isRBSBasedService(%v) = %v, want %v", svc, result, testCase.expectRBSService)
 			}
 		})
+	}
+}
+
+// TestServiceClassificationOnForwardingRuleGetError verifies that a transient GCE API error does not
+// make the controller treat a legacy Target Pool service as RBS based. The sync must fail so that the
+// service is requeued and retried once the API call succeeds again.
+func TestServiceClassificationOnForwardingRuleGetError(t *testing.T) {
+	svc := test.NewL4LegacyNetLBService(8080, 30234)
+	controller := newL4NetLBServiceControllerRBSDefault(true)
+	addNetLBService(controller, svc)
+	controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetForwardingRuleUnauthorizedErrorHook
+	key, _ := common.KeyFunc(svc)
+
+	if _, err := controller.isRBSBasedService(svc, klog.TODO()); err == nil {
+		t.Errorf("controller.isRBSBasedService(%v) returned nil error, want error", svc)
+	}
+	if _, err := controller.needsDeletion(svc, klog.TODO()); err == nil {
+		t.Errorf("controller.needsDeletion(%v) returned nil error, want error", svc)
+	}
+	if _, err := controller.preventLegacyServiceHandling(svc, key, klog.TODO()); err == nil {
+		t.Errorf("controller.preventLegacyServiceHandling(%v, %s) returned nil error, want error", svc, key)
+	}
+	if err := controller.sync(key, klog.TODO()); err == nil {
+		t.Errorf("controller.sync(%s) returned nil error, want error so that the service is requeued", key)
 	}
 }
 
@@ -1768,7 +1812,7 @@ func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 		annotations.TCPForwardingRuleKey: ilbFrName,
 		annotations.UDPForwardingRuleKey: ilbFrName,
 	}
-	if controller.isRBSBasedService(ilbSvc, klog.TODO()) {
+	if isRBSBasedService(t, controller, ilbSvc) {
 		t.Errorf("isRBSBasedService should not detect RBS in ILB services. Service: %v", ilbSvc)
 	}
 }
@@ -1783,21 +1827,21 @@ func TestIsRBSBasedServiceByForwardingRuleAnnotation(t *testing.T) {
 		annotations.UDPForwardingRuleKey: "fr-1",
 		annotations.TCPForwardingRuleKey: "fr-2",
 	}
-	if controller.isRBSBasedService(svc, klog.TODO()) {
+	if isRBSBasedService(t, controller, svc) {
 		t.Errorf("Should not detect RBS by forwarding rule annotations without matching name. Service: %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
 		annotations.TCPForwardingRuleKey: frName,
 	}
-	if !controller.isRBSBasedService(svc, klog.TODO()) {
+	if !isRBSBasedService(t, controller, svc) {
 		t.Errorf("Should detect RBS by TCP forwarding rule annotation with matching name. Service %v", svc)
 	}
 
 	svc.Annotations = map[string]string{
 		annotations.UDPForwardingRuleKey: frName,
 	}
-	if !controller.isRBSBasedService(svc, klog.TODO()) {
+	if !isRBSBasedService(t, controller, svc) {
 		t.Errorf("Should detect RBS by UDP forwarding rule annotation with matching name. Service %v", svc)
 	}
 }
@@ -2153,7 +2197,7 @@ func TestIsRBSBasedServiceForNonLoadBalancersType(t *testing.T) {
 			}
 			controller := newL4NetLBServiceController()
 
-			if controller.isRBSBasedService(svc, klog.TODO()) {
+			if isRBSBasedService(t, controller, svc) {
 				t.Errorf("isRBSBasedService(%v) = true, want false", svc)
 			}
 		})
@@ -2396,11 +2440,11 @@ func TestEnsureExternalLoadBalancerClass(t *testing.T) {
 			svc.DeletionTimestamp = &metav1.Time{}
 			updateNetLBService(lc, svc)
 			if tc.shouldProcess {
-				if !lc.needsDeletion(svc, klog.TODO()) {
+				if !needsDeletion(t, lc, svc) {
 					t.Errorf("Service should be marked for deletion")
 				}
 			} else {
-				if lc.needsDeletion(svc, klog.TODO()) {
+				if needsDeletion(t, lc, svc) {
 					t.Errorf("Service should not be marked for deletion")
 				}
 			}
