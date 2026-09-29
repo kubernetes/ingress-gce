@@ -282,11 +282,6 @@ func main() {
 				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
 			}
 			ctx := context.Background()
-			syncerMetrics, err := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, rootLogger)
-			if err != nil {
-				klog.Fatalf("Failed to initialize syncer metrics: %v", err)
-			}
-			go syncerMetrics.Run(stopCh)
 
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
@@ -305,7 +300,6 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
-					syncerMetrics,
 				)
 				if err != nil {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
@@ -325,7 +319,6 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
-					syncerMetrics,
 				)
 			}
 		}, rOption.wg)

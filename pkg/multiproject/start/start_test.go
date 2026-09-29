@@ -33,7 +33,6 @@ import (
 	"k8s.io/ingress-gce/pkg/multiproject/common/finalizer"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	"k8s.io/ingress-gce/pkg/multiproject/common/testutil"
-	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/negannotation"
 	negbindingfake "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
@@ -292,7 +291,6 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					gceCreator,
 					rootNamer,
 					stopCh,
-					syncMetrics.FakeSyncerMetrics(),
 				)
 			}()
 
@@ -439,7 +437,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	go Start(
 		logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopoClient,
 		kubeSystemUID, kubeClient, pcClient,
-		gceCreator, rootNamer, globalStop, syncMetrics.FakeSyncerMetrics(),
+		gceCreator, rootNamer, globalStop,
 	)
 
 	// Without the time.Sleep: the main test goroutine would create resources
@@ -1125,7 +1123,6 @@ func TestProviderConfigErrorCases(t *testing.T) {
 					gceCreator,
 					rootNamer,
 					stopCh,
-					syncMetrics.FakeSyncerMetrics(),
 				)
 			}()
 
