@@ -10,7 +10,6 @@ import (
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	"k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
-	syncMetrics "k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/syncers/labels"
 	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -35,7 +34,6 @@ type NEGControllerStarter struct {
 	gceCreator          gce.GCECreator
 	globalStopCh        <-chan struct{}
 	logger              klog.Logger
-	syncerMetrics       *syncMetrics.SyncerMetrics
 }
 
 // NewNEGControllerStarter creates a new NEG controller starter with the given dependencies.
@@ -54,7 +52,6 @@ func NewNEGControllerStarter(
 	gceCreator gce.GCECreator,
 	globalStopCh <-chan struct{},
 	logger klog.Logger,
-	syncerMetrics *syncMetrics.SyncerMetrics,
 ) *NEGControllerStarter {
 	return &NEGControllerStarter{
 		informers:           informers,
@@ -71,7 +68,6 @@ func NewNEGControllerStarter(
 		gceCreator:          gceCreator,
 		globalStopCh:        globalStopCh,
 		logger:              logger,
-		syncerMetrics:       syncerMetrics,
 	}
 }
 
@@ -103,7 +99,6 @@ func (s *NEGControllerStarter) StartController(pc *providerconfig.ProviderConfig
 		s.globalStopCh,
 		logger,
 		pc,
-		s.syncerMetrics,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start NEG controller: %w", err)
