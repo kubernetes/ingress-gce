@@ -334,7 +334,7 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 	negName := lc.namer.L4Backend(svc.Namespace, svc.Name)
 	if flags.F.EnableL4CustomStandaloneNEGNames {
 		if customName, err := annotations.StandaloneNEGName(svc); err != nil {
-			return nil, err
+			return nil, l4utils.NewUserError(err)
 		} else if customName != "" {
 			negName = customName
 		}
@@ -352,6 +352,9 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 		svcNeg, ok := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 		if !ok || svcNeg == nil {
 			return nil, fmt.Errorf("failed to retrieve ServiceNetworkEndpointGroup")
+		}
+		if !metav1.IsControlledBy(svcNeg, svc) {
+			return nil, fmt.Errorf("retrieved NetworkEndpointGroup is not controller by the service %s", svc.Name)
 		}
 
 		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
