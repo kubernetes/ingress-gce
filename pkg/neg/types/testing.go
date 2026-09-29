@@ -94,7 +94,6 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 
 	clusterNamer := namer.NewNamer(clusterID, "", klog.TODO())
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
-	negMetrics := metrics.NewNegMetrics()
 
 	return &TestContext{
 		KubeClient:                 kubeClient,
@@ -116,6 +115,6 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		ResyncPeriod:               resyncPeriod,
 		NumGCWorkers:               numGCWorkers,
 		EnableDualStackNEG:         false,
-		NegMetrics:                 negMetrics,
+		NegMetrics:                 metrics.FakeNegMetrics(),
 	}
 }

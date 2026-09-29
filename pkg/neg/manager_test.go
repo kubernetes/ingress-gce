@@ -119,7 +119,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.NumGCWorkers,
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
-		metrics.NewNegMetrics(),
+		metrics.FakeNegMetrics(),
 		false,
 	)
 	return manager, testContext.Cloud, testContext, nil
@@ -2334,7 +2334,7 @@ func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
 			testContext.NumGCWorkers,
 			labels.PodLabelPropagationConfig{},
 			klog.TODO(),
-			metrics.NewNegMetrics(),
+			metrics.FakeNegMetrics(),
 			wantDrain,
 		)
 
