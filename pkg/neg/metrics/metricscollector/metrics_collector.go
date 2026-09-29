@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -29,25 +30,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 )
-
-var register sync.Once
-
-// RegisterSyncerMetrics registers syncer related metrics
-func RegisterMetrics() {
-	register.Do(func() {
-		prometheus.MustRegister(SyncerCountBySyncResult)
-		prometheus.MustRegister(syncerEndpointState)
-		prometheus.MustRegister(syncerEndpointSliceState)
-		prometheus.MustRegister(NumberOfEndpoints)
-		prometheus.MustRegister(DualStackMigrationFinishedDurations)
-		prometheus.MustRegister(DualStackMigrationLongestUnfinishedDuration)
-		prometheus.MustRegister(DualStackMigrationServiceCount)
-		prometheus.MustRegister(SyncerCountByEndpointType)
-		prometheus.MustRegister(syncerSyncResult)
-		prometheus.MustRegister(negsManagedCount)
-		prometheus.MustRegister(networkEndpointGroupCount)
-	})
-}
 
 type SyncerMetricsCollector interface {
 	// UpdateSyncerStatusInMetrics update the status of corresponding syncer based on the sync error
@@ -91,11 +73,32 @@ type SyncerMetrics struct {
 
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
+
+	// Syncer metrics scoped to struct fields.
+	// These fields are guaranteed non-nil when SyncerMetrics is constructed via
+	// NewNegMetricsCollector, NewNegMetricsCollectorWithFactory, or FakeSyncerMetrics,
+	// so metric emission methods do not require nil checks.
+	syncerCountBySyncResult                     mtmetrics.GaugeVec
+	syncerEndpointState                         mtmetrics.GaugeVec
+	syncerEndpointSliceState                    mtmetrics.GaugeVec
+	numberOfEndpoints                           mtmetrics.GaugeVec
+	dualStackMigrationFinishedDurations         prometheus.Histogram
+	dualStackMigrationLongestUnfinishedDuration prometheus.Gauge
+	syncerCountByEndpointType                   mtmetrics.GaugeVec
+	dualStackMigrationServiceCount              prometheus.Gauge
+	syncerSyncResult                            mtmetrics.CounterVec
+	negsManagedCount                            mtmetrics.GaugeVec
+	networkEndpointGroupCount                   mtmetrics.GaugeVec
 }
 
-// NewNEGMetricsCollector initializes SyncerMetrics and starts a go routine to compute and export metrics periodically.
-func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *SyncerMetrics {
-	return &SyncerMetrics{
+// NewNegMetricsCollector creates a SyncerMetrics using the default Prometheus registerer.
+func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) (*SyncerMetrics, error) {
+	return NewNegMetricsCollectorWithFactory(exportInterval, mtmetrics.NewStdMetricFactory(prometheus.DefaultRegisterer), logger)
+}
+
+// NewNegMetricsCollectorWithFactory initializes SyncerMetrics using the given MetricFactory.
+func NewNegMetricsCollectorWithFactory(exportInterval time.Duration, factory mtmetrics.MetricFactory, logger klog.Logger) (*SyncerMetrics, error) {
+	sm := &SyncerMetrics{
 		syncerStateMap:              make(map[negtypes.NegSyncerKey]syncerState),
 		syncerEndpointStateMap:      make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
 		syncerEndpointSliceStateMap: make(map[negtypes.NegSyncerKey]negtypes.StateCountMap),
@@ -109,11 +112,19 @@ func NewNegMetricsCollector(exportInterval time.Duration, logger klog.Logger) *S
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
 	}
+	if err := registerMetrics(sm, factory); err != nil {
+		return nil, err
+	}
+	return sm, nil
 }
 
 // FakeSyncerMetrics creates new NegMetricsCollector with fixed 5 second metricsInterval, to be used in tests
 func FakeSyncerMetrics() *SyncerMetrics {
-	return NewNegMetricsCollector(5*time.Second, klog.TODO())
+	sm, err := NewNegMetricsCollectorWithFactory(5*time.Second, mtmetrics.NewStdMetricFactory(prometheus.NewRegistry()), klog.TODO())
+	if err != nil {
+		klog.Errorf("Failed to create FakeSyncerMetrics: %v", err)
+	}
+	return sm
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
@@ -129,29 +140,29 @@ func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
 // export exports syncer metrics.
 func (sm *SyncerMetrics) export() {
 	lpMetrics := sm.computeLabelMetrics()
-	NumberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
-	NumberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
+	sm.numberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
+	sm.numberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
 
 	stateCount, syncerCount := sm.computeSyncerStateMetrics()
 	//Reset metric so non-existent keys are now 0
-	SyncerCountBySyncResult.Reset()
+	sm.syncerCountBySyncResult.Reset()
 	for syncerState, count := range stateCount {
-		SyncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
+		sm.syncerCountBySyncResult.WithLabelValues(string(syncerState.lastSyncResult), strconv.FormatBool(syncerState.inErrorState)).Set(float64(count))
 	}
 
 	epStateCount, epsStateCount, epCount, epsCount := sm.computeEndpointStateMetrics()
 	for state, count := range epStateCount {
-		syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
+		sm.syncerEndpointState.WithLabelValues(string(state)).Set(float64(count))
 	}
 	for state, count := range epsStateCount {
-		syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
+		sm.syncerEndpointSliceState.WithLabelValues(string(state)).Set(float64(count))
 	}
 
 	negCounts := sm.computeNegCounts()
 	//Clear existing metrics (ensures that keys that don't exist anymore are reset)
-	negsManagedCount.Reset()
+	sm.negsManagedCount.Reset()
 	for key, count := range negCounts {
-		negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
+		sm.negsManagedCount.WithLabelValues(key.location, key.endpointType).Set(float64(count))
 	}
 
 	sm.logger.V(3).Info("Exporting syncer related metrics", "Syncer count", syncerCount,
@@ -163,22 +174,22 @@ func (sm *SyncerMetrics) export() {
 
 	finishedDurations, longestUnfinishedDurations := sm.computeDualStackMigrationDurations()
 	for _, duration := range finishedDurations {
-		DualStackMigrationFinishedDurations.Observe(float64(duration))
+		sm.dualStackMigrationFinishedDurations.Observe(float64(duration))
 	}
-	DualStackMigrationLongestUnfinishedDuration.Set(float64(longestUnfinishedDurations))
+	sm.dualStackMigrationLongestUnfinishedDuration.Set(float64(longestUnfinishedDurations))
 
 	syncerCountByEndpointType, migrationEndpointCount, migrationServicesCount := sm.computeDualStackMigrationCounts()
 	for endpointType, count := range syncerCountByEndpointType {
-		SyncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
+		sm.syncerCountByEndpointType.WithLabelValues(endpointType).Set(float64(count))
 	}
-	syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
-	DualStackMigrationServiceCount.Set(float64(migrationServicesCount))
+	sm.syncerEndpointState.WithLabelValues(string(negtypes.DualStackMigration)).Set(float64(migrationEndpointCount))
+	sm.dualStackMigrationServiceCount.Set(float64(migrationServicesCount))
 
 	sm.logger.V(3).Info("Exported DualStack Migration metrics")
 
 	negCount := sm.computeNegMetrics()
 	for feature, count := range negCount {
-		networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
+		sm.networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
 	}
 	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
 }
@@ -190,7 +201,7 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 		syncErr := negtypes.ClassifyError(err)
 		reason = syncErr.Reason
 	}
-	syncerSyncResult.WithLabelValues(string(reason)).Inc()
+	sm.syncerSyncResult.WithLabelValues(string(reason)).Inc()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerStateMap == nil {
