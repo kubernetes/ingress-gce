@@ -5511,7 +5511,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 				},
 			}
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 				bindingName,
 				namespace,

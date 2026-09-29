@@ -132,7 +132,7 @@ func TestNEGBindingManager(t *testing.T) {
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -425,7 +425,7 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 			}
 
 			clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			syncerMetrics := metricscollector.FakeSyncerMetrics()
 			defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 			cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -543,7 +543,7 @@ func TestInitializeOwnershipRegistry(t *testing.T) {
 		fakeNBClient,
 		negBindingLister,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		metrics.NewNegMetrics(),
+		metrics.FakeNegMetrics(),
 		metricscollector.FakeSyncerMetrics(),
 		&readiness.NoopReflector{},
 		"kube-system-uid",
@@ -616,7 +616,7 @@ func TestNEGBindingManagerFinalizer(t *testing.T) {
 	zoneGetter, _ := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default", false)
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -777,7 +777,7 @@ func TestNEGBindingManagerConflictResolution(t *testing.T) {
 	zoneGetter, _ := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default", false)
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -892,7 +892,7 @@ func TestNEGBindingManagerStatusPriorityOverSpec(t *testing.T) {
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet"
 	fakeNetworkResolver := network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL})
 	clusterNamer := namer.NewNamer("cluster-id", "fw-name", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 
 	m := newNEGBindingManager(
@@ -991,7 +991,7 @@ func TestEnsureSyncerForNEGBindingDeletionNoService(t *testing.T) {
 	}
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -1094,7 +1094,7 @@ func TestRestartScenarioNoService(t *testing.T) {
 	}
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
 	fakeNetworkResolver := network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL})
@@ -1305,7 +1305,7 @@ func TestNEGBindingManagerMetrics(t *testing.T) {
 	}
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -1436,7 +1436,7 @@ func TestNEGBindingManagerMetricsConflict(t *testing.T) {
 	}
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)
@@ -1565,7 +1565,7 @@ func TestNEGBindingManagerReadinessGate(t *testing.T) {
 	}
 
 	clusterNamer := namer.NewNamer("cluster-id", "", klog.TODO())
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	syncerMetrics := metricscollector.FakeSyncerMetrics()
 	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
 	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics)

@@ -241,7 +241,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 				SvcId:                    svcKey,
 				NetworkInfo:              &tc.network,
 				LbType:                   negtypes.L4InternalLB,
-				NegMetrics:               metrics.NewNegMetrics(),
+				NegMetrics:               metrics.FakeNegMetrics(),
 				IncludeDrainNodesL4Local: tc.includeDrainNodesL4Local,
 			}, klog.TODO())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
@@ -410,7 +410,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				SvcId:       svcKey,
 				NetworkInfo: &tc.network,
 				LbType:      negtypes.L4InternalLB,
-				NegMetrics:  metrics.NewNegMetrics(),
+				NegMetrics:  metrics.FakeNegMetrics(),
 			}, klog.TODO())
 			updateNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, nodeInformer.GetIndexer())
 			retSet, _, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
@@ -688,7 +688,7 @@ func TestClusterWantedNEGsCount(t *testing.T) {
 				SvcId:       svcKey,
 				NetworkInfo: &defaultNetwork,
 				LbType:      lbType,
-				NegMetrics:  metrics.NewNegMetrics(),
+				NegMetrics:  metrics.FakeNegMetrics(),
 			}, klog.TODO())
 
 			// Act
@@ -1041,7 +1041,7 @@ func TestEndpointsSplitAcrossZonesILB(t *testing.T) {
 				SvcId:       "svc",
 				NetworkInfo: &defaultNetwork,
 				LbType:      negtypes.L4InternalLB,
-				NegMetrics:  metrics.NewNegMetrics(),
+				NegMetrics:  metrics.FakeNegMetrics(),
 			}, klog.TODO())
 
 			var endpointsMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
@@ -1206,7 +1206,7 @@ func TestEndpointsMigrationFrom25To24ForILBEtpCluster(t *testing.T) {
 				SvcId:       "svc",
 				NetworkInfo: &defaultNetwork,
 				LbType:      negtypes.L4InternalLB,
-				NegMetrics:  metrics.NewNegMetrics(),
+				NegMetrics:  metrics.FakeNegMetrics(),
 			}, klog.TODO())
 
 			// Set up nodes

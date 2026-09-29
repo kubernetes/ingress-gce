@@ -473,7 +473,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				true,
 				tc.networkInfo,
 				klog.TODO(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 			)
 			if err != nil {
 				t.Errorf("unexpected error: %s", err)
@@ -525,7 +525,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 				true,
 				tc.networkInfo,
 				klog.TODO(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 			)
 
 			if err != nil {
@@ -667,7 +667,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO(), metrics.NewNegMetrics())
+			gotResult, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()), zoneGetter, podLister, tc.portName, tc.networkEndpointType, tc.enableDualStackNEG, false, klog.TODO(), metrics.FakeNegMetrics())
 			if err != nil {
 				t.Errorf("toZoneNetworkEndpointMap() = err %v, want no error", err)
 			}
@@ -1472,7 +1472,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				t.Fatalf("failed to list zones for test case %q: %v", tc.desc, err)
 			}
 		}
-		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredSubnetZones, negCloud, meta.VersionGA, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredSubnetZones, negCloud, meta.VersionGA, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1650,7 +1650,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to list zones: %v", err)
 			}
-			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesPerSubnet, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), tc.useHealthStatus)
+			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesPerSubnet, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), tc.useHealthStatus)
 			if err != nil {
 				t.Fatalf("retrieveExistingZoneNetworkEndpointMap: %v", err)
 			}
@@ -1733,7 +1733,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list zones: %v", err)
 	}
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesNoDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesNoDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
 	if err != nil {
 		t.Errorf("expected no error with includeDrainNodesL4Local=false and missing zone4 NEG, got: %v", err)
 	}
@@ -1746,7 +1746,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list zones: %v", err)
 	}
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
 	if err == nil {
 		t.Errorf("expected error with includeDrainNodesL4Local=true and missing zone4 NEG, got nil")
 	}
@@ -1756,7 +1756,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	drainEndpoint := &composite.NetworkEndpoint{IpAddress: "10.0.4.1", Instance: "upgrade-instance1"}
 	fakeCloud.AttachNetworkEndpoints(negName, negtypes.TestZone4, []*composite.NetworkEndpoint{drainEndpoint}, meta.VersionGA, klog.TODO())
 
-	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.NewNegMetrics(), false)
+	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
 	if err != nil {
 		t.Fatalf("retrieveExistingZoneNetworkEndpointMap(drain=true, NEG exists): %v", err)
 	}
@@ -1921,7 +1921,7 @@ func TestNameUniqueness(t *testing.T) {
 		true,
 		networkInfo,
 		klog.TODO(),
-		metrics.NewNegMetrics(),
+		metrics.FakeNegMetrics(),
 	)
 	if err != nil {
 		t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -1959,7 +1959,7 @@ func TestNameUniqueness(t *testing.T) {
 		true,
 		networkInfo,
 		klog.TODO(),
-		metrics.NewNegMetrics())
+		metrics.FakeNegMetrics())
 
 	if err == nil {
 		t.Errorf("Expected error when called with duplicate NEG name")
@@ -2013,7 +2013,7 @@ func TestNegObjectCrd(t *testing.T) {
 			true,
 			networkInfo,
 			klog.TODO(),
-			metrics.NewNegMetrics())
+			metrics.FakeNegMetrics())
 		if err != nil {
 			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
 		}
@@ -2048,7 +2048,7 @@ func TestNegObjectCrd(t *testing.T) {
 			true,
 			networkInfo,
 			klog.TODO(),
-			metrics.NewNegMetrics(),
+			metrics.FakeNegMetrics(),
 		)
 
 		if err != nil {
@@ -2193,7 +2193,7 @@ func TestNEGRecreate(t *testing.T) {
 	for _, tc := range testCases {
 		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 		negtypes.MockNetworkEndpointAPIs(fakeGCE)
-		fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork, metrics.NewNegMetrics())
+		fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork, metrics.FakeNegMetrics())
 		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             apiVersion,
 			Name:                negName,
@@ -2226,7 +2226,7 @@ func TestNEGRecreate(t *testing.T) {
 			true,
 			networkInfo,
 			klog.TODO(),
-			metrics.NewNegMetrics(),
+			metrics.FakeNegMetrics(),
 		)
 		if !tc.expectError && err != nil {
 			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
@@ -2306,7 +2306,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycle(t *testing.T) {
 				tc.manageLifecycle,
 				networkInfo,
 				klog.TODO(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 			)
 
 			if tc.manageLifecycle && err != nil {
@@ -2376,7 +2376,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycleNetSubnetMismatch(t *testing.T
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			negtypes.MockNetworkEndpointAPIs(fakeGCE)
-			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork, metrics.NewNegMetrics())
+			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork, metrics.FakeNegMetrics())
 
 			// Pre-create NEG with different network/subnetwork
 			fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
@@ -2411,7 +2411,7 @@ func TestEnsureNetworkEndpointGroupManageLifecycleNetSubnetMismatch(t *testing.T
 				tc.manageLifecycle,
 				networkInfo,
 				klog.TODO(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 			)
 
 			if tc.expectError {

@@ -164,7 +164,10 @@ func createNEGController(
 	}
 
 	noDefaultBackendServicePort := utils.ServicePort{}
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics, err := metrics.NewNegMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NEG metrics: %w", err)
+	}
 
 	negController, err := newNEGController(
 		kubeClient,
