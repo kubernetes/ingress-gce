@@ -2283,7 +2283,6 @@ func TestNegObjectCrd(t *testing.T) {
 }
 
 func TestNEGRecreate(t *testing.T) {
-
 	var (
 		testZone             = "test-zone"
 		testNamedPort        = "named-port"
@@ -2356,6 +2355,16 @@ func TestNEGRecreate(t *testing.T) {
 			customName:     true,
 		},
 		{
+			desc:           "correct network, correct subnetwork, customName, matching neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     testSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+			customName:     true,
+		},
+		{
 			desc:           "incorrect network, matching neg description, GCP endpoint type",
 			network:        diffNetwork,
 			subnetwork:     diffSubnetwork,
@@ -2372,6 +2381,16 @@ func TestNEGRecreate(t *testing.T) {
 			negDescription: matchingNegDesc,
 			expectRecreate: true,
 			expectError:    false,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, customName, matching neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+			customName:     true,
 		},
 		{
 			desc:           "incorrect network, different neg description, GCP endpoint type",

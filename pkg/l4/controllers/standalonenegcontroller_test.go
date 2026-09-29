@@ -1247,9 +1247,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            l4Namer.L4Backend("default", "svc-match-crd"),
-						Namespace:       "default",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc-match-crd"}},
+						Name:      l4Namer.L4Backend("default", "svc-match-crd"),
+						Namespace: "default",
 					},
 					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
@@ -1308,9 +1307,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            l4Namer.L4Backend("default", "svc-match-ann"),
-						Namespace:       "default",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc-match-ann"}},
+						Name:      l4Namer.L4Backend("default", "svc-match-ann"),
+						Namespace: "default",
 					},
 					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
@@ -1378,9 +1376,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            l4Namer.L4Backend("default", "svc-dedup"),
-						Namespace:       "default",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc-dedup"}},
+						Name:      l4Namer.L4Backend("default", "svc-dedup"),
+						Namespace: "default",
 					},
 					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
@@ -1448,9 +1445,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            l4Namer.L4Backend("default", "svc-dedup-failing"),
-						Namespace:       "default",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc-dedup-failing"}},
+						Name:      l4Namer.L4Backend("default", "svc-dedup-failing"),
+						Namespace: "default",
 					},
 					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
 						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
@@ -1558,6 +1554,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			c.L4Namer = l4Namer
 
 			for _, svcneg := range tc.svcNegs {
+				svcneg.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(tc.svc, tc.svc.GroupVersionKind())})
 				c.SvcNegInformer.GetIndexer().Add(svcneg)
 				c.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
 			}
@@ -1848,6 +1845,9 @@ func TestStandaloneNEGLBControllerMetrics_Success(t *testing.T) {
 			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
 		},
 	})
+	svcNeg.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(svc, svc.GroupVersionKind()),
+	})
 	lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg)
 
 	// Add service to informer and fake kube client
@@ -2052,6 +2052,9 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 		NetworkEndpointGroups: []negv1beta1.NegObjectReference{
 			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
 		},
+	})
+	svcNeg.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(svc, svc.GroupVersionKind()),
 	})
 	lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg)
 
@@ -2446,6 +2449,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		svc  *v1.Service
 		// negNamesInStore are the SvcNeg CR names to register, each pointing at a NEG of the same name.
 		negNamesInStore func(generatedName string) []string
+		isOwnedBySvc    bool
 		// wantNEGNames are the NEG names expected in the returned set.
 		wantNEGNames func(generatedName string) []string
 		wantErr      bool
@@ -2453,6 +2457,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc:            "no annotation: falls back to the generated L4Backend name",
 			svc:             newSvc(nil),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated, customName} },
 			wantNEGNames:    func(generated string) []string { return []string{generated} },
 		},
@@ -2461,14 +2466,25 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 			svc: newSvc(map[string]string{
 				annotations.StandaloneNegName: customName,
 			}),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated, customName} },
 			wantNEGNames:    func(generated string) []string { return []string{customName} },
+		},
+		{
+			desc: "annotation set: NEG name matches the annotation value, but is not owned by controller",
+			svc: newSvc(map[string]string{
+				annotations.StandaloneNegName: customName,
+			}),
+			isOwnedBySvc:    false,
+			negNamesInStore: func(generated string) []string { return []string{generated, customName} },
+			wantErr:         true,
 		},
 		{
 			desc: "annotation set but only the generated NEG exists: nothing is returned",
 			svc: newSvc(map[string]string{
 				annotations.StandaloneNegName: customName,
 			}),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
 			wantNEGNames:    func(generated string) []string { return nil },
 		},
@@ -2477,6 +2493,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 			svc: newSvc(map[string]string{
 				annotations.StandaloneNegName: "Invalid_NEG_Name",
 			}),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
 			wantErr:         true,
 		},
@@ -2485,6 +2502,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 			svc: newSvc(map[string]string{
 				annotations.StandaloneNegName: "",
 			}),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
 			wantErr:         true,
 		},
@@ -2493,6 +2511,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 			svc: newSvc(map[string]string{
 				annotations.StandaloneNegName: "../../us-central1-c/networkEndpointGroups/custom-neg",
 			}),
+			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
 			wantErr:         true,
 		},
@@ -2517,6 +2536,11 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 						},
 					},
 				)
+				if tc.isOwnedBySvc {
+					svcNeg.SetOwnerReferences([]metav1.OwnerReference{
+						*metav1.NewControllerRef(tc.svc, tc.svc.GroupVersionKind()),
+					})
+				}
 				if err := lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg); err != nil {
 					t.Fatalf("Failed to add SvcNeg %q: %v", negName, err)
 				}
