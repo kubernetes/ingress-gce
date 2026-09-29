@@ -1405,3 +1405,100 @@ func TestIsLowerAPIVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureL4BackendServiceZonalAffinityOnlyForInternal(t *testing.T) {
+	for _, tc := range []struct {
+		desc                string
+		scheme              string
+		enableZonalAffinity bool
+		wantTrafficPolicy   *composite.BackendServiceNetworkPassThroughLbTrafficPolicy
+	}{
+		{
+			desc:              "ILB without zonal affinity sets disabled traffic policy",
+			scheme:            string(cloud.SchemeInternal),
+			wantTrafficPolicy: zonalAffinityDisabledTrafficPolicy(),
+		},
+		{
+			desc:                "ILB with zonal affinity sets enabled traffic policy",
+			scheme:              string(cloud.SchemeInternal),
+			enableZonalAffinity: true,
+			wantTrafficPolicy:   zonalAffinityEnabledTrafficPolicy(),
+		},
+		{
+			desc:              "NetLB does not set traffic policy",
+			scheme:            string(cloud.SchemeExternal),
+			wantTrafficPolicy: nil,
+		},
+		{
+			desc:                "NetLB does not set traffic policy even if zonal affinity is requested",
+			scheme:              string(cloud.SchemeExternal),
+			enableZonalAffinity: true,
+			wantTrafficPolicy:   nil,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+
+			namespacedName := types.NamespacedName{Name: "test-service", Namespace: "test-ns"}
+			params := L4BackendServiceParams{
+				Name:                l4namer.L4Backend(namespacedName.Namespace, namespacedName.Name),
+				HealthCheckLink:     l4namer.L4HealthCheck(namespacedName.Namespace, namespacedName.Name, false),
+				Protocol:            "TCP",
+				SessionAffinity:     string(v1.ServiceAffinityNone),
+				Scheme:              tc.scheme,
+				NamespacedName:      namespacedName,
+				NetworkInfo:         network.DefaultNetwork(fakeGCE),
+				EnableZonalAffinity: tc.enableZonalAffinity,
+			}
+			bs, _, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+			if err != nil {
+				t.Fatalf("EnsureL4BackendService() returned error %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.wantTrafficPolicy, bs.NetworkPassThroughLbTrafficPolicy); diff != "" {
+				t.Errorf("BackendService.NetworkPassThroughLbTrafficPolicy mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestEnsureL4BackendServiceNetLBWithDisabledZonalAffinityIsNotUpdated(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	namespacedName := types.NamespacedName{Name: "test-service", Namespace: "test-ns"}
+	params := L4BackendServiceParams{
+		Name:            l4namer.L4Backend(namespacedName.Namespace, namespacedName.Name),
+		HealthCheckLink: l4namer.L4HealthCheck(namespacedName.Namespace, namespacedName.Name, false),
+		Protocol:        "TCP",
+		SessionAffinity: string(v1.ServiceAffinityNone),
+		Scheme:          string(cloud.SchemeExternal),
+		NamespacedName:  namespacedName,
+		NetworkInfo:     network.DefaultNetwork(fakeGCE),
+	}
+	if _, _, err := backendPool.EnsureL4BackendService(params, klog.TODO()); err != nil {
+		t.Fatalf("EnsureL4BackendService() returned error %v, want nil", err)
+	}
+
+	// Simulate a NetLB Backend Service created by an older controller version,
+	// which set the zonal affinity traffic policy to disabled.
+	key := meta.RegionalKey(params.Name, fakeGCE.Region())
+	existingBS, err := composite.GetBackendService(fakeGCE, key, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("GetBackendService() returned error %v", err)
+	}
+	existingBS.NetworkPassThroughLbTrafficPolicy = zonalAffinityDisabledTrafficPolicy()
+	if err := composite.UpdateBackendService(fakeGCE, key, existingBS, klog.TODO()); err != nil {
+		t.Fatalf("UpdateBackendService() returned error %v", err)
+	}
+
+	_, syncStatus, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService() returned error %v, want nil", err)
+	}
+	if syncStatus != l4utils.ResourceResync {
+		t.Errorf("EnsureL4BackendService() sync status = %v, want %v (no update)", syncStatus, l4utils.ResourceResync)
+	}
+}
