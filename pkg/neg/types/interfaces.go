@@ -45,7 +45,10 @@ type NetworkEndpointGroupCloud interface {
 	NetworkURL() string
 	SubnetworkURL() string
 	NetworkProjectID() string
+	ProjectID() string
 	Region() string
+	LocalZone() string
+	ContainerAPIEndpoint() string
 	GetNetwork(networkName string) (*compute.Network, error)
 	Zones() ([]string, error)
 }

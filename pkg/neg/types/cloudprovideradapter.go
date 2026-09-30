@@ -185,8 +185,23 @@ func (a *cloudProviderAdapter) NetworkProjectID() string {
 	return a.c.NetworkProjectID()
 }
 
+func (a *cloudProviderAdapter) ProjectID() string {
+	return a.c.ProjectID()
+}
+
 func (a *cloudProviderAdapter) Region() string {
 	return a.c.Region()
+}
+
+func (a *cloudProviderAdapter) LocalZone() string {
+	return a.c.LocalZone()
+}
+
+func (a *cloudProviderAdapter) ContainerAPIEndpoint() string {
+	if a.c.ContainerService() == nil {
+		return ""
+	}
+	return a.c.ContainerService().BasePath
 }
 
 func (a *cloudProviderAdapter) GetNetwork(networkName string) (*compute.Network, error) {

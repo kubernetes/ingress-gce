@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
+	"unsafe"
 
 	"k8s.io/ingress-gce/pkg/composite"
 
@@ -27,7 +29,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	container "google.golang.org/api/container/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
@@ -48,6 +52,23 @@ func GetNetworkEndpointStore(negCloud NetworkEndpointGroupCloud) NetworkEndpoint
 	mockedCloud := adapter.c.Compute().(*cloud.MockGCE)
 	ret := mockedCloud.MockNetworkEndpointGroups.X.(NetworkEndpointStore)
 	return ret
+}
+
+func MockContainerService(fakeGCE *gce.Cloud) error {
+	if fakeGCE == nil || fakeGCE.ContainerService() != nil {
+		return nil
+	}
+	containerService, err := container.NewService(context.Background(), option.WithoutAuthentication())
+	if err != nil {
+		return err
+	}
+	// gce.NewFakeGCECloud (in vendor) does not initialize the unexported containerService field, and gce.Cloud provides no setter for it.
+	v := reflect.ValueOf(fakeGCE).Elem().FieldByName("containerService")
+	if !v.IsValid() {
+		return fmt.Errorf("field containerService not found on gce.Cloud")
+	}
+	*(**container.Service)(unsafe.Pointer(v.UnsafeAddr())) = containerService
+	return nil
 }
 
 func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {

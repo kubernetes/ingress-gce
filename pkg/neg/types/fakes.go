@@ -204,8 +204,20 @@ func (f *FakeNetworkEndpointGroupCloud) NetworkProjectID() string {
 	return "mock-project"
 }
 
+func (f *FakeNetworkEndpointGroupCloud) ProjectID() string {
+	return "mock-project"
+}
+
 func (f *FakeNetworkEndpointGroupCloud) Region() string {
 	return "test-region"
+}
+
+func (f *FakeNetworkEndpointGroupCloud) LocalZone() string {
+	return TestZone1
+}
+
+func (f *FakeNetworkEndpointGroupCloud) ContainerAPIEndpoint() string {
+	return "https://container.googleapis.com/"
 }
 
 func (f *FakeNetworkEndpointGroupCloud) GetNetwork(networkName string) (*compute.Network, error) {

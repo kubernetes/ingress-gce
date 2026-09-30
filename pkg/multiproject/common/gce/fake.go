@@ -9,6 +9,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	v1 "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/klog/v2"
 )
@@ -47,6 +48,9 @@ func (g *GCEFake) GCEForProviderConfig(providerConfig *v1.ProviderConfig, logger
 	updatedConfig.SubnetworkURL = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", providerConfig.Spec.ProjectID, updatedConfig.Region, providerConfig.Spec.NetworkConfig.SubnetInfo.Subnetwork)
 	logger.Info("Creating GCEFake for provider config", "providerConfig", providerConfig.Name, "updatedConfig", updatedConfig)
 	fakeCloud := cloudgce.NewFakeGCECloud(updatedConfig)
+	if err := negtypes.MockContainerService(fakeCloud); err != nil {
+		return nil, err
+	}
 	_, err := createNetwork(fakeCloud, providerConfig.Spec.NetworkConfig.Network)
 	if err != nil {
 		return nil, err
