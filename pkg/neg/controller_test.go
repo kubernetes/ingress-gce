@@ -125,7 +125,14 @@ var (
 	}
 )
 
+func init() {
+	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
+}
+
 func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, readOnlyMode bool) (*Controller, error) {
+	if err := negtypes.MockContainerService(testContext.Cloud); err != nil {
+		return nil, err
+	}
 	nodeInformer := zonegetter.FakeNodeInformer()
 	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
 	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
@@ -2527,6 +2534,9 @@ func TestNodeInformerFilterWithIncludeDrainNodesL4Local(t *testing.T) {
 	t.Parallel()
 	kubeClient := fake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	if err := negtypes.MockContainerService(testContext.Cloud); err != nil {
+		t.Fatalf("failed to mock container service: %v", err)
+	}
 
 	// Populate initially with some nodes, but we will add the test node manually.
 	zoneGetter, err := zonegetter.NewFakeZoneGetter(testContext.NodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
@@ -2697,6 +2707,9 @@ func TestControllerNEGBinding(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	fakeNBClient := negbindingfake.NewSimpleClientset()
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	if err := negtypes.MockContainerService(testContext.Cloud); err != nil {
+		t.Fatalf("failed to mock container service: %v", err)
+	}
 
 	negBindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, utils.NewNamespaceIndexer())
 	_ = negBindingInformer.AddIndexers(cache.Indexers{ServiceKeyIndex: ServiceKeyIndexFunc})
@@ -2814,5 +2827,165 @@ func TestControllerNEGBinding(t *testing.T) {
 
 	if syncerCount != 1 {
 		t.Errorf("expected 1 syncer in negBindingManager after processService on standalone NEG service, got %d", syncerCount)
+	}
+}
+
+type fakeClusterURLCloud struct {
+	negtypes.NetworkEndpointGroupCloud
+	projectID            string
+	region               string
+	localZone            string
+	containerAPIEndpoint string
+}
+
+func (f *fakeClusterURLCloud) ProjectID() string            { return f.projectID }
+func (f *fakeClusterURLCloud) Region() string               { return f.region }
+func (f *fakeClusterURLCloud) LocalZone() string            { return f.localZone }
+func (f *fakeClusterURLCloud) ContainerAPIEndpoint() string { return f.containerAPIEndpoint }
+
+func TestBuildClusterURL(t *testing.T) {
+	oldClusterName := flags.F.GKEClusterName
+	oldClusterType := flags.F.GKEClusterType
+	defer func() {
+		flags.F.GKEClusterName = oldClusterName
+		flags.F.GKEClusterType = oldClusterType
+	}()
+
+	testCases := []struct {
+		desc        string
+		cloud       negtypes.NetworkEndpointGroupCloud
+		clusterVals *gce.TestClusterValues
+		clusterName string
+		clusterType string
+		mockAPI     bool
+		want        string
+		wantErr     bool
+	}{
+		{
+			desc:    "nil cloud returns error",
+			wantErr: true,
+		},
+		{
+			desc: "zonal cluster via cloudProviderAdapter",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "us-central1",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "test-cluster",
+			clusterType: "ZONAL",
+			mockAPI:     true,
+			want:        "https://container.googleapis.com/v1/projects/test-project/locations/us-central1-a/clusters/test-cluster",
+		},
+		{
+			desc: "regional cluster via cloudProviderAdapter",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "us-central1",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "test-cluster",
+			clusterType: "REGIONAL",
+			mockAPI:     true,
+			want:        "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
+		},
+		{
+			desc: "staging container API endpoint with trailing slash",
+			cloud: &fakeClusterURLCloud{
+				projectID:            "test-project",
+				region:               "us-central1",
+				localZone:            "us-central1-a",
+				containerAPIEndpoint: "https://staging-container.sandbox.googleapis.com/",
+			},
+			clusterName: "test-cluster",
+			clusterType: "REGIONAL",
+			want:        "https://staging-container.sandbox.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
+		},
+		{
+			desc: "empty container API endpoint returns error",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "us-central1",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "test-cluster",
+			clusterType: "REGIONAL",
+			mockAPI:     false,
+			wantErr:     true,
+		},
+		{
+			desc: "empty project ID returns error",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "",
+				Region:    "us-central1",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "test-cluster",
+			clusterType: "REGIONAL",
+			mockAPI:     true,
+			wantErr:     true,
+		},
+		{
+			desc: "empty regional location returns error",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "test-cluster",
+			clusterType: "REGIONAL",
+			mockAPI:     true,
+			wantErr:     true,
+		},
+		{
+			desc: "empty zonal location returns error",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "us-central1",
+				ZoneName:  "",
+			},
+			clusterName: "test-cluster",
+			clusterType: "ZONAL",
+			mockAPI:     true,
+			wantErr:     true,
+		},
+		{
+			desc: "empty cluster name returns error",
+			clusterVals: &gce.TestClusterValues{
+				ProjectID: "test-project",
+				Region:    "us-central1",
+				ZoneName:  "us-central1-a",
+			},
+			clusterName: "",
+			clusterType: "REGIONAL",
+			mockAPI:     true,
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.GKEClusterName = tc.clusterName
+			flags.F.GKEClusterType = tc.clusterType
+
+			cloud := tc.cloud
+			if cloud == nil && tc.clusterVals != nil {
+				fakeGCE := gce.NewFakeGCECloud(*tc.clusterVals)
+				if tc.mockAPI {
+					if err := negtypes.MockContainerService(fakeGCE); err != nil {
+						t.Fatalf("failed to mock container service: %v", err)
+					}
+				}
+				cloud = negtypes.NewAdapter(fakeGCE, nil)
+			}
+
+			got, err := buildClusterURL(cloud)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("buildClusterURL() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && got != tc.want {
+				t.Errorf("buildClusterURL() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

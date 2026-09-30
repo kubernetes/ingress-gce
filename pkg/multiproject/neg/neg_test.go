@@ -11,9 +11,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	cloudgce "k8s.io/cloud-provider-gcp/providers/gce"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	providerconfig "k8s.io/ingress-gce/pkg/apis/providerconfig/v1"
 	svcnegv1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
 	multiprojectinformers "k8s.io/ingress-gce/pkg/multiproject/neg/informerset"
 	"k8s.io/ingress-gce/pkg/neg"
@@ -32,6 +34,10 @@ import (
 	klog "k8s.io/klog/v2"
 	ktesting "k8s.io/klog/v2/ktesting"
 )
+
+func init() {
+	flags.F.GKEClusterName = cloudgce.DefaultTestClusterValues().ClusterName
+}
 
 // TestStartNEGController_StopJoin verifies that the stop channel passed to the controller
 // closes when either the global stop channel or the per-ProviderConfig stop channel closes.
