@@ -2757,6 +2757,14 @@ func TestControllerNEGBinding(t *testing.T) {
 		t.Fatalf("failed to create test controller: %v", err)
 	}
 
+	expectedClusterURL := "https://container.googleapis.com/v1/projects/test-project/locations/us-central1-b/clusters/Test-Cluster-Name"
+	if got := controller.manager.(*syncerManager).clusterURL; got != expectedClusterURL {
+		t.Errorf("syncerManager.clusterURL = %q, want %q", got, expectedClusterURL)
+	}
+	if got := controller.negBindingManager.clusterURL; got != expectedClusterURL {
+		t.Errorf("negBindingManager.clusterURL = %q, want %q", got, expectedClusterURL)
+	}
+
 	svc := &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "svc1"},
 		Spec: apiv1.ServiceSpec{

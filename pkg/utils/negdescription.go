@@ -82,9 +82,9 @@ func (expectDesc StandardNEGDescription) MatchesString(descString, negName, zone
 
 // BoundNEGDescription stores the description for a NEG managed for NEGBinding CR.
 type BoundNEGDescription struct {
-	ClusterName string `json:"cluster-name,omitempty"`
-	Namespace   string `json:"namespace,omitempty"`
-	BackendRef  string `json:"backend-ref,omitempty"`
+	ClusterURL string `json:"cluster-url,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	BackendRef string `json:"backend-ref,omitempty"`
 }
 
 // String returns the string representation of a BoundNEGDescription.
@@ -102,11 +102,11 @@ func (desc BoundNEGDescription) String() string {
 func (expectDesc BoundNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
 	desc, err := NEGDescriptionFromString[BoundNEGDescription](descString)
 	if err != nil {
-		klog.Warningf("Error unmarshalling Neg Description %s err:%s", negName, err)
-		return false, fmt.Errorf("Error unmarshalling Neg Description %s err:%s", negName, err)
+		klog.Warningf("Error unmarshalling NEG description %s err:%v", negName, err)
+		return false, fmt.Errorf("error unmarshalling NEG description %s err:%w", negName, err)
 	}
 
-	if desc.ClusterName != expectDesc.ClusterName ||
+	if desc.ClusterURL != expectDesc.ClusterURL ||
 		desc.Namespace != expectDesc.Namespace ||
 		desc.BackendRef != expectDesc.BackendRef {
 		return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)

@@ -211,6 +211,7 @@ type negBindingManager struct {
 
 	reflector     readiness.Reflector
 	kubeSystemUID types.UID
+	clusterURL    string
 
 	ownershipRegistry *negOwnershipRegistry
 
@@ -234,6 +235,7 @@ func newNEGBindingManager(
 	syncerMetrics *metricscollector.SyncerMetrics,
 	reflector readiness.Reflector,
 	kubeSystemUID types.UID,
+	clusterURL string,
 	logger klog.Logger,
 ) *negBindingManager {
 	m := &negBindingManager{
@@ -254,6 +256,7 @@ func newNEGBindingManager(
 		syncerMetrics:       syncerMetrics,
 		reflector:           reflector,
 		kubeSystemUID:       kubeSystemUID,
+		clusterURL:          clusterURL,
 		logger:              logger.WithName("NEGBindingManager"),
 	}
 	m.ownershipRegistry = newNEGOwnershipRegistry(m.tryAssignReleasedNEGs)
@@ -591,6 +594,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		m.reflector,
 		epc,
 		string(m.kubeSystemUID),
+		m.clusterURL,
 		m.syncerMetrics,
 		false,
 		false,

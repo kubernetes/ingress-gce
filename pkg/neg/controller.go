@@ -270,6 +270,15 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
+	clusterURL := ""
+	if enableNEGBinding {
+		var err error
+		clusterURL, err = buildClusterURL(cloud)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	manager := newSyncerManager(
 		namer,
 		l4Namer,
@@ -278,6 +287,7 @@ func NewController(
 		zoneGetter,
 		svcNegClient,
 		kubeSystemUID,
+		clusterURL,
 		podInformer.GetIndexer(),
 		serviceInformer.GetIndexer(),
 		endpointSliceInformer.GetIndexer(),
@@ -342,6 +352,7 @@ func NewController(
 			syncerMetrics,
 			reflector,
 			kubeSystemUID,
+			clusterURL,
 			logger,
 		)
 		negLookup.AddLookup(negBindingMgr)

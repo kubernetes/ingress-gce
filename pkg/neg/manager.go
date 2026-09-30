@@ -102,6 +102,9 @@ type syncerManager struct {
 	// kubeSystemUID is used to by syncers when NEG CRD is enabled
 	kubeSystemUID types.UID
 
+	// clusterURL is the URL of the cluster used in NEG descriptions
+	clusterURL string
+
 	// enableNonGcpMode indicates whether nonGcpMode have been enabled
 	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
 	enableNonGcpMode bool
@@ -137,6 +140,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	zoneGetter *zonegetter.ZoneGetter,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
+	clusterURL string,
 	podLister cache.Indexer,
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
@@ -171,6 +175,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		syncerMetrics:              syncerMetrics,
 		svcNegClient:               svcNegClient,
 		kubeSystemUID:              kubeSystemUID,
+		clusterURL:                 clusterURL,
 		enableNonGcpMode:           enableNonGcpMode,
 		enableDualStackNEG:         enableDualStackNEG,
 		numGCWorkers:               numGCWorkers,
@@ -297,6 +302,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					manager.reflector,
 					epc,
 					string(manager.kubeSystemUID),
+					manager.clusterURL,
 					manager.syncerMetrics,
 					syncerKey.NegType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(portInfo.NegName),
 					true,
