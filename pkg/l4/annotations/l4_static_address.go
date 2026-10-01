@@ -2,6 +2,8 @@ package annotations
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 
 	"google.golang.org/api/googleapi"
@@ -18,6 +20,11 @@ const (
 	maxNumberOfAddresses                     = 2
 	IPv4Version                    IPVersion = "IPV4"
 	IPv6Version                    IPVersion = "IPV6"
+)
+
+var (
+	addressNameRegex       = regexp.MustCompile(`^[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$`)
+	ErrInvalidStaticIPName = errors.New("invalid static IP address name")
 )
 
 // IPv4AddressAnnotation return IPv4 address from networking.gke.io/load-balancer-ip-addresses annotation.
@@ -54,6 +61,12 @@ func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (
 		if trimmedAddressName == "" {
 			continue
 		}
+
+		if !addressNameRegex.MatchString(trimmedAddressName) {
+			return "", "", fmt.Errorf("%w: %q in annotation %s: the name must be 1-63 characters long, start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit. See https://cloud.google.com/kubernetes-engine/docs/concepts/service-load-balancer-parameters#spd-static-ip",
+				ErrInvalidStaticIPName, trimmedAddressName, StaticL4AddressesAnnotationKey)
+		}
+
 		cloudAddress, err := cloud.GetRegionAddress(trimmedAddressName, cloud.Region())
 		if err != nil {
 			if isNotFoundError(err) {
