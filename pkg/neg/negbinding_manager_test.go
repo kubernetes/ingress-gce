@@ -154,6 +154,7 @@ func TestNEGBindingManager(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -447,6 +448,7 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 				syncerMetrics,
 				&readiness.NoopReflector{},
 				"kube-system-uid",
+				"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 				klog.TODO(),
 			)
 
@@ -547,6 +549,7 @@ func TestInitializeOwnershipRegistry(t *testing.T) {
 		metricscollector.FakeSyncerMetrics(),
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -638,6 +641,7 @@ func TestNEGBindingManagerFinalizer(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -799,6 +803,7 @@ func TestNEGBindingManagerConflictResolution(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -911,6 +916,7 @@ func TestNEGBindingManagerStatusPriorityOverSpec(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -1013,6 +1019,7 @@ func TestEnsureSyncerForNEGBindingDeletionNoService(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -1115,6 +1122,7 @@ func TestRestartScenarioNoService(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -1208,6 +1216,7 @@ func TestNEGBindingManagerDeletionNoAcquireReleased(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		"",
 		"",
 		klog.TODO(),
 	)
@@ -1327,6 +1336,7 @@ func TestNEGBindingManagerMetrics(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -1458,6 +1468,7 @@ func TestNEGBindingManagerMetricsConflict(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 
@@ -1587,6 +1598,7 @@ func TestNEGBindingManagerReadinessGate(t *testing.T) {
 		syncerMetrics,
 		&readiness.NoopReflector{},
 		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		klog.TODO(),
 	)
 

@@ -4542,6 +4542,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
 			fakeZoneGetter, svcPort, mode, klog.TODO(), testContext.EnableDualStackNEG, metricscollector.FakeSyncerMetrics(), &network.NetworkInfo{IsDefault: true, SubnetworkURL: test.DefaultTestSubnetURL}, negtypes.L4InternalLB, testContext.NegMetrics),
 		string(kubeSystemUID),
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
 		metricscollector.FakeSyncerMetrics(),
 		customNEGName != "",
 		true,
@@ -4745,9 +4746,9 @@ func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
 	var expectedNEGDesc utils.NEGDescription
 	if syncer.NegSyncerKey.IsBindingKey() {
 		expectedNEGDesc = utils.BoundNEGDescription{
-			ClusterName: flags.F.GKEClusterName,
-			Namespace:   syncer.NegSyncerKey.Namespace,
-			BackendRef:  syncer.NegSyncerKey.NEGBindingName,
+			ClusterURL: syncer.clusterURL,
+			Namespace:  syncer.NegSyncerKey.Namespace,
+			BackendRef: syncer.NegSyncerKey.Name,
 		}
 	} else {
 		expectedNEGDesc = utils.StandardNEGDescription{
@@ -5432,6 +5433,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 	namespace := "test-ns"
 	subnetName := "default"
 	negName := "neg-default"
+	clusterURL := "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/test-cluster"
 
 	testCases := []struct {
 		desc              string
@@ -5523,9 +5525,9 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			)
 
 			boundDesc := utils.BoundNEGDescription{
-				ClusterName: flags.F.GKEClusterName,
-				Namespace:   namespace,
-				BackendRef:  "svc-name",
+				ClusterURL: clusterURL,
+				Namespace:  namespace,
+				BackendRef: "svc-name",
 			}.String()
 
 			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
@@ -5581,6 +5583,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 
 			syncer := &transactionSyncer{
 				NegSyncerKey:         negSyncerKey,
+				clusterURL:           clusterURL,
 				statusHandler:        statusHandler,
 				topologyProvider:     topoProvider,
 				cloud:                fakeCloud,
@@ -5623,6 +5626,143 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 
 			if !actualNegURLs.Equal(expectedNegURLs) {
 				t.Errorf("Expected status NEGs to be %v, but got %v", expectedNegURLs.UnsortedList(), actualNegURLs.UnsortedList())
+			}
+		})
+	}
+}
+
+func TestNEGBindingSyncerClusterURLValidation(t *testing.T) {
+	oldEnableMultiSubnet := flags.F.EnableMultiSubnetClusterPhase1
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = oldEnableMultiSubnet
+	}()
+
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := defaultTestSubnetURL
+	bindingName := "test-binding"
+	namespace := "test-ns"
+	subnetName := "default"
+	negName := "neg-default"
+	syncerClusterURL := "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/cluster-1"
+
+	testCases := []struct {
+		desc       string
+		negDesc    string
+		expectPass bool
+	}{
+		{
+			desc: "matching cluster URL passes validation",
+			negDesc: utils.BoundNEGDescription{
+				ClusterURL: syncerClusterURL,
+				Namespace:  namespace,
+				BackendRef: "svc-name",
+			}.String(),
+			expectPass: true,
+		},
+		{
+			desc: "mismatching cluster URL fails validation",
+			negDesc: utils.BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/other-cluster",
+				Namespace:  namespace,
+				BackendRef: "svc-name",
+			}.String(),
+			expectPass: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			fakeBindingClient := fakenegbinding.NewSimpleClientset()
+			bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+
+			binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      bindingName,
+				},
+				Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+					BackendRef: &negbindingv1beta1.BackendRefConfig{
+						Kind: "Service",
+						Name: "svc-name",
+						Port: 80,
+					},
+					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+						{
+							Name:   negName,
+							Subnet: subnetName,
+							Zones:  []string{testZone1},
+						},
+					},
+				},
+			}
+			bindingInformer.GetIndexer().Add(binding)
+			_, err := fakeBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding, metav1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("Failed to create NEGBinding: %v", err)
+			}
+
+			registry := &testNegBindingRegistry{
+				owners: map[string]string{
+					negName: fmt.Sprintf("%s/%s", namespace, bindingName),
+				},
+			}
+			statusHandler := negstatushandler.NewNEGBindingStatusHandler(
+				bindingName,
+				namespace,
+				fakeBindingClient,
+				bindingInformer.GetIndexer(),
+				metrics.NewNegMetrics(),
+				registry,
+				klog.TODO(),
+			)
+
+			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+				Name:        negName,
+				Network:     testNetwork,
+				Subnetwork:  testSubnetwork,
+				Description: tc.negDesc,
+			}, testZone1, klog.TODO())
+			if err != nil {
+				t.Fatalf("Failed to create NEG: %v", err)
+			}
+
+			syncer := &transactionSyncer{
+				NegSyncerKey: negtypes.NegSyncerKey{
+					Namespace:      namespace,
+					Name:           "svc-name",
+					NegType:        negtypes.VmIpPortEndpointType,
+					NEGBindingName: bindingName,
+					NegName:        negName,
+					PortTuple: negtypes.SvcPortTuple{
+						Port:       80,
+						TargetPort: "8080",
+					},
+				},
+				clusterURL:    syncerClusterURL,
+				statusHandler: statusHandler,
+				topologyProvider: &fakeTopologyProvider{
+					subnets: []nodetopologyv1.SubnetConfig{
+						{Name: subnetName, SubnetPath: testSubnetwork},
+					},
+					zones: map[string]sets.Set[string]{
+						subnetName: sets.New(testZone1),
+					},
+				},
+				cloud:                fakeCloud,
+				transactions:         NewTransactionTable(),
+				logger:               klog.TODO().WithName("TestSyncer"),
+				namer:                namer.NewNegBindingNamer(namespace, bindingName, bindingInformer.GetIndexer()),
+				networkInfo:          network.NetworkInfo{IsDefault: true, NetworkURL: testNetwork, SubnetworkURL: testSubnetwork},
+				syncMetricsCollector: metricscollector.FakeSyncerMetrics(),
+			}
+
+			_, err = syncer.ensureNetworkEndpointGroups()
+			if tc.expectPass && err != nil {
+				t.Errorf("ensureNetworkEndpointGroups() unexpected error: %v", err)
+			} else if !tc.expectPass && err == nil {
+				t.Errorf("ensureNetworkEndpointGroups() = nil, want error for mismatching cluster URL")
 			}
 		})
 	}

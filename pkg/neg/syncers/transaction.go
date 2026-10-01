@@ -91,6 +91,8 @@ type transactionSyncer struct {
 
 	//kubeSystemUID used to populate Cluster UID on Neg Description when using NEG CRD
 	kubeSystemUID string
+	// clusterURL is used to populate ClusterURL on BoundNEGDescription
+	clusterURL string
 
 	// statusHandler is used to manage reporting and retrieving current status of NEGs
 	statusHandler negtypes.NEGStatusHandler
@@ -153,6 +155,7 @@ func NewTransactionSyncer(
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
 	kubeSystemUID string,
+	clusterURL string,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	customName bool,
 	manageLifecycle bool,
@@ -186,6 +189,7 @@ func NewTransactionSyncer(
 		endpointsCalculator:       epc,
 		reflector:                 reflector,
 		kubeSystemUID:             kubeSystemUID,
+		clusterURL:                clusterURL,
 		statusHandler:             statusHandler,
 		syncMetricsCollector:      syncerMetrics,
 		customName:                customName,
@@ -641,9 +645,9 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	var expectedNEGDesc utils.NEGDescription
 	if s.NegSyncerKey.IsBindingKey() {
 		expectedNEGDesc = utils.BoundNEGDescription{
-			ClusterName: flags.F.GKEClusterName,
-			Namespace:   s.Namespace,
-			BackendRef:  s.NegSyncerKey.Name,
+			ClusterURL: s.clusterURL,
+			Namespace:  s.Namespace,
+			BackendRef: s.NegSyncerKey.Name,
 		}
 	} else {
 		expectedNEGDesc = utils.StandardNEGDescription{

@@ -56,6 +56,7 @@ const (
 func TestMain(m *testing.M) {
 	flag.Parse()
 	flags.Register()
+	flags.F.GKEClusterName = cloudgce.DefaultTestClusterValues().ClusterName
 
 	// Set klog verbosity based on test verbosity
 	fs := flag.NewFlagSet("mock-flags", flag.PanicOnError)

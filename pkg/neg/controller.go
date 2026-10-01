@@ -18,6 +18,7 @@ package neg
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
@@ -175,6 +176,26 @@ func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) 
 	return false
 }
 
+func buildClusterURL(cloud negtypes.NetworkEndpointGroupCloud) (string, error) {
+	if cloud == nil {
+		return "", fmt.Errorf("cloud provider is nil")
+	}
+	basePath := strings.TrimSuffix(cloud.ContainerAPIEndpoint(), "/")
+	projectID := cloud.ProjectID()
+	var location string
+	if flags.F.GKEClusterType == "REGIONAL" {
+		location = cloud.Region()
+	} else {
+		location = cloud.LocalZone()
+	}
+	clusterName := flags.F.GKEClusterName
+
+	if basePath == "" || projectID == "" || location == "" || clusterName == "" {
+		return "", fmt.Errorf("failed to build cluster URL: empty segment(s) (basePath=%q, projectID=%q, location=%q, clusterName=%q)", basePath, projectID, location, clusterName)
+	}
+	return fmt.Sprintf("%s/v1/projects/%s/locations/%s/clusters/%s", basePath, projectID, location, clusterName), nil
+}
+
 // NewController returns a network endpoint group controller.
 func NewController(
 	kubeClient kubernetes.Interface,
@@ -249,6 +270,15 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
+	clusterURL := ""
+	if enableNEGBinding {
+		var err error
+		clusterURL, err = buildClusterURL(cloud)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	manager := newSyncerManager(
 		namer,
 		l4Namer,
@@ -257,6 +287,7 @@ func NewController(
 		zoneGetter,
 		svcNegClient,
 		kubeSystemUID,
+		clusterURL,
 		podInformer.GetIndexer(),
 		serviceInformer.GetIndexer(),
 		endpointSliceInformer.GetIndexer(),
@@ -321,6 +352,7 @@ func NewController(
 			syncerMetrics,
 			reflector,
 			kubeSystemUID,
+			clusterURL,
 			logger,
 		)
 		negLookup.AddLookup(negBindingMgr)
