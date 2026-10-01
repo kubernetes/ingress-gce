@@ -136,6 +136,11 @@ func IsIPOutOfRangeError(err error) bool {
 	return gceutils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), "Requested internal IP address is outside the network/subnetwork range")
 }
 
+// IsFirewallForbiddenError checks if error is a GCE firewall forbidden error (e.g. missing IAM permission).
+func IsFirewallForbiddenError(err error) bool {
+	return gceutils.IsHTTPErrorCode(err, http.StatusForbidden) && strings.Contains(strings.ToLower(err.Error()), "compute.firewalls")
+}
+
 // IsConflictingPortsConfigurationError checks if wrapped error is an conflicting ports configuration error.
 func IsConflictingPortsConfigurationError(err error) bool {
 	var portsConflictConfigError *ConflictingPortsConfigurationError
