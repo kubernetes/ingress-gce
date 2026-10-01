@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	ccontext "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
@@ -43,7 +45,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
-	"slices"
 )
 
 const (
@@ -331,6 +332,13 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 	}
 
 	negName := lc.namer.L4Backend(svc.Namespace, svc.Name)
+	if flags.F.EnableL4CustomStandaloneNEGNames {
+		if customName, err := annotations.StandaloneNEGName(svc); err != nil {
+			return nil, l4utils.NewUserError(err)
+		} else if customName != "" {
+			negName = customName
+		}
+	}
 	svcNegKey := fmt.Sprintf("%s/%s", svc.Namespace, negName)
 
 	if lc.ctx != nil && lc.ctx.SvcNegInformer != nil {
@@ -344,6 +352,9 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 		svcNeg, ok := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 		if !ok || svcNeg == nil {
 			return nil, fmt.Errorf("failed to retrieve ServiceNetworkEndpointGroup")
+		}
+		if !metav1.IsControlledBy(svcNeg, svc) {
+			return nil, fmt.Errorf("retrieved NetworkEndpointGroup is not controller by the service %s", svc.Name)
 		}
 
 		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {

@@ -183,6 +183,13 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	}
 
 	if needToCreate {
+		if customName && neg != nil {
+			if matches, err := expectedDesc.MatchesString(neg.Description, negName, zone); !matches {
+				negLogger.Error(err, "cannot create NEG without matching description")
+				return nil, fmt.Errorf("custom named NEG %s in zone %s does not match the cluster network/subnetwork; refusing to recreate", negName, zone)
+			}
+		}
+
 		var subnetwork string
 		switch networkEndpointType {
 		case negtypes.NonGCPPrivateEndpointType:
