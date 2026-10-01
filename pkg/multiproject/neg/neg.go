@@ -195,6 +195,7 @@ func createNEGController(
 		flags.F.EnableL4NEG,
 		flags.F.EnableNonGCPMode,
 		flags.F.EnableDualStackNEG,
+		flags.F.EnableIPv6NodeNEGEndpoints,
 		lpConfig,
 		flags.F.EnableMultiNetworking,
 		flags.F.EnableIngressRegionalExternal,
