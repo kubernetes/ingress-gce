@@ -43,12 +43,12 @@ const (
 	prefix96range = "/96"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, ipv6AddressToUse string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv6AddressToUse string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
-	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, ipv6AddressToUse)
+	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, subnetworkURL, ipv6AddressToUse)
 	if err != nil {
-		return nil, l4utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s) returned error %w, want nil", bsLink, options, ipv6AddressToUse, err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s, %s) returned error %w, want nil", bsLink, options, subnetworkURL, ipv6AddressToUse, err)
 	}
 
 	frLogger := l4.svcLogger.WithValues("forwardingRuleName", expectedIPv6FwdRule.Name)
@@ -82,21 +82,12 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	return createdFr, l4utils.ResourceUpdate, err
 }
 
-func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOptions, subnetworkURL, ipv6AddressToUse string) (*composite.ForwardingRule, error) {
 	frName := l4.getIPv6FRName()
 
 	frDesc, err := utils.MakeL4IPv6ForwardingRuleDescription(l4.Service)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute description for forwarding rule %s, err: %w", frName, err)
-	}
-
-	subnetworkURL := l4.cloud.SubnetworkURL()
-
-	if options.SubnetName != "" {
-		subnetworkURL, err = l4.getSubnetworkURLByName(options.SubnetName)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	svcPorts := l4.Service.Spec.Ports
