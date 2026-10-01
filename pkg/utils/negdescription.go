@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"k8s.io/klog/v2"
 )
@@ -97,6 +99,46 @@ func (desc BoundNEGDescription) String() string {
 	return string(descJson)
 }
 
+type parsedClusterURL struct {
+	scheme      string
+	host        string
+	projectName string
+	location    string
+	clusterName string
+}
+
+func parseClusterURL(rawURL string) (parsedClusterURL, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return parsedClusterURL{}, fmt.Errorf("invalid cluster URL %q", rawURL)
+	}
+	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	if len(parts) != 7 || parts[0] == "" || parts[1] != "projects" || parts[2] == "" ||
+		(parts[3] != "locations" && parts[3] != "zones") || parts[4] == "" ||
+		parts[5] != "clusters" || parts[6] == "" {
+		return parsedClusterURL{}, fmt.Errorf("invalid cluster URL path in %q", rawURL)
+	}
+	return parsedClusterURL{
+		scheme:      u.Scheme,
+		host:        u.Host,
+		projectName: parts[2],
+		location:    parts[4],
+		clusterName: parts[6],
+	}, nil
+}
+
+func equalClusterURLs(a, b string) bool {
+	parsedA, err := parseClusterURL(a)
+	if err != nil {
+		return false
+	}
+	parsedB, err := parseClusterURL(b)
+	if err != nil {
+		return false
+	}
+	return parsedA == parsedB
+}
+
 // MatchesString returns whether the provided descString fields match description's fields.
 // Unlike StandardNEGDescription if descString can't be unmarshalled into description it's considered as invalid description of NEG.
 func (expectDesc BoundNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
@@ -106,7 +148,7 @@ func (expectDesc BoundNEGDescription) MatchesString(descString, negName, zone st
 		return false, fmt.Errorf("error unmarshalling NEG description %s err:%w", negName, err)
 	}
 
-	if desc.ClusterURL != expectDesc.ClusterURL ||
+	if !equalClusterURLs(desc.ClusterURL, expectDesc.ClusterURL) ||
 		desc.Namespace != expectDesc.Namespace ||
 		desc.BackendRef != expectDesc.BackendRef {
 		return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)

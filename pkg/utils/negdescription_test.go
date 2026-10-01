@@ -279,6 +279,20 @@ func TestVerifyDescription(t *testing.T) {
 			shouldMatch: false,
 		},
 		{
+			desc: "BoundNEGDescription cluster URL with different API version and zones path matches",
+			negDescString: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1beta1/projects/test-project/zones/us-central1-a/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1-a/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			},
+			shouldMatch: true,
+		},
+		{
 			desc: "BoundNEGDescription cluster URL doesn't match",
 			negDescString: BoundNEGDescription{
 				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
@@ -287,6 +301,62 @@ func TestVerifyDescription(t *testing.T) {
 			}.String(),
 			expectNegDesc: BoundNEGDescription{
 				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/other-cluster",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription cluster URL domain doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterURL: "https://staging-container.sandbox.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription cluster URL project doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/other-project/locations/us-central1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription cluster URL location doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-west1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc: "BoundNEGDescription invalid cluster URL format doesn't match",
+			negDescString: BoundNEGDescription{
+				ClusterURL: "invalid-cluster-url",
+				Namespace:  "my-namespace",
+				BackendRef: "my-backend",
+			}.String(),
+			expectNegDesc: BoundNEGDescription{
+				ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/cluster-1",
 				Namespace:  "my-namespace",
 				BackendRef: "my-backend",
 			},

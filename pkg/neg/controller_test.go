@@ -125,7 +125,7 @@ var (
 	}
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
 }
 
