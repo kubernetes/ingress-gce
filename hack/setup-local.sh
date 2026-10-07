@@ -14,6 +14,7 @@ parseCluster() {
     subnet=$(echo ${subnet} | sed 's+.*subnetworks/\([-a-z0-9]*\)$+\1+')
     project=$(echo ${selfLink} | sed 's+.*/projects/\([-a-z0-9]*\)/.*+\1+')
     clusterLocation=$(echo ${selfLink} | sed 's+.*/locations/\([-a-z0-9]*\)/.*+\1+')
+    containerApiEndpoint=$(echo ${selfLink} | sed 's+\(https://[^/]*/\).*+\1+')
 }
 
 clusterName="$1"
@@ -51,6 +52,7 @@ region_regex="^[a-z]+-[a-z]+[0-9]$"
 # Find running instance and instanceGroupZone
 if [[ ${zone} =~ $zone_regex ]]; then
     echo "Zonal cluster: ${zone}"
+    regional="false"
     instanceGroupUrl=$(gcloud  container  clusters describe "$clusterName" --zone "$zone" --format='value(instanceGroupUrls)' | awk -F";" '{print $NF}')
     if [ -z "${instanceGroupUrl}" ]; then
         echo "ERROR: No instance group for cluster"
@@ -64,6 +66,7 @@ if [[ ${zone} =~ $zone_regex ]]; then
 
 elif [[ ${clusterLocation} =~ $region_regex ]]; then
     echo "Regional cluster: ${clusterLocation}"
+    regional="true"
     instanceGroupUrls=$(gcloud container clusters describe $clusterName --region $clusterLocation --format='value(instanceGroupUrls)')
     instance=""
     instanceGroupZone=""
@@ -108,6 +111,8 @@ subnetwork-name = ${subnet}
 node-instance-prefix = ${nodesPrefix}
 node-tags = ${nodeTag}
 local-zone = ${instanceGroupZone}
+regional = ${regional}
+container-api-endpoint = ${containerApiEndpoint}
 EOF
 
 echo "Run glbc with hack/run-local-glbc.sh"

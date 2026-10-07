@@ -74,6 +74,12 @@ trap cleanup EXIT
 
 kubectl apply -f docs/deploy/resources/default-http-backend.yaml
 
+CLUSTER_TYPE="ZONAL"
+if grep -q "^regional = true" "${GCECONF}" 2>/dev/null; then
+    CLUSTER_TYPE="REGIONAL"
+fi
+CLUSTER_NAME=$(kubectl config current-context 2>/dev/null | sed 's/^gke_[^_]*_[^_]*_//')
+
 sleep 2 # Wait for proxy to start up
 ${GLBC} \
     --apiserver-host=http://localhost:${PORT} \
@@ -81,5 +87,7 @@ ${GLBC} \
     --enable-label-propagation=true \
     --logtostderr --v=${V} \
     --config-file-path=${GCECONF} \
+    --gke-cluster-name=${CLUSTER_NAME} \
+    --gke-cluster-type=${CLUSTER_TYPE} \
     "${@}" \
     2>&1 | tee -a /tmp/glbc.log
