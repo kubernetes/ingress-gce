@@ -61,7 +61,7 @@ func TestCleanupSyncerNEGNotFound(t *testing.T) {
 		NEGBindingName: bindingName,
 	}
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	cloudAdapter := negtypes.NewAdapter(fakeGCE, negMetrics)
 	syncer := NewCleanupSyncer(syncerKey, cloudAdapter, statusHandler, bindingLister, klog.TODO()).(*cleanupSyncer)
 
@@ -99,7 +99,7 @@ func TestCleanupSyncerInvalidURL(t *testing.T) {
 		NEGBindingName: bindingName,
 	}
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	cloudAdapter := negtypes.NewAdapter(fakeGCE, negMetrics)
 	syncer := NewCleanupSyncer(syncerKey, cloudAdapter, statusHandler, bindingLister, klog.TODO()).(*cleanupSyncer)
 
