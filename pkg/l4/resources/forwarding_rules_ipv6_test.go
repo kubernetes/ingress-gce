@@ -81,6 +81,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 				Version:             meta.VersionGA,
 				BackendService:      bsLink,
+				Network:             networkURL,
 				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
@@ -108,6 +109,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 				Version:             meta.VersionGA,
 				BackendService:      bsLink,
+				Network:             networkURL,
 				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
@@ -119,6 +121,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 				Version:             meta.VersionGA,
 				BackendService:      bsLink,
+				Network:             networkURL,
 				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
@@ -150,6 +153,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 				Version:             meta.VersionGA,
 				BackendService:      bsLink,
+				Network:             networkURL,
 				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
@@ -161,6 +165,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 				Version:             meta.VersionGA,
 				BackendService:      bsLink,
+				Network:             networkURL,
 				Subnetwork:          "https://www.googleapis.com/compute/v1/projects/test-poject/regions/us-central1/subnetworks/default-subnet",
 				Description:         ipV6ForwardingRuleDescription(t, serviceNamespace, serviceName),
 			},
@@ -211,6 +216,63 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 				t.Errorf("ensureIPv4ForwardingRule() diff -want +got\n%v\n", diff)
 			}
 		})
+	}
+}
+
+func TestL4EnsureIPv6ForwardingRuleMultinet(t *testing.T) {
+	// Arrange
+	secondaryNetworkURL := "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/secondary-vpc"
+	secondarySubnetworkURL := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/secondary-subnet"
+	l4namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	serviceName := "testService"
+	serviceNamespace := "default"
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1")},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:     8080,
+					Protocol: corev1.ProtocolTCP,
+				},
+			},
+			Type: "LoadBalancer",
+		},
+	}
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	l4 := &L4{
+		cloud:           fakeGCE,
+		forwardingRules: forwardingrules.New(fakeGCE, meta.VersionGA, meta.Regional, klog.TODO()),
+		namer:           l4namer,
+		recorder:        record.NewFakeRecorder(100),
+		Service:         svc,
+		network: network.NetworkInfo{
+			IsDefault:     false,
+			K8sNetwork:    "secondary",
+			NetworkURL:    secondaryNetworkURL,
+			SubnetworkURL: secondarySubnetworkURL,
+		},
+	}
+	if fakeGCE.NetworkURL() == secondaryNetworkURL {
+		t.Fatalf("test setup: cluster network %q must differ from the secondary network", fakeGCE.NetworkURL())
+	}
+	bsLink := "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
+
+	// Act
+	fr, syncStatus, err := l4.ensureIPv6ForwardingRule(bsLink, gce.ILBOptions{}, nil, l4.network.SubnetworkURL, "")
+	if err != nil {
+		t.Fatalf("ensureIPv6ForwardingRule() err=%v, want nil", err)
+	}
+	if syncStatus != l4utils.ResourceUpdate {
+		t.Errorf("ensureIPv6ForwardingRule() syncStatus=%v, want %v", syncStatus, l4utils.ResourceUpdate)
+	}
+
+	// Assert
+	if fr.Network != secondaryNetworkURL {
+		t.Errorf("ensureIPv6ForwardingRule() network=%v, want %v", fr.Network, secondaryNetworkURL)
+	}
+	if fr.Subnetwork != secondarySubnetworkURL {
+		t.Errorf("ensureIPv6ForwardingRule() subnetwork=%v, want %v", fr.Subnetwork, secondarySubnetworkURL)
 	}
 }
 

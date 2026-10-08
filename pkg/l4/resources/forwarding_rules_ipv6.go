@@ -116,7 +116,7 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		BackendService:      bsLink,
 		IpVersion:           IPVersionIPv6,
-		Network:             l4.cloud.NetworkURL(),
+		Network:             l4.network.NetworkURL,
 		Subnetwork:          subnetworkURL,
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
