@@ -3220,7 +3220,7 @@ func TestUnknownNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get subnet to zones map: %v", err)
 	}
-	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+	out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testNegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false, true)
 	if err != nil {
 		t.Errorf("errored retrieving existing network endpoints")
 	}
@@ -3526,7 +3526,7 @@ func TestEnableDegradedMode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get subnet to zones map: %v", err)
 			}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false, true)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints")
 			}
@@ -3543,7 +3543,7 @@ func TestEnableDegradedMode(t *testing.T) {
 				if statusErr != nil {
 					return false, nil
 				}
-				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+				out, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false, true)
 				if err != nil {
 					return false, nil
 				}
@@ -4271,7 +4271,7 @@ func TestSyncL4NEGs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get subnet to zones map: %v", err)
 			}
-			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false)
+			out, _, _, err := retrieveExistingZoneNetworkEndpointMap(map[string]string{defaultTestSubnet: testL4NegName}, zoneGetter, s.statusHandler, ensuredZones, fakeCloud, meta.VersionGA, false, s.networkInfo, klog.TODO(), s.negMetrics, false, true)
 			if err != nil {
 				t.Errorf("errored retrieving existing network endpoints: %v", err)
 			}
@@ -5765,6 +5765,189 @@ func TestNEGBindingSyncerClusterURLValidation(t *testing.T) {
 				t.Errorf("ensureNetworkEndpointGroups() = nil, want error for mismatching cluster URL")
 			}
 		})
+	}
+}
+
+func TestNEGBindingSyncerPartialValidationFailure(t *testing.T) {
+	oldEnableMultiSubnet := flags.F.EnableMultiSubnetClusterPhase1
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = oldEnableMultiSubnet
+	}()
+
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := defaultTestSubnetURL
+	bindingName := "test-binding"
+	syncerClusterURL := "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster"
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+
+	testContext := negtypes.NewTestContext()
+	testContext.NodeInformer = nodeInformer
+	testContext.ServiceInformer.GetIndexer().Add(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"run": "foo",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "",
+					Port:       80,
+					TargetPort: intstr.FromInt(80),
+				},
+			},
+		},
+	})
+
+	_, s, err := newTestTransactionSyncerWithCustomContext(fakeCloud, negtypes.VmIpPortEndpointType, "", testContext)
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+
+	fakeBindingClient := fakenegbinding.NewSimpleClientset()
+	bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      bindingName,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: "Service",
+				Name: testServiceName,
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   testNegName,
+					Subnet: defaultTestSubnet,
+					Zones:  []string{negtypes.TestZone1, negtypes.TestZone2},
+				},
+			},
+		},
+	}
+	bindingInformer.GetIndexer().Add(binding)
+	if _, err := fakeBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(testServiceNamespace).Create(context.TODO(), binding, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create NEGBinding: %v", err)
+	}
+
+	registry := &testNegBindingRegistry{
+		owners: map[string]string{
+			testNegName: fmt.Sprintf("%s/%s", testServiceNamespace, bindingName),
+		},
+	}
+	s.NegSyncerKey.NEGBindingName = bindingName
+	s.clusterURL = syncerClusterURL
+	s.statusHandler = negstatushandler.NewNEGBindingStatusHandler(
+		bindingName,
+		testServiceNamespace,
+		fakeBindingClient,
+		bindingInformer.GetIndexer(),
+		metrics.FakeNegMetrics(),
+		registry,
+		klog.TODO(),
+	)
+	s.namer = namer.NewNegBindingNamer(testServiceNamespace, bindingName, bindingInformer.GetIndexer())
+	s.topologyProvider = &fakeTopologyProvider{
+		subnets: []nodetopologyv1.SubnetConfig{
+			{Name: defaultTestSubnet, SubnetPath: testSubnetwork},
+		},
+		zones: map[string]sets.Set[string]{
+			defaultTestSubnet: sets.New(negtypes.TestZone1, negtypes.TestZone2),
+		},
+	}
+
+	validDesc := utils.BoundNEGDescription{
+		ClusterURL: syncerClusterURL,
+		Namespace:  testServiceNamespace,
+		BackendRef: testServiceName,
+	}.String()
+	invalidDesc := utils.BoundNEGDescription{
+		ClusterURL: "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/other-cluster",
+		Namespace:  testServiceNamespace,
+		BackendRef: testServiceName,
+	}.String()
+
+	if err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+		Name:                testNegName,
+		Version:             meta.VersionAlpha,
+		Network:             testNetwork,
+		Subnetwork:          testSubnetwork,
+		NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+		Description:         validDesc,
+	}, negtypes.TestZone1, klog.TODO()); err != nil {
+		t.Fatalf("failed to create NEG in zone1: %v", err)
+	}
+	if err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+		Name:                testNegName,
+		Version:             meta.VersionAlpha,
+		Network:             testNetwork,
+		Subnetwork:          testSubnetwork,
+		NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+		Description:         invalidDesc,
+	}, negtypes.TestZone2, klog.TODO()); err != nil {
+		t.Fatalf("failed to create NEG in zone2: %v", err)
+	}
+	preExistingEndpoint := &composite.NetworkEndpoint{
+		Instance:  negtypes.TestInstance3,
+		IpAddress: "10.200.0.1",
+		Port:      80,
+	}
+	if err := fakeCloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{preExistingEndpoint}, meta.VersionAlpha, klog.TODO()); err != nil {
+		t.Fatalf("failed to attach pre-existing endpoint in zone2: %v", err)
+	}
+
+	for _, eps := range getDefaultEndpointSlices() {
+		s.endpointSliceLister.Add(eps)
+	}
+	addPodsToLister(s.podLister, getDefaultEndpointSlices())
+	(s.syncer.(*syncer)).stopped = false
+
+	if err := s.syncInternal(); err == nil {
+		t.Errorf("syncInternal() = nil, expected error for zone2 description mismatch")
+	}
+	if err := waitForTransactions(s); err != nil {
+		t.Fatalf("waitForTransactions() = %v, want nil", err)
+	}
+
+	endpointsZone1, err := s.cloud.ListNetworkEndpoints(testNegName, negtypes.TestZone1, false, meta.VersionAlpha, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to list endpoints in zone1: %v", err)
+	}
+	gotZone1 := negtypes.NewNetworkEndpointSet()
+	for _, ep := range endpointsZone1 {
+		gotZone1.Insert(negtypes.NetworkEndpoint{IP: ep.NetworkEndpoint.IpAddress, Node: ep.NetworkEndpoint.Instance, Port: strconv.Itoa(int(ep.NetworkEndpoint.Port))})
+	}
+	expectedZone1 := negtypes.NewNetworkEndpointSet(
+		negtypes.NetworkEndpoint{IP: "10.100.1.1", Node: negtypes.TestInstance1, Port: "80"},
+		negtypes.NetworkEndpoint{IP: "10.100.1.2", Node: negtypes.TestInstance1, Port: "80"},
+		negtypes.NetworkEndpoint{IP: "10.100.1.3", Node: negtypes.TestInstance1, Port: "80"},
+		negtypes.NetworkEndpoint{IP: "10.100.1.4", Node: negtypes.TestInstance1, Port: "80"},
+		negtypes.NetworkEndpoint{IP: "10.100.2.1", Node: negtypes.TestInstance2, Port: "80"},
+	)
+	if diff := cmp.Diff(expectedZone1, gotZone1); diff != "" {
+		t.Errorf("unexpected endpoints in zone1 (-want +got):\n%s", diff)
+	}
+
+	endpointsZone2, err := s.cloud.ListNetworkEndpoints(testNegName, negtypes.TestZone2, false, meta.VersionAlpha, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to list endpoints in zone2: %v", err)
+	}
+	gotZone2 := negtypes.NewNetworkEndpointSet()
+	for _, ep := range endpointsZone2 {
+		gotZone2.Insert(negtypes.NetworkEndpoint{IP: ep.NetworkEndpoint.IpAddress, Node: ep.NetworkEndpoint.Instance, Port: strconv.Itoa(int(ep.NetworkEndpoint.Port))})
+	}
+	expectedZone2 := negtypes.NewNetworkEndpointSet(
+		negtypes.NetworkEndpoint{IP: "10.200.0.1", Node: negtypes.TestInstance3, Port: "80"},
+	)
+	if diff := cmp.Diff(expectedZone2, gotZone2); diff != "" {
+		t.Errorf("unexpected endpoints in zone2 (-want +got):\n%s", diff)
 	}
 }
 

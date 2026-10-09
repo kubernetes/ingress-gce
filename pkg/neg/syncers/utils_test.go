@@ -1472,7 +1472,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				t.Fatalf("failed to list zones for test case %q: %v", tc.desc, err)
 			}
 		}
-		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredSubnetZones, negCloud, meta.VersionGA, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
+		endpointSets, annotationMap, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredSubnetZones, negCloud, meta.VersionGA, tc.enableDualStackNEG, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false, true)
 
 		if tc.expectErr {
 			if err == nil {
@@ -1492,6 +1492,227 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				t.Errorf("For test case %q, (-want +got):\n%s", tc.desc, diff)
 			}
 		}
+	}
+}
+
+func TestRetrieveExistingZoneNetworkEndpointMapCheckAllLocations(t *testing.T) {
+	t.Parallel()
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+
+	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4} {
+		nodeName := fmt.Sprintf("additional-node-%s-%s", zone, additionalTestSubnet)
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nodeName,
+				Labels: map[string]string{
+					utils.LabelNodeSubnet: additionalTestSubnet,
+				},
+			},
+			Spec: v1.NodeSpec{
+				ProviderID: fmt.Sprintf("gce://foo-project/%s/%s", zone, nodeName),
+				PodCIDR:    "10.100.99.0/24",
+			},
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{
+					{
+						Type:   v1.NodeReady,
+						Status: v1.ConditionTrue,
+					},
+				},
+			},
+		}
+		if err := nodeInformer.GetIndexer().Add(node); err != nil {
+			t.Fatalf("Failed to add fake node: %v", err)
+		}
+	}
+
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to initialize zone getter: %v", err)
+	}
+	zonegetter.SetNodeTopologyHasSynced(zoneGetter, func() bool { return true })
+	nodeTopologyCR := &nodetopologyv1.NodeTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: flags.F.NodeTopologyCRName,
+		},
+		Status: nodetopologyv1.NodeTopologyStatus{
+			Subnets: []nodetopologyv1.SubnetConfig{
+				{Name: defaultTestSubnet, SubnetPath: defaultTestSubnetURL},
+				{Name: additionalTestSubnet, SubnetPath: "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/additional-subnet"},
+			},
+		},
+	}
+	if err := zonegetter.AddNodeTopologyCR(zoneGetter, nodeTopologyCR); err != nil {
+		t.Fatalf("failed to add node topology CR: %v", err)
+	}
+
+	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	defaultSubnetNegName := "test-neg-name"
+	nonDefaultSubnetNegName := "non-default-neg-name"
+	testIP1 := "1.2.3.4"
+	testIP2 := "1.2.3.5"
+	testIP3 := "1.2.3.6"
+	testIP4 := "1.2.3.7"
+	testIP5 := "1.2.3.8"
+	testPort := int64(80)
+
+	endpoint1 := negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint2 := negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))}
+	endpoint3 := negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestUnreadyInstance1, Port: strconv.Itoa(int(testPort))}
+	endpoint4 := negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance5, Port: strconv.Itoa(int(testPort))}
+	endpoint5 := negtypes.NetworkEndpoint{IP: testIP5, Node: negtypes.TestInstance6, Port: strconv.Itoa(int(testPort))}
+
+	negCloud.AttachNetworkEndpoints(defaultSubnetNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
+		{
+			Instance:  negtypes.TestInstance1,
+			IpAddress: testIP1,
+			Port:      testPort,
+		},
+	}, meta.VersionGA, klog.TODO())
+	negCloud.AttachNetworkEndpoints(defaultSubnetNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
+		{
+			Instance:  negtypes.TestInstance3,
+			IpAddress: testIP2,
+			Port:      testPort,
+		},
+	}, meta.VersionGA, klog.TODO())
+	negCloud.AttachNetworkEndpoints(defaultSubnetNegName, negtypes.TestZone3, []*composite.NetworkEndpoint{
+		{
+			Instance:  negtypes.TestUnreadyInstance1,
+			IpAddress: testIP3,
+			Port:      testPort,
+		},
+	}, meta.VersionGA, klog.TODO())
+	negCloud.AttachNetworkEndpoints(nonDefaultSubnetNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
+		{
+			Instance:  negtypes.TestInstance5,
+			IpAddress: testIP4,
+			Port:      testPort,
+		},
+	}, meta.VersionGA, klog.TODO())
+	negCloud.AttachNetworkEndpoints(nonDefaultSubnetNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
+		{
+			Instance:  negtypes.TestInstance6,
+			IpAddress: testIP5,
+			Port:      testPort,
+		},
+	}, meta.VersionGA, klog.TODO())
+
+	mappingWithDefaultSubnetOnly := map[string]string{defaultTestSubnet: defaultSubnetNegName}
+	mappingWithAdditionalSubnet := map[string]string{
+		defaultTestSubnet:    defaultSubnetNegName,
+		additionalTestSubnet: nonDefaultSubnetNegName,
+	}
+	defaultNetInfo := network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
+
+	testCases := []struct {
+		desc               string
+		subnetToNegMapping map[string]string
+		ensuredSubnetZones map[string]sets.Set[string]
+		statusZones        shared.ZonesPerSubnetMap
+		checkAllLocations  bool
+		expect             map[negtypes.NEGLocation]negtypes.NetworkEndpointSet
+	}{
+		{
+			desc:               "checkAllLocations=true includes unensured locations with existing NEGs",
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			checkAllLocations: true,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint2),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint3),
+			},
+		},
+		{
+			desc:               "checkAllLocations=false skips unensured locations even when NEGs exist in GCE",
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			checkAllLocations: false,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint1),
+			},
+		},
+		{
+			desc:               "checkAllLocations=false includes status locations alongside ensured locations",
+			subnetToNegMapping: mappingWithDefaultSubnetOnly,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			statusZones: shared.ZonesPerSubnetMap{
+				defaultTestSubnet: sets.New(negtypes.TestZone3),
+			},
+			checkAllLocations: false,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint3),
+			},
+		},
+		{
+			desc:               "multi-subnet checkAllLocations=true includes unensured locations across all subnets",
+			subnetToNegMapping: mappingWithAdditionalSubnet,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet:    sets.New(negtypes.TestZone1),
+				additionalTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			checkAllLocations: true,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone2, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint2),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint3),
+				{Zone: negtypes.TestZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint4),
+				{Zone: negtypes.TestZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint5),
+			},
+		},
+		{
+			desc:               "multi-subnet checkAllLocations=false only includes ensured locations per subnet",
+			subnetToNegMapping: mappingWithAdditionalSubnet,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet:    sets.New(negtypes.TestZone1),
+				additionalTestSubnet: sets.New(negtypes.TestZone2),
+			},
+			checkAllLocations: false,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone2, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint5),
+			},
+		},
+		{
+			desc:               "multi-subnet checkAllLocations=false includes status locations even when subnet is absent from ensuredSubnetZones",
+			subnetToNegMapping: mappingWithAdditionalSubnet,
+			ensuredSubnetZones: map[string]sets.Set[string]{
+				defaultTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			statusZones: shared.ZonesPerSubnetMap{
+				defaultTestSubnet:    sets.New(negtypes.TestZone3),
+				additionalTestSubnet: sets.New(negtypes.TestZone1),
+			},
+			checkAllLocations: false,
+			expect: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone1, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint1),
+				{Zone: negtypes.TestZone3, Subnet: defaultTestSubnet}:    negtypes.NewNetworkEndpointSet(endpoint3),
+				{Zone: negtypes.TestZone1, Subnet: additionalTestSubnet}: negtypes.NewNetworkEndpointSet(endpoint4),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			statusHandler := &fakeNEGStatusHandler{zones: tc.statusZones}
+			endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(tc.subnetToNegMapping, zoneGetter, statusHandler, tc.ensuredSubnetZones, negCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false, tc.checkAllLocations)
+			if err != nil {
+				t.Fatalf("retrieveExistingZoneNetworkEndpointMap returned unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.expect, endpointSets); diff != "" {
+				t.Errorf("retrieveExistingZoneNetworkEndpointMap (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -1650,7 +1871,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapHealth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to list zones: %v", err)
 			}
-			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesPerSubnet, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), tc.useHealthStatus)
+			endpointSets, _, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesPerSubnet, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), tc.useHealthStatus, true)
 			if err != nil {
 				t.Fatalf("retrieveExistingZoneNetworkEndpointMap: %v", err)
 			}
@@ -1733,7 +1954,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list zones: %v", err)
 	}
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesNoDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesNoDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false, true)
 	if err != nil {
 		t.Errorf("expected no error with includeDrainNodesL4Local=false and missing zone4 NEG, got: %v", err)
 	}
@@ -1746,7 +1967,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list zones: %v", err)
 	}
-	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
+	_, _, _, err = retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false, true)
 	if err == nil {
 		t.Errorf("expected error with includeDrainNodesL4Local=true and missing zone4 NEG, got nil")
 	}
@@ -1756,7 +1977,7 @@ func TestRetrieveExistingZoneNetworkEndpointMapWithDrainNodes(t *testing.T) {
 	drainEndpoint := &composite.NetworkEndpoint{IpAddress: "10.0.4.1", Instance: "upgrade-instance1"}
 	fakeCloud.AttachNetworkEndpoints(negName, negtypes.TestZone4, []*composite.NetworkEndpoint{drainEndpoint}, meta.VersionGA, klog.TODO())
 
-	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false)
+	endpointSets, _, _, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, zoneGetter, &fakeNEGStatusHandler{}, ensuredZonesWithDrain, fakeCloud, meta.VersionGA, false, defaultNetInfo, klog.TODO(), metrics.FakeNegMetrics(), false, true)
 	if err != nil {
 		t.Fatalf("retrieveExistingZoneNetworkEndpointMap(drain=true, NEG exists): %v", err)
 	}
