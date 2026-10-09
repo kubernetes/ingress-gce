@@ -686,16 +686,26 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, statusHandler negtypes.NEGStatusHandler, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, statusHandler negtypes.NEGStatusHandler, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus, checkAllLocations bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
 
-	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
-	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
-	allZonesPerSubnet, err := topologyProvider.ListZonesPerSubnet(zonegetter.AllNodesFilter, networkInfo, logger)
-	if err != nil {
-		return nil, nil, nil, err
+	allZonesPerSubnet := make(map[string]sets.Set[string])
+	if checkAllLocations {
+		// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
+		// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
+		var err error
+		allZonesPerSubnet, err = topologyProvider.ListZonesPerSubnet(zonegetter.AllNodesFilter, networkInfo, logger)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	} else {
+		// Include only ensured locations (which contain verified NEGs) and ones listed in status.
+		// Used for NEG Binding as it stores all previously managed NEGs in its status.
+		for subnet, zones := range ensuredZonesPerSubnet {
+			allZonesPerSubnet[subnet] = zones.Clone()
+		}
 	}
 
 	statusZonesPerSubnet, err := statusHandler.SubnetToZonesMap()
