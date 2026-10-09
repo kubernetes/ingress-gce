@@ -466,6 +466,25 @@ func TestEqualIPv6(t *testing.T) {
 		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
 		IpCollection:        "other-collection",
 	}
+	ipCollectionWithSubnetFwdRule := &composite.ForwardingRule{
+		Name:                "ip-collection-fwd-rule-with-subnet",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		IpCollection:        "my-collection",
+		Subnetwork:          "http://www.googleapis.com/projects/test/regions/us-central1/subnetworks/cluster-subnet",
+	}
+	subnetFwdRule := &composite.ForwardingRule{
+		Name:                "fwd-rule-with-subnet",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		Subnetwork:          "http://www.googleapis.com/projects/test/regions/us-central1/subnetworks/cluster-subnet",
+	}
 
 	testCases := []struct {
 		desc        string
@@ -538,6 +557,18 @@ func TestEqualIPv6(t *testing.T) {
 			oldFwdRule:  ipCollectionFwdRule1,
 			newFwdRule:  ipCollectionFwdRule1,
 			expectEqual: true,
+		},
+		{
+			desc:        "same ip collection, existing has back-filled subnetwork",
+			oldFwdRule:  ipCollectionWithSubnetFwdRule,
+			newFwdRule:  ipCollectionFwdRule1,
+			expectEqual: true,
+		},
+		{
+			desc:        "no ip collection, different subnetwork",
+			oldFwdRule:  subnetFwdRule,
+			newFwdRule:  tcpFwdRule,
+			expectEqual: false,
 		},
 	}
 
