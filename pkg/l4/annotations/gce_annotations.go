@@ -17,7 +17,12 @@ limitations under the License.
 package annotations
 
 import (
+	"fmt"
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // LoadBalancerType defines a specific type for holding load balancer types (eg. Internal)
@@ -60,22 +65,25 @@ const (
 	// StandalonePassthroughNegLoadBalancerClass is the loadBalancerClass name used for services that
 	// should use GCE_VM_IP NEGs for L4.
 	StandalonePassthroughNegLoadBalancerClass = "networking.gke.io/standalone-passthrough-lb-neg"
+
+	// StandaloneNegName is the optional customized name for Standalone NEGs.
+	StandaloneNegName = "networking.gke.io/standalone-neg-name"
 )
 
 // GetLoadBalancerAnnotationType returns the type of GCP load balancer which should be assembled.
-func GetLoadBalancerAnnotationType(service *v1.Service) LoadBalancerType {
+func GetLoadBalancerAnnotationType(svc *v1.Service) LoadBalancerType {
 	var lbType LoadBalancerType
 	// Check LoadBalancerClass before load balancer type annotation since it has precedence.
-	if HasLoadBalancerClass(service, RegionalInternalLoadBalancerClass) {
+	if HasLoadBalancerClass(svc, RegionalInternalLoadBalancerClass) {
 		return LBTypeInternal
-	} else if HasLoadBalancerClass(service, RegionalExternalLoadBalancerClass) {
+	} else if HasLoadBalancerClass(svc, RegionalExternalLoadBalancerClass) {
 		return LBTypeExternal
 	}
 	for _, ann := range []string{
 		ServiceAnnotationLoadBalancerType,
 		deprecatedServiceAnnotationLoadBalancerType,
 	} {
-		if v, ok := service.Annotations[ann]; ok {
+		if v, ok := svc.Annotations[ann]; ok {
 			lbType = LoadBalancerType(v)
 			break
 		}
@@ -87,4 +95,28 @@ func GetLoadBalancerAnnotationType(service *v1.Service) LoadBalancerType {
 	default:
 		return LBTypeExternal
 	}
+}
+
+// StandaloneNEGName returns the user requested name for the L4 standalone NEG,
+// whether the annotation was present, and a validation error if the value is unusable.
+// The returned name is also used as the ServiceNetworkEndpointGroup CR name.
+func StandaloneNEGName(service *v1.Service) (string, error) {
+	if service == nil {
+		return "", nil
+	}
+	raw, ok := service.Annotations[StandaloneNegName]
+	if !ok {
+		return "", nil
+	}
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", fmt.Errorf("annotation %q must not be empty", StandaloneNegName)
+	}
+	if len(name) > namer.MaxDefaultSubnetNegNameLength {
+		return "", fmt.Errorf("annotation %q: %w", StandaloneNegName, namer.ErrCustomNEGNameTooLong)
+	}
+	if errs := validation.IsDNS1035Label(name); len(errs) > 0 {
+		return "", fmt.Errorf("annotation %q value %q is not a valid NEG name: %s", StandaloneNegName, name, strings.Join(errs, ", "))
+	}
+	return name, nil
 }

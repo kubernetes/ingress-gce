@@ -3892,12 +3892,13 @@ func TestGetNonDefaultSubnetNEGName(t *testing.T) {
 		{
 			desc:              "custom NEG name not exceeding character limit",
 			customNEGName:     "custom-neg",
+			expectedL4NegName: "custom-neg-cc51aa",
 			expectedL7NegName: "custom-neg-cc51aa",
-			expectL4Error:     true,
+			expectL4Error:     false,
 			expectL7Error:     false,
 		},
 		{
-			desc:          " custom NEG name exceeding character limit",
+			desc:          "custom NEG name exceeding character limit",
 			customNEGName: "012345678901234567890123456789012345678901234567890123456", // 57 characters
 			expectL4Error: true,
 			expectL7Error: true,

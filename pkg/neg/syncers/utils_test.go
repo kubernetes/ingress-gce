@@ -2062,7 +2062,6 @@ func TestNegObjectCrd(t *testing.T) {
 }
 
 func TestNEGRecreate(t *testing.T) {
-
 	var (
 		testZone             = "test-zone"
 		testNamedPort        = "named-port"
@@ -2135,6 +2134,16 @@ func TestNEGRecreate(t *testing.T) {
 			customName:     true,
 		},
 		{
+			desc:           "correct network, correct subnetwork, customName, matching neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     testSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+			customName:     true,
+		},
+		{
 			desc:           "incorrect network, matching neg description, GCP endpoint type",
 			network:        diffNetwork,
 			subnetwork:     diffSubnetwork,
@@ -2151,6 +2160,16 @@ func TestNEGRecreate(t *testing.T) {
 			negDescription: matchingNegDesc,
 			expectRecreate: true,
 			expectError:    false,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, customName, matching neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+			customName:     true,
 		},
 		{
 			desc:           "incorrect network, different neg description, GCP endpoint type",
@@ -4472,5 +4491,168 @@ func getTestEmptyEndpointSlices(name, namespace string) []*discovery.EndpointSli
 				},
 			},
 		},
+	}
+}
+
+// TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG verifies that when a NEG with the
+// requested (custom) name already exists, the syncer only adopts it if its NEGDescription
+// proves it belongs to this cluster, namespace and service. Existing NEGs that belong to
+// someone else, or that carry no description at all, must be left completely untouched.
+func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
+	t.Parallel()
+
+	flags.F.EnableL4CustomStandaloneNEGNames = true
+	defer func() { flags.F.EnableL4CustomStandaloneNEGNames = false }()
+
+	var (
+		testZone          = "test-zone"
+		testNamedPort     = "named-port"
+		testServiceName   = "test-svc"
+		testNamespace     = "test-ns"
+		testKubesystemUID = "cluster-uid"
+		testPort          = "0"
+		negName           = "my-custom-neg"
+		apiVersion        = meta.VersionGA
+		testNetwork       = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnet        = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+		networkInfo       = network.NetworkInfo{
+			NetworkURL:    testNetwork,
+			SubnetworkURL: testSubnet,
+		}
+	)
+
+	expectedDesc := utils.StandardNEGDescription{
+		ClusterUID:  testKubesystemUID,
+		Namespace:   testNamespace,
+		ServiceName: testServiceName,
+		Port:        testPort,
+	}
+
+	negDesc := func(clusterUID, namespace, svcName, port string) string {
+		return utils.StandardNEGDescription{
+			ClusterUID:  clusterUID,
+			Namespace:   namespace,
+			ServiceName: svcName,
+			Port:        port,
+		}.String()
+	}
+
+	testCases := []struct {
+		desc string
+		// existingDesc is the description of the NEG that already exists in the cloud.
+		existingDesc string
+		// customName mirrors the syncer flag: true when the NEG name came from a user annotation.
+		customName bool
+		expectErr  bool
+		// expectUsedByAnotherSyncer asserts the error is recognizable as an intra-cluster conflict,
+		// which callers use to avoid overwriting the NEG CR status.
+		expectUsedByAnotherSyncer bool
+	}{
+		{
+			desc:         "custom named NEG exists with no description: must not be adopted",
+			existingDesc: "",
+			customName:   true,
+			expectErr:    true,
+		},
+		{
+			desc:         "NEG belongs to another cluster: must not be adopted",
+			existingDesc: negDesc("another-cluster-uid", testNamespace, testServiceName, testPort),
+			customName:   true,
+			expectErr:    true,
+		},
+		{
+			desc:         "NEG belongs to another namespace: must not be adopted",
+			existingDesc: negDesc(testKubesystemUID, "another-ns", testServiceName, testPort),
+			customName:   true,
+			expectErr:    true,
+		},
+		{
+			desc:                      "NEG belongs to another service in the same cluster and namespace: must not be adopted",
+			existingDesc:              negDesc(testKubesystemUID, testNamespace, "another-svc", testPort),
+			customName:                true,
+			expectErr:                 true,
+			expectUsedByAnotherSyncer: true,
+		},
+		{
+			desc:         "NEG description matches this service: adopted",
+			existingDesc: negDesc(testKubesystemUID, testNamespace, testServiceName, testPort),
+			customName:   true,
+			expectErr:    false,
+		},
+		{
+			desc:         "generated name with empty description: adopted (guard is specific to custom names)",
+			existingDesc: "",
+			customName:   false,
+			expectErr:    false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnet, metrics.NewNegMetrics())
+
+			// A NEG with the requested name already exists, owned by somebody else.
+			// Network and subnetwork match the cluster's so the recreate path is not triggered
+			// and the only thing deciding the outcome is the description.
+			existingNEG := &composite.NetworkEndpointGroup{
+				Version:             apiVersion,
+				Name:                negName,
+				NetworkEndpointType: string(negtypes.VmIpEndpointType),
+				Network:             testNetwork,
+				Subnetwork:          testSubnet,
+				Description:         tc.existingDesc,
+			}
+			if err := fakeCloud.CreateNetworkEndpointGroup(existingNEG, testZone, klog.TODO()); err != nil {
+				t.Fatalf("Failed to seed existing NEG: %v", err)
+			}
+
+			_, err := ensureNetworkEndpointGroup(
+				testNamespace,
+				testServiceName,
+				negName,
+				testZone,
+				testNamedPort,
+				expectedDesc,
+				negtypes.VmIpEndpointType,
+				fakeCloud,
+				nil,
+				nil,
+				apiVersion,
+				tc.customName,
+				true,
+				networkInfo,
+				klog.TODO(),
+				metrics.NewNegMetrics(),
+			)
+
+			if gotErr := err != nil; gotErr != tc.expectErr {
+				t.Fatalf("ensureNetworkEndpointGroup() error = %v, want = %v", err, tc.expectErr)
+			}
+			if tc.expectUsedByAnotherSyncer && !errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
+				t.Errorf("ensureNetworkEndpointGroup() error = %v, want it to wrap %v", err, utils.ErrNEGUsedByAnotherSyncer)
+			}
+			if !tc.expectUsedByAnotherSyncer && errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
+				t.Errorf("ensureNetworkEndpointGroup() unexpectedly wrapped ErrNEGUsedByAnotherSyncer: %v", err)
+			}
+
+			// Whatever the outcome, the pre-existing NEG must still be there, unmodified:
+			// not deleted, not recreated and its description not overwritten with this cluster's description.
+			gotNEG, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion, klog.TODO())
+			if err != nil {
+				t.Fatalf("Existing NEG %q was removed or is unreadable after ensure: %v", negName, err)
+			}
+			if gotNEG.Description != tc.existingDesc {
+				t.Errorf("NEG description = %q, want = %q", gotNEG.Description, tc.existingDesc)
+			}
+			if gotNEG.Network != testNetwork || gotNEG.Subnetwork != testSubnet {
+				t.Errorf("NEG network/subnetwork = %q/%q, want %q/%q (NEG was recreated)",
+					gotNEG.Network, gotNEG.Subnetwork, testNetwork, testSubnet)
+			}
+		})
 	}
 }
