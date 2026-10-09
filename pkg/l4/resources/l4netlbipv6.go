@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
@@ -292,4 +293,45 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
+}
+
+// resolveBYOIPv6 returns the BYOIPv6 configuration of the Service: the IP
+// collection (public delegated prefix) the IPv6 forwarding rule must use, or an
+// empty one if the Service does not use BYOIPv6. The IP collection comes from
+// the networking.gke.io/ip-collection-v6 annotation if set, otherwise from the
+// static IPv6 address referenced by networking.gke.io/load-balancer-ip-addresses
+// (an address reserved from an IP collection is a BYOIP address, so the
+// forwarding rule must not use a subnet either).
+// The result is cached for the duration of the current sync; EnsureFrontend
+// resets the cache.
+func (l4netlb *L4NetLB) resolveBYOIPv6() (byoIPv6Config, error) {
+	if l4netlb.byoIPv6 != nil {
+		return *l4netlb.byoIPv6, nil
+	}
+	config := byoIPv6Config{}
+	if flags.F.EnableBYOIPv6 {
+		svcAnnotations := annotations.FromService(l4netlb.Service)
+		config.ipCollection = svcAnnotations.GetIPCollectionV6()
+		if config.ipCollection == "" {
+			ipCollection, addressName, err := svcAnnotations.IPv6AddressIPCollection(l4netlb.cloud)
+			if err != nil {
+				return byoIPv6Config{}, fmt.Errorf("failed to get ip collection of static ipv6 address: %w", err)
+			}
+			config.ipCollection = ipCollection
+			config.addressName = addressName
+		}
+	}
+	l4netlb.byoIPv6 = &config
+	return config, nil
+}
+
+// ipv6IPCollection returns the IP collection the IPv6 forwarding rule of the
+// Service must use, or an empty string if the Service does not use BYOIPv6.
+// See resolveBYOIPv6.
+func (l4netlb *L4NetLB) ipv6IPCollection() (string, error) {
+	config, err := l4netlb.resolveBYOIPv6()
+	if err != nil {
+		return "", err
+	}
+	return config.ipCollection, nil
 }

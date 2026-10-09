@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
@@ -32,13 +33,38 @@ func (svc *Service) IPv6AddressAnnotation(cloud *gce.Cloud) (ipAddress, ipName s
 	return ipAddressFromAnnotation(svc, cloud, IPv6Version)
 }
 
+// IPv6AddressIPCollection returns the IP collection (BYOIP public delegated prefix)
+// of the IPv6 address from networking.gke.io/load-balancer-ip-addresses annotation,
+// together with the name of that address.
+// If no IPv6 address is found, or the address was not reserved from an IP collection,
+// returns empty strings.
+func (svc *Service) IPv6AddressIPCollection(cloud *gce.Cloud) (ipCollection, ipName string, err error) {
+	addr, name, err := addressFromAnnotation(svc, cloud, IPv6Version)
+	if err != nil || addr == nil || addr.IpCollection == "" {
+		return "", "", err
+	}
+	return addr.IpCollection, name, nil
+}
+
 // ipAddressFromAnnotation checks annotation networking.gke.io/load-balancer-ip-addresses,
 // which should store comma separate names of IP Addresses reserved in google cloud,
 // and returns first address and its name that matches required IpVersion (IPV4 or IPV6).
 func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (ipAddress, ipName string, err error) {
+	addr, name, err := addressFromAnnotation(svc, cloud, ipVersion)
+	if err != nil || addr == nil {
+		return "", "", err
+	}
+	return addr.Address, name, nil
+}
+
+// addressFromAnnotation checks annotation networking.gke.io/load-balancer-ip-addresses,
+// which should store comma separate names of IP Addresses reserved in google cloud,
+// and returns the first address resource and its name that matches required IpVersion (IPV4 or IPV6).
+// Returns a nil address if none matches.
+func addressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (*compute.Address, string, error) {
 	annotationVal, ok := svc.v[StaticL4AddressesAnnotationKey]
 	if !ok {
-		return "", "", nil
+		return nil, "", nil
 	}
 
 	addressNames := strings.Split(annotationVal, ",")
@@ -59,17 +85,17 @@ func ipAddressFromAnnotation(svc *Service, cloud *gce.Cloud, ipVersion string) (
 			if isNotFoundError(err) {
 				continue
 			}
-			return "", "", err
+			return nil, "", err
 		}
 		if cloudAddress.IpVersion == "" {
 			cloudAddress.IpVersion = IPv4Version
 		}
 
 		if cloudAddress.IpVersion == ipVersion {
-			return cloudAddress.Address, trimmedAddressName, nil
+			return cloudAddress, trimmedAddressName, nil
 		}
 	}
-	return "", "", nil
+	return nil, "", nil
 }
 
 func isNotFoundError(err error) bool {
