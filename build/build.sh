@@ -44,10 +44,10 @@ if [ $GOARCH == "amd64" ]; then
 fi
 # TODO: remove this override once the main files for controllers are split
 BIN_NAME="$(basename ${TARGET})"
-if [ "$BIN_NAME" = "l4lbc" ]; then
+if [ "$BIN_NAME" = "l4lb-controller" ]; then
   BIN_NAME="glbc"
 fi
-if [ "$BIN_NAME" = "negc" ]; then
+if [ "$BIN_NAME" = "neg-controller" ]; then
   BIN_NAME="glbc"
 fi
 BIN_PKG="$PKG/cmd/$BIN_NAME"
