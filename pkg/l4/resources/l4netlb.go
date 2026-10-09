@@ -305,7 +305,9 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 	}
 
 	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
-	if l4netlb.enableDualStack && l4utils.NeedsIPv6(svc) {
+	// BYOIPv6 Services are exempt: their forwarding rule takes the IP from the IP collection
+	// and does not use a subnet at all (see ensureIPv6ForwardingRule).
+	if l4netlb.enableDualStack && l4utils.NeedsIPv6(svc) && ipCollectionV6 == "" {
 		err := l4netlb.serviceSubnetHasExternalIPv6Range()
 		if err != nil {
 			result.Error = err
