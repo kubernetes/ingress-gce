@@ -1223,6 +1223,13 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 
 func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
 	t.Helper()
+	return mustSetupNetLBTestHandlerWithClusterSubnet(t, svc, nodeNames, subnetExternalIPv6AccessType)
+}
+
+// mustSetupNetLBTestHandlerWithClusterSubnet sets up an L4NetLB handler whose
+// cluster subnet has the given IPv6 access type (EXTERNAL or INTERNAL).
+func mustSetupNetLBTestHandlerWithClusterSubnet(t *testing.T, svc *v1.Service, nodeNames []string, clusterSubnetIPv6AccessType string) *L4NetLB {
+	t.Helper()
 
 	vals := test.DefaultTestClusterValues()
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
@@ -1244,7 +1251,7 @@ func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string
 	}
 
 	// Create cluster subnet. Mock GCE uses test.DefaultSubnetURL.
-	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, subnetExternalIPv6AccessType)
+	test.MustCreateDualStackClusterSubnet(t, l4NetLB.cloud, clusterSubnetIPv6AccessType)
 	return l4NetLB
 }
 
@@ -2570,6 +2577,145 @@ func TestIPv6NetLBIPCollectionWithStaticAddressValidation(t *testing.T) {
 				}
 				if strings.Split(fwdRule.IPAddress, "/")[0] != tc.addressToReserve.Address {
 					t.Errorf("fwdRule.IPAddress = %v, want %v", fwdRule.IPAddress, tc.addressToReserve.Address)
+				}
+			}
+		})
+	}
+}
+
+// TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType verifies that BYOIPv6 NetLB
+// Services (ephemeral via ip-collection-v6, or a static address reserved from
+// an IP collection) do not depend on the cluster subnet having external IPv6
+// ranges, because their forwarding rule does not use a subnet at all, while
+// plain IPv6 NetLB Services keep requiring an external IPv6 subnet.
+func TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	const ipCollection = "my-collection"
+	byoipAddress := &ga.Address{
+		Name:             "byoip-ipv6-address",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     ipCollection,
+	}
+	googleAddress := &ga.Address{
+		Name:             "google-ipv6-address",
+		Address:          "2::3",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+	}
+
+	testCases := []struct {
+		desc                        string
+		clusterSubnetIPv6AccessType string
+		ipCollectionAnnotation      string
+		staticAddress               *ga.Address
+		wantSubnetworkError         bool
+		wantFRSubnetworkCluster     bool
+		wantFRIPCollection          string
+	}{
+		{
+			desc:                        "INTERNAL cluster subnet, ip-collection-v6 succeeds without subnet",
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipCollectionAnnotation:      ipCollection,
+			wantFRIPCollection:          ipCollection,
+		},
+		{
+			desc:                        "INTERNAL cluster subnet, static BYOIP address and ip-collection-v6 succeeds without subnet",
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipCollectionAnnotation:      ipCollection,
+			staticAddress:               byoipAddress,
+			wantFRIPCollection:          ipCollection,
+		},
+		{
+			desc:                        "INTERNAL cluster subnet, plain IPv6 NetLB still fails",
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			wantSubnetworkError:         true,
+		},
+		{
+			desc:                        "INTERNAL cluster subnet, static Google address still fails",
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			staticAddress:               googleAddress,
+			wantSubnetworkError:         true,
+		},
+		{
+			desc:                        "EXTERNAL cluster subnet, ip-collection-v6 succeeds without subnet",
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			ipCollectionAnnotation:      ipCollection,
+			wantFRIPCollection:          ipCollection,
+		},
+		{
+			desc:                        "EXTERNAL cluster subnet, plain IPv6 NetLB uses cluster subnet",
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			wantFRSubnetworkCluster:     true,
+		},
+		{
+			desc:                        "EXTERNAL cluster subnet, static Google address uses cluster subnet",
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			staticAddress:               googleAddress,
+			wantFRSubnetworkCluster:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+			l4NetLB := mustSetupNetLBTestHandlerWithClusterSubnet(t, svc, nodeNames, tc.clusterSubnetIPv6AccessType)
+
+			if tc.ipCollectionAnnotation != "" {
+				svc.Annotations[annotations.IPCollectionV6AnnotationKey] = tc.ipCollectionAnnotation
+			}
+			if tc.staticAddress != nil {
+				if err := l4NetLB.cloud.ReserveRegionAddress(tc.staticAddress, l4NetLB.cloud.Region()); err != nil {
+					t.Fatalf("ReserveRegionAddress(%q) returned error: %v", tc.staticAddress.Name, err)
+				}
+				svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAddress.Name
+			}
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if tc.wantSubnetworkError {
+				if result.Error == nil {
+					t.Fatalf("EnsureFrontend() returned nil error, want error matching %q", noExternalIPv6InSubnetError.String())
+				}
+				if !IsUserError(result.Error) {
+					t.Errorf("EnsureFrontend() returned non-user error %v, want user error", result.Error)
+				}
+				if !noExternalIPv6InSubnetError.MatchString(result.Error.Error()) {
+					t.Errorf("EnsureFrontend() returned error %v, want error matching %q", result.Error, noExternalIPv6InSubnetError.String())
+				}
+				return
+			}
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+			}
+
+			frName := l4NetLB.ipv6FRName()
+			fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("GetForwardingRule(%q) returned error: %v", frName, err)
+			}
+			wantSubnetwork := ""
+			if tc.wantFRSubnetworkCluster {
+				wantSubnetwork = l4NetLB.cloud.SubnetworkURL()
+			}
+			if fwdRule.Subnetwork != wantSubnetwork {
+				t.Errorf("fwdRule.Subnetwork = %q, want %q", fwdRule.Subnetwork, wantSubnetwork)
+			}
+			if fwdRule.IpCollection != tc.wantFRIPCollection {
+				t.Errorf("fwdRule.IpCollection = %q, want %q", fwdRule.IpCollection, tc.wantFRIPCollection)
+			}
+			if tc.staticAddress != nil {
+				if got := strings.Split(fwdRule.IPAddress, "/")[0]; got != tc.staticAddress.Address {
+					t.Errorf("fwdRule.IPAddress = %q, want %q", fwdRule.IPAddress, tc.staticAddress.Address)
 				}
 			}
 		})
