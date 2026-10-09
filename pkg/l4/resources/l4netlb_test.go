@@ -2628,6 +2628,12 @@ func TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType(t *testing.T) {
 			wantFRIPCollection:          ipCollection,
 		},
 		{
+			desc:                        "INTERNAL cluster subnet, static BYOIP address succeeds without subnet",
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			staticAddress:               byoipAddress,
+			wantFRIPCollection:          ipCollection,
+		},
+		{
 			desc:                        "INTERNAL cluster subnet, static BYOIP address and ip-collection-v6 succeeds without subnet",
 			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
 			ipCollectionAnnotation:      ipCollection,
@@ -2649,6 +2655,12 @@ func TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType(t *testing.T) {
 			desc:                        "EXTERNAL cluster subnet, ip-collection-v6 succeeds without subnet",
 			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
 			ipCollectionAnnotation:      ipCollection,
+			wantFRIPCollection:          ipCollection,
+		},
+		{
+			desc:                        "EXTERNAL cluster subnet, static BYOIP address succeeds without subnet",
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			staticAddress:               byoipAddress,
 			wantFRIPCollection:          ipCollection,
 		},
 		{
@@ -2717,6 +2729,183 @@ func TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType(t *testing.T) {
 				if got := strings.Split(fwdRule.IPAddress, "/")[0]; got != tc.staticAddress.Address {
 					t.Errorf("fwdRule.IPAddress = %q, want %q", fwdRule.IPAddress, tc.staticAddress.Address)
 				}
+			}
+		})
+	}
+}
+
+// TestIPv6OnlyNetLBStaticBYOIPExistingForwardingRuleNotRecreated verifies that
+// a forwarding rule created by an older controller for a static BYOIP address
+// (Subnetwork set to the cluster subnet, IpCollection back-filled by GCE) is
+// left untouched on resync instead of being deleted and recreated.
+func TestIPv6OnlyNetLBStaticBYOIPExistingForwardingRuleNotRecreated(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	const ipCollection = "my-collection"
+	byoipAddress := &ga.Address{
+		Name:             "byoip-ipv6-address",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     ipCollection,
+	}
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+	if err := l4NetLB.cloud.ReserveRegionAddress(byoipAddress, l4NetLB.cloud.Region()); err != nil {
+		t.Fatalf("ReserveRegionAddress(%q) returned error: %v", byoipAddress.Name, err)
+	}
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = byoipAddress.Name
+
+	// First sync creates the forwarding rule.
+	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+	}
+	for k, v := range result.Annotations {
+		svc.Annotations[k] = v
+	}
+
+	// Rewrite the forwarding rule to look like one created by an older
+	// controller version: Subnetwork set to the cluster subnet and
+	// IpCollection back-filled by GCE from the static address.
+	frName := l4NetLB.ipv6FRName()
+	frKey := meta.RegionalKey(frName, l4NetLB.cloud.Region())
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("GetForwardingRule(%q) returned error: %v", frName, err)
+	}
+	if err := composite.DeleteForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO()); err != nil {
+		t.Fatalf("DeleteForwardingRule(%q) returned error: %v", frName, err)
+	}
+	legacyFwdRule := *fwdRule
+	legacyFwdRule.Subnetwork = l4NetLB.cloud.SubnetworkURL()
+	legacyFwdRule.IpCollection = ipCollection
+	legacyFwdRule.Description = fwdRule.Description + " "
+	if err := composite.CreateForwardingRule(l4NetLB.cloud, frKey, &legacyFwdRule, klog.TODO()); err != nil {
+		t.Fatalf("CreateForwardingRule(%q) returned error: %v", frName, err)
+	}
+
+	// Second sync must not recreate the forwarding rule.
+	result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+	if result.Error != nil {
+		t.Fatalf("EnsureFrontend() on resync returned error: %v", result.Error)
+	}
+	gotFwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("GetForwardingRule(%q) after resync returned error: %v", frName, err)
+	}
+	if gotFwdRule.Description != legacyFwdRule.Description {
+		t.Errorf("forwarding rule %q was recreated on resync: Description = %q, want %q (unchanged)", frName, gotFwdRule.Description, legacyFwdRule.Description)
+	}
+	if gotFwdRule.Subnetwork != legacyFwdRule.Subnetwork {
+		t.Errorf("forwarding rule %q was recreated on resync: Subnetwork = %q, want %q (unchanged)", frName, gotFwdRule.Subnetwork, legacyFwdRule.Subnetwork)
+	}
+}
+
+// TestDualStackNetLBStaticBYOIPv6Address verifies that a dual-stack Service
+// cannot use a static BYOIPv6 address (symmetric to the ip-collection-v6
+// rejection), while a static Google IPv6 address keeps working as before.
+func TestDualStackNetLBStaticBYOIPv6Address(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+
+	byoipAddress := &ga.Address{
+		Name:             "byoip-ipv6-address",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     "my-collection",
+	}
+	googleAddress := &ga.Address{
+		Name:             "google-ipv6-address",
+		Address:          "2::3",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+	}
+
+	testCases := []struct {
+		desc          string
+		staticAddress *ga.Address
+		wantUserError string
+	}{
+		{
+			desc:          "dual-stack with static BYOIP IPv6 address is rejected",
+			staticAddress: byoipAddress,
+			wantUserError: `static IPv6 address "byoip-ipv6-address" is a BYOIP address from IP collection "my-collection", which is currently only supported for IPv6-only Services`,
+		},
+		{
+			desc:          "dual-stack with static Google IPv6 address is unchanged",
+			staticAddress: googleAddress,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+
+			if err := l4NetLB.cloud.ReserveRegionAddress(tc.staticAddress, l4NetLB.cloud.Region()); err != nil {
+				t.Fatalf("ReserveRegionAddress(%q) returned error: %v", tc.staticAddress.Name, err)
+			}
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = tc.staticAddress.Name
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if tc.wantUserError != "" {
+				if result.Error == nil {
+					t.Fatalf("EnsureFrontend() returned nil error, want user error %q", tc.wantUserError)
+				}
+				if !IsUserError(result.Error) {
+					t.Errorf("EnsureFrontend() returned non-user error %v, want user error", result.Error)
+				}
+				if result.Error.Error() != tc.wantUserError {
+					t.Errorf("EnsureFrontend() returned error %q, want %q", result.Error, tc.wantUserError)
+				}
+				if result.MetricsState.Status != metrics.StatusUserError {
+					t.Errorf("result.MetricsState.Status = %v, want %v", result.MetricsState.Status, metrics.StatusUserError)
+				}
+				return
+			}
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+			}
+			for k, v := range result.Annotations {
+				svc.Annotations[k] = v
+			}
+			ipv4FRName := l4NetLB.frName()
+			ipv4FwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(ipv4FRName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("GetForwardingRule(%q) returned error: %v", ipv4FRName, err)
+			}
+			if ipv4FwdRule.IpVersion == IPVersionIPv6 {
+				t.Errorf("fwdRule %q IpVersion = %q, want IPv4", ipv4FRName, ipv4FwdRule.IpVersion)
+			}
+
+			frName := l4NetLB.ipv6FRName()
+			fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+			if err != nil {
+				t.Fatalf("GetForwardingRule(%q) returned error: %v", frName, err)
+			}
+			if fwdRule.IpCollection != "" {
+				t.Errorf("fwdRule.IpCollection = %q, want empty", fwdRule.IpCollection)
+			}
+			if fwdRule.Subnetwork != l4NetLB.cloud.SubnetworkURL() {
+				t.Errorf("fwdRule.Subnetwork = %q, want %q", fwdRule.Subnetwork, l4NetLB.cloud.SubnetworkURL())
+			}
+			if got := strings.Split(fwdRule.IPAddress, "/")[0]; got != tc.staticAddress.Address {
+				t.Errorf("fwdRule.IPAddress = %q, want %q", fwdRule.IPAddress, tc.staticAddress.Address)
 			}
 		})
 	}

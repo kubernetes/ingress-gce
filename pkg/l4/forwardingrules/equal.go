@@ -51,9 +51,27 @@ func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		utils.EqualCloudResourceIDs(id1, id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork &&
+		equalSubnetworks(fr1, fr2) &&
 		fr1.NetworkTier == fr2.NetworkTier &&
 		equalResourcePaths(fr1.IpCollection, fr2.IpCollection), nil
+}
+
+// equalSubnetworks compares the Subnetwork of two forwarding rules.
+// Forwarding rules that use an IP collection (BYOIP) take their IP from the
+// collection and do not use the subnetwork, so a subnetwork present on only
+// one of them (e.g. set by an older controller version for a static BYOIP
+// address) is not a meaningful difference and must not cause a recreate.
+func equalSubnetworks(fr1, fr2 *composite.ForwardingRule) bool {
+	if fr1.Subnetwork == fr2.Subnetwork {
+		return true
+	}
+	return fr1.IpCollection != "" && fr2.IpCollection != ""
+}
+
+// EqualIPCollections reports whether two IP collection references point to the
+// same resource. References may be partial paths or full URLs.
+func EqualIPCollections(ipCollection1, ipCollection2 string) bool {
+	return equalResourcePaths(ipCollection1, ipCollection2)
 }
 
 // equalPorts compares two port ranges or slices of ports. Before comparison,
