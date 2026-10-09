@@ -122,6 +122,7 @@ var F = struct {
 	EnableL4StrongSessionAffinity               bool
 	EnableNEGLabelPropagation                   bool
 	EnableMultiNetworking                       bool
+	EnableMultiNetworkingIPv6                   bool
 	MaxIGSize                                   int
 	EnableDegradedMode                          bool
 	EnableDegradedModeMetrics                   bool
@@ -207,6 +208,11 @@ func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
 	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,10", "beta.Operations.Get,qps,10,10", "ga.Operations.Get,qps,10,10"}
 	F.LeaderElection = defaultLeaderElectionConfiguration()
+
+	// DO NOT MERGE!
+	// DO NOT MERGE!!
+	// DO NOT MERGE!!!
+	F.EnableMultiNetworkingIPv6 = true
 }
 
 // Register flags with the command line parser.
