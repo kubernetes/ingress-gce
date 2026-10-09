@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -520,10 +521,14 @@ func NewController(
 }
 
 func (c *Controller) Run() {
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+	// An error means stopCh was closed while waiting; proceed anyway since the
+	// workers below exit immediately and the deferred cleanup still runs.
+	if err := wait.PollUntilContextCancel(wait.ContextForChannel(c.stopCh), 5*time.Second, false, func(context.Context) (bool, error) {
 		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
-	}, c.stopCh)
+	}); err != nil {
+		c.logger.V(2).Info("Stopped waiting for initial sync", "err", err)
+	}
 
 	if c.enableNEGBinding {
 		if err := c.negBindingManager.InitializeOwnershipRegistry(); err != nil {
