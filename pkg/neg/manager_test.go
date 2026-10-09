@@ -116,6 +116,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		metricscollector.FakeSyncerMetrics(),
 		false, //enableNonGcpMode
 		testContext.EnableDualStackNEG,
+		testContext.EnableIPv6NodeNEGEndpoints,
 		testContext.NumGCWorkers,
 		labels.PodLabelPropagationConfig{},
 		klog.TODO(),
@@ -2331,6 +2332,7 @@ func TestGetSyncerKeyIncludeDrainNodesL4Local(t *testing.T) {
 			metricscollector.FakeSyncerMetrics(),
 			false,
 			testContext.EnableDualStackNEG,
+			testContext.EnableIPv6NodeNEGEndpoints,
 			testContext.NumGCWorkers,
 			labels.PodLabelPropagationConfig{},
 			klog.TODO(),

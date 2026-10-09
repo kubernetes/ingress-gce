@@ -131,6 +131,11 @@ type syncerManager struct {
 	includeDrainNodesL4Local bool
 
 	negMetrics *metrics.NegMetrics
+
+	// enableIPv6NodeNEGEndpoints indicates if IPv6 endpoints should be considered while
+	// calculating subsets for GCE_VM_IP NEGs. This flag should only be enabled if
+	// dual-stack NEGs are enabled.
+	enableIPv6NodeNEGEndpoints bool
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -149,6 +154,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	syncerMetrics *metricscollector.SyncerMetrics,
 	enableNonGcpMode bool,
 	enableDualStackNEG bool,
+	enableIPv6NodeNEGEndpoints bool,
 	numGCWorkers int,
 	lpConfig podlabels.PodLabelPropagationConfig,
 	logger klog.Logger,
@@ -178,6 +184,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		clusterURL:                 clusterURL,
 		enableNonGcpMode:           enableNonGcpMode,
 		enableDualStackNEG:         enableDualStackNEG,
+		enableIPv6NodeNEGEndpoints: enableIPv6NodeNEGEndpoints,
 		numGCWorkers:               numGCWorkers,
 		logger:                     logger,
 		vmIpPortZoneMap:            vmIpPortZoneMap,
@@ -268,6 +275,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					portInfo.EpCalculatorMode,
 					manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName),
 					manager.enableDualStackNEG,
+					manager.enableIPv6NodeNEGEndpoints,
 					manager.syncerMetrics,
 					&portInfo.NetworkInfo,
 					portInfo.L4LBType,
