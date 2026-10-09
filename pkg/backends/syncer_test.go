@@ -339,6 +339,57 @@ func TestGC(t *testing.T) {
 	}
 }
 
+// TestGCInUse verifies that GC fails when Backend Service deletion returns resourceInUseByAnotherResource error.
+func TestGCInUse(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	syncer := newTestSyncer(fakeGCE)
+
+	svcNodePorts := []utils.ServicePort{
+		{NodePort: 81, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
+		{NodePort: 82, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer},
+	}
+	ps := newPortset(svcNodePorts)
+	if err := ps.add(svcNodePorts); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncer.Sync(ps.existingPorts(), klog.TODO()); err != nil {
+		t.Fatalf("syncer.Sync(%+v) = %v, want nil ", ps.existingPorts(), err)
+	}
+
+	// Set DeleteHook to return resourceInUseByAnotherResource error for svcNodePorts[1]
+	targetBeName := svcNodePorts[1].BackendName()
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices, options ...cloud.Option) (bool, error) {
+		if key.Name == targetBeName {
+			return true, &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "resource 'projects/p/regions/r/backendServices/" + targetBeName + "' is already being used by...",
+			}
+		}
+		return false, nil
+	}
+
+	// Mark svcNodePorts[1] for deletion
+	if err := ps.del([]utils.ServicePort{svcNodePorts[1]}); err != nil {
+		t.Fatal(err)
+	}
+
+	// GC should fail because of the in-use error
+	err := syncer.GC(ps.existingPorts(), klog.TODO())
+	if err == nil {
+		t.Fatalf("syncer.GC() expected error, got nil")
+	}
+
+	// Verify that the in-use backend service still exists in GCE
+	key, err := composite.CreateKey(fakeGCE, targetBeName, features.ScopeFromServicePort(&svcNodePorts[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&svcNodePorts[1]), klog.TODO()); err != nil {
+		t.Errorf("backend for port %+v should still exist (deletion failed), but got: %v", svcNodePorts[1].NodePort, err)
+	}
+}
+
 // Test GC with both ELB and ILBs. Add in an L4 ILB NEG which should not be deleted as part of GC.
 func TestGCMixed(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
