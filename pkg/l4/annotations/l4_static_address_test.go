@@ -1,10 +1,14 @@
 package annotations
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -194,6 +198,8 @@ func TestIPv6AddressIPCollection(t *testing.T) {
 		reservedAddress  []compute.Address
 		wantIPCollection string
 		wantName         string
+		getErr           error
+		wantErr          bool
 	}{
 		{
 			desc:          "no annotation",
@@ -227,6 +233,20 @@ func TestIPv6AddressIPCollection(t *testing.T) {
 			wantIPCollection: byoipIPv6Address.IpCollection,
 			wantName:         byoipIPv6Address.Name,
 		},
+		{
+			desc:             "missing address is skipped, later ipv6 address reserved from ip collection wins",
+			annotationVal:    fmt.Sprintf("missing-address,%s", byoipIPv6Address.Name),
+			reservedAddress:  []compute.Address{byoipIPv6Address},
+			wantIPCollection: byoipIPv6Address.IpCollection,
+			wantName:         byoipIPv6Address.Name,
+		},
+		{
+			desc:            "transient GCE error is returned",
+			annotationVal:   byoipIPv6Address.Name,
+			reservedAddress: []compute.Address{byoipIPv6Address},
+			getErr:          &googleapi.Error{Code: 500, Message: "backend error"},
+			wantErr:         true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -245,7 +265,19 @@ func TestIPv6AddressIPCollection(t *testing.T) {
 				}
 			}
 
+			if tc.getErr != nil {
+				fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, *compute.Address, error) {
+					return true, nil, tc.getErr
+				}
+			}
+
 			gotIPCollection, gotName, err := FromService(svc).IPv6AddressIPCollection(fakeGCE)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("IPv6AddressIPCollection(..., %q) returned nil error, want error", tc.annotationVal)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("IPv6AddressIPCollection(..., %q) returned error %v", tc.annotationVal, err)
 			}

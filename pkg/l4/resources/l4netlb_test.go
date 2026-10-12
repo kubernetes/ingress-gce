@@ -3432,3 +3432,38 @@ func TestResolveBYOIPv6Memo(t *testing.T) {
 		t.Errorf("memo after EnsureFrontend = %+v, want ipCollection %q from annotation", l4NetLB.byoIPv6, testOtherIPCollection)
 	}
 }
+
+// TestEnsureIPv6ForwardingRuleIPCollectionLookupError verifies that
+// ensureIPv6ForwardingRule surfaces a failure to resolve the BYOIPv6
+// configuration when it is called without a primed memo.
+func TestEnsureIPv6ForwardingRuleIPCollectionLookupError(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	byoipAddress, _ := byoipTestAddresses()
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNamesForBYOIPTests)
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = byoipAddress.Name
+	l4NetLB.Service = svc
+	l4NetLB.byoIPv6 = nil
+
+	mockGCE := l4NetLB.cloud.Compute().(*cloud.MockGCE)
+	mockGCE.MockAddresses.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, *ga.Address, error) {
+		return true, nil, &googleapi.Error{Code: 503, Message: "service unavailable"}
+	}
+
+	fr, syncStatus, err := l4NetLB.ensureIPv6ForwardingRule("backend-service-link")
+	if err == nil {
+		t.Fatalf("ensureIPv6ForwardingRule() returned nil error, want error")
+	}
+	if !strings.Contains(err.Error(), "error getting ipv6 forwarding rule ip collection") {
+		t.Errorf("ensureIPv6ForwardingRule() returned error %q, want it to mention the ip collection lookup", err)
+	}
+	if fr != nil {
+		t.Errorf("ensureIPv6ForwardingRule() returned forwarding rule %+v, want nil", fr)
+	}
+	if syncStatus != l4utils.ResourceResync {
+		t.Errorf("ensureIPv6ForwardingRule() sync status = %v, want %v", syncStatus, l4utils.ResourceResync)
+	}
+}

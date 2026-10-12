@@ -570,6 +570,12 @@ func TestEqualIPv6(t *testing.T) {
 			newFwdRule:  tcpFwdRule,
 			expectEqual: false,
 		},
+		{
+			desc:        "same subnetwork, only one has ip collection",
+			oldFwdRule:  subnetFwdRule,
+			newFwdRule:  ipCollectionWithSubnetFwdRule,
+			expectEqual: false,
+		},
 	}
 
 	for _, tc := range testCases {
