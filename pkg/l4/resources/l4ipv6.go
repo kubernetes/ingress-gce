@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
@@ -173,6 +174,16 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 	ipv6SourceRanges, err := l4utils.IPv6ServiceSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
+		return
+	}
+
+	if len(ipv6SourceRanges) == 0 {
+		fwSyncStatus, err := ensureNoAllowFirewall(l4.cloud, l4.Service, l4.recorder, firewallName, corev1.IPv6Protocol, fwLogger)
+		result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+			result.Error = err
+		}
 		return
 	}
 

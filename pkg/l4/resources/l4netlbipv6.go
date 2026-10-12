@@ -26,6 +26,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
@@ -157,26 +158,36 @@ func (l4netlb *L4NetLB) ensureIPv6NodesFirewall(ipRange string, nodeNames []stri
 		return
 	}
 
-	ipv6nodesFWRParams := firewalls.FirewallParams{
-		Allowed:           allowed,
-		SourceRanges:      ipv6SourceRanges,
-		DestinationRanges: []string{ipAddress},
-		Name:              firewallName,
-		NodeNames:         nodeNames,
-		L4Type:            utils.XLB,
-		Network:           l4netlb.networkInfo,
-		Priority:          l4netlb.allowFirewallPriority(),
-	}
+	if len(ipv6SourceRanges) == 0 {
+		wasUpdate, err := ensureNoAllowFirewall(l4netlb.cloud, l4netlb.Service, l4netlb.recorder, firewallName, corev1.IPv6Protocol, fwLogger)
+		syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
+		if err != nil {
+			syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+			syncResult.Error = err
+			return
+		}
+	} else {
+		ipv6nodesFWRParams := firewalls.FirewallParams{
+			Allowed:           allowed,
+			SourceRanges:      ipv6SourceRanges,
+			DestinationRanges: []string{ipAddress},
+			Name:              firewallName,
+			NodeNames:         nodeNames,
+			L4Type:            utils.XLB,
+			Network:           l4netlb.networkInfo,
+			Priority:          l4netlb.allowFirewallPriority(),
+		}
 
-	wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
-	syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
-	if err != nil {
-		fwLogger.Error(err, "Failed to ensure ipv6 nodes firewall for L4 NetLB")
-		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
-		syncResult.Error = err
-		return
+		wasUpdate, err := firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &ipv6nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+		syncResult.GCEResourceUpdate.SetFirewallForNodes(wasUpdate)
+		if err != nil {
+			fwLogger.Error(err, "Failed to ensure ipv6 nodes firewall for L4 NetLB")
+			syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+			syncResult.Error = err
+			return
+		}
+		syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 	}
-	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 
 	if l4netlb.useDenyFirewalls {
 		l4netlb.ensureDenyIPv6(syncResult, nodeNames, ipRange, fwLogger)

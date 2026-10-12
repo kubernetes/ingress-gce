@@ -616,26 +616,36 @@ func (l4netlb *L4NetLB) ensureIPv4NodesFirewall(nodeNames []string, ipAddress st
 		return
 	}
 
-	// Add firewall rule for L4 External LoadBalancer traffic to nodes
-	nodesFWRParams := firewalls.FirewallParams{
-		Allowed:           allowed,
-		SourceRanges:      sourceRanges,
-		DestinationRanges: []string{ipAddress},
-		Name:              firewallName,
-		IP:                l4netlb.Service.Spec.LoadBalancerIP,
-		NodeNames:         nodeNames,
-		Network:           l4netlb.networkInfo,
-		Priority:          l4netlb.allowFirewallPriority(),
+	if len(sourceRanges) == 0 {
+		firewallForNodesUpdateStatus, err := ensureNoAllowFirewall(l4netlb.cloud, l4netlb.Service, l4netlb.recorder, firewallName, corev1.IPv4Protocol, fwLogger)
+		result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallRuleResource
+			result.Error = err
+			return
+		}
+	} else {
+		// Add firewall rule for L4 External LoadBalancer traffic to nodes
+		nodesFWRParams := firewalls.FirewallParams{
+			Allowed:           allowed,
+			SourceRanges:      sourceRanges,
+			DestinationRanges: []string{ipAddress},
+			Name:              firewallName,
+			IP:                l4netlb.Service.Spec.LoadBalancerIP,
+			NodeNames:         nodeNames,
+			Network:           l4netlb.networkInfo,
+			Priority:          l4netlb.allowFirewallPriority(),
+		}
+		var firewallForNodesUpdateStatus l4utils.ResourceSyncStatus
+		firewallForNodesUpdateStatus, err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
+		result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallRuleResource
+			result.Error = err
+			return
+		}
+		result.Annotations[annotations.FirewallRuleKey] = firewallName
 	}
-	var firewallForNodesUpdateStatus l4utils.ResourceSyncStatus
-	firewallForNodesUpdateStatus, err = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder, fwLogger)
-	result.GCEResourceUpdate.SetFirewallForNodes(firewallForNodesUpdateStatus)
-	if err != nil {
-		result.GCEResourceInError = annotations.FirewallRuleResource
-		result.Error = err
-		return
-	}
-	result.Annotations[annotations.FirewallRuleKey] = firewallName
 
 	if l4netlb.useDenyFirewalls {
 		l4netlb.ensureDeny(result, nodeNames, ipAddress, fwLogger)
@@ -698,25 +708,6 @@ func (l4netlb *L4NetLB) softlyCleanUpDenyFirewallsWhenRolledBack() error {
 		return err
 	}
 	return nil
-}
-
-// cleanUpDenyFirewallRule will attempt the deletion only after checking that it exists with GET call.
-// This is done to avoid polluting Audit Logs with 404 errors (even though the 404 might be expected).
-func cleanUpDenyFirewallRule(cloud *gce.Cloud, fwName string, logger klog.Logger) error {
-	log := logger.WithName("cleanUpDenyFirewallRule").WithValues("firewallName", fwName)
-
-	// Skip deleting if it doesn't exist to not produce noisy audit logs
-	fa := firewalls.NewFirewallAdapter(cloud)
-	if _, err := fa.GetFirewall(fwName); err != nil {
-		if utils.IsNotFoundError(err) {
-			log.V(3).Info("no deny firewall found to delete", "firewallName", fwName)
-			return nil // no need for cleanup
-		}
-		return err
-	}
-
-	log.V(3).Info("deny firewall exists, deleting it", "firewallName", fwName)
-	return firewalls.EnsureL4FirewallRuleDeleted(cloud, fwName, log)
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
