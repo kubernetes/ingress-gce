@@ -197,6 +197,12 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	}
 	if ipCollection != "" {
 		// BYOIPv6 forwarding rules take the IP from the IP collection and must not specify a subnet.
+		// A networking.gke.io/load-balancer-subnet annotation is only rejected together with
+		// ip-collection-v6 (see EnsureFrontend); with a static BYOIP address it is accepted and
+		// ignored, so Services created with the pre-fix workaround keep working after upgrade.
+		if subnetworkURL != "" {
+			frLogger.V(2).Info("Ignoring subnet for BYOIPv6 forwarding rule", "ignoredSubnetworkURL", subnetworkURL, "ipCollection", ipCollection)
+		}
 		subnetworkURL = ""
 	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)

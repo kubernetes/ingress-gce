@@ -311,8 +311,13 @@ func (l4netlb *L4NetLB) resolveBYOIPv6() (byoIPv6Config, error) {
 	config := byoIPv6Config{}
 	if flags.F.EnableBYOIPv6 {
 		svcAnnotations := annotations.FromService(l4netlb.Service)
-		config.ipCollection = svcAnnotations.GetIPCollectionV6()
-		if config.ipCollection == "" {
+		if ipCollection := svcAnnotations.GetIPCollectionV6(); ipCollection != "" {
+			normalized, err := l4netlb.normalizeIPCollection(ipCollection)
+			if err != nil {
+				return byoIPv6Config{}, err
+			}
+			config.ipCollection = normalized
+		} else {
 			ipCollection, addressName, err := svcAnnotations.IPv6AddressIPCollection(l4netlb.cloud)
 			if err != nil {
 				return byoIPv6Config{}, fmt.Errorf("failed to get ip collection of static ipv6 address: %w", err)
@@ -323,6 +328,24 @@ func (l4netlb *L4NetLB) resolveBYOIPv6() (byoIPv6Config, error) {
 	}
 	l4netlb.byoIPv6 = &config
 	return config, nil
+}
+
+// normalizeIPCollection returns the IP collection from the
+// networking.gke.io/ip-collection-v6 annotation as a resource path with an
+// explicit project, so that it compares equal to the self link GCE returns on
+// forwarding rules and addresses. Accepted forms are a full URL,
+// projects/P/regions/R/publicDelegatedPrefixes/X and
+// regions/R/publicDelegatedPrefixes/X (resolved in the cluster project, as
+// GCE does). Anything else is a user error.
+func (l4netlb *L4NetLB) normalizeIPCollection(ipCollection string) (string, error) {
+	switch {
+	case strings.HasPrefix(ipCollection, "https://"), strings.HasPrefix(ipCollection, "http://"), strings.HasPrefix(ipCollection, "projects/"):
+		return ipCollection, nil
+	case strings.HasPrefix(ipCollection, "regions/"):
+		return fmt.Sprintf("projects/%s/%s", l4netlb.cloud.ProjectID(), ipCollection), nil
+	default:
+		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: expected projects/PROJECT/regions/REGION/publicDelegatedPrefixes/NAME", annotations.IPCollectionV6AnnotationKey, ipCollection))
+	}
 }
 
 // ipv6IPCollection returns the IP collection the IPv6 forwarding rule of the

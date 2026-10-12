@@ -17,6 +17,7 @@ limitations under the License.
 package address_test
 
 import (
+	"errors"
 	"net"
 	"testing"
 
@@ -570,47 +571,84 @@ func TestBYOIPv6AddressValidation(t *testing.T) {
 		IpCollection:     "my-pdp",
 	}
 	require.NoError(t, svc.ReserveRegionAddress(existingAddr, vals.Region))
+	// GCE returns Address.IpCollection as a full self link.
+	existingAddrFullURL := &compute.Address{
+		Name:             "existing-ipv6-addr-url",
+		Address:          "2001:db8::2",
+		IpVersion:        string(address.IPv6Version),
+		PrefixLength:     96,
+		AddressType:      string(cloud.SchemeExternal),
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/publicDelegatedPrefixes/my-pdp",
+	}
+	require.NoError(t, svc.ReserveRegionAddress(existingAddrFullURL, vals.Region))
 
 	testCases := []struct {
-		desc         string
-		ipCollection string
-		targetIP     string
-		expectErr    bool
+		desc          string
+		addressName   string
+		ipCollection  string
+		targetIP      string
+		expectErr     bool
+		expectUserErr bool
 	}{
 		{
 			desc:         "Case 1: Reserved PDP static address without ip-collection-v6 annotation is accepted",
+			addressName:  existingAddr.Name,
 			ipCollection: "",
 			targetIP:     "2001:db8::1",
 			expectErr:    false,
 		},
 		{
 			desc:         "Case 2: Static address matching ip-collection-v6 is accepted",
+			addressName:  existingAddr.Name,
 			ipCollection: "my-pdp",
 			targetIP:     "2001:db8::1",
 			expectErr:    false,
 		},
 		{
-			desc:         "Case 3: Static address mismatching ip-collection-v6 is rejected",
-			ipCollection: "other-pdp",
-			targetIP:     "2001:db8::1",
-			expectErr:    true,
+			desc:          "Case 3: Static address mismatching ip-collection-v6 is rejected",
+			addressName:   existingAddr.Name,
+			ipCollection:  "other-pdp",
+			targetIP:      "2001:db8::1",
+			expectErr:     true,
+			expectUserErr: true,
 		},
 		{
 			desc:         "Case 4: Removing ip-collection-v6 from ephemeral service rejects leftover PDP address",
+			addressName:  existingAddr.Name,
 			ipCollection: "",
 			targetIP:     "",
 			expectErr:    true,
+		},
+		{
+			desc:         "Case 5: Partial path ip-collection-v6 matches address with full URL IpCollection",
+			addressName:  existingAddrFullURL.Name,
+			ipCollection: "projects/test-project/regions/us-central1/publicDelegatedPrefixes/my-pdp",
+			targetIP:     "2001:db8::2",
+			expectErr:    false,
+		},
+		{
+			desc:          "Case 6: Partial path ip-collection-v6 of another collection is rejected with a user error",
+			addressName:   existingAddrFullURL.Name,
+			ipCollection:  "projects/test-project/regions/us-central1/publicDelegatedPrefixes/other-pdp",
+			targetIP:      "2001:db8::2",
+			expectErr:     true,
+			expectUserErr: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, "test-lb-name", "existing-ipv6-addr", tc.targetIP, cloud.SchemeExternal, cloud.NetworkTierDefault, address.IPv6Version, klog.TODO())
+			mgr := address.NewManager(svc, testSvcName, vals.Region, testSubnet, "test-lb-name", tc.addressName, tc.targetIP, cloud.SchemeExternal, cloud.NetworkTierDefault, address.IPv6Version, klog.TODO())
 			mgr.SetIPCollection(tc.ipCollection)
 
 			_, _, err := mgr.HoldAddress()
 			if tc.expectErr {
 				assert.Error(t, err)
+				var userErr *l4utils.UserError
+				if got := errors.As(err, &userErr); got != tc.expectUserErr {
+					t.Errorf("HoldAddress() error %v: is user error = %t, want %t", err, got, tc.expectUserErr)
+				}
 			} else {
 				assert.NoError(t, err)
 			}

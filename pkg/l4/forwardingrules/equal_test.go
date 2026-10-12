@@ -584,3 +584,34 @@ func TestEqualIPv6(t *testing.T) {
 		})
 	}
 }
+
+func TestEqualIPCollections(t *testing.T) {
+	t.Parallel()
+
+	const fullURL = "https://www.googleapis.com/compute/v1/projects/p/regions/r/publicDelegatedPrefixes/x"
+
+	testCases := []struct {
+		desc string
+		a, b string
+		want bool
+	}{
+		{desc: "both empty", a: "", b: "", want: true},
+		{desc: "one empty", a: "", b: fullURL, want: false},
+		{desc: "same partial path", a: "projects/p/regions/r/publicDelegatedPrefixes/x", b: "projects/p/regions/r/publicDelegatedPrefixes/x", want: true},
+		{desc: "partial path vs full url", a: "projects/p/regions/r/publicDelegatedPrefixes/x", b: fullURL, want: true},
+		{desc: "different name", a: "projects/p/regions/r/publicDelegatedPrefixes/y", b: fullURL, want: false},
+		{desc: "different project", a: "projects/q/regions/r/publicDelegatedPrefixes/x", b: fullURL, want: false},
+		{desc: "region-relative path vs full url is not resolved", a: "regions/r/publicDelegatedPrefixes/x", b: fullURL, want: false},
+		{desc: "bare name vs full url", a: "x", b: fullURL, want: false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := forwardingrules.EqualIPCollections(tc.a, tc.b); got != tc.want {
+				t.Errorf("EqualIPCollections(%q, %q) = %t, want %t", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}

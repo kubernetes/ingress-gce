@@ -401,8 +401,10 @@ func (m *Manager) validateAddress(addr *compute.Address) error {
 	}
 	if flags.F.EnableBYOIPv6 {
 		// 1. If the Service specifies an explicit IP collection, any address MUST match it.
-		if m.ipCollection != "" && m.ipCollection != addr.IpCollection {
-			return fmt.Errorf("ipCollection mismatch, expected %q, actual: %q", m.ipCollection, addr.IpCollection)
+		// GCE returns Address.IpCollection as a full URL while the annotation is usually a
+		// partial path, so compare them as resource IDs.
+		if m.ipCollection != "" && m.ipCollection != addr.IpCollection && !utils.EqualResourceIDs(m.ipCollection, addr.IpCollection) {
+			return l4utils.NewUserError(fmt.Errorf("ipCollection mismatch, expected %q, actual: %q", m.ipCollection, addr.IpCollection))
 		}
 		// 2. If the Service omits IP collection AND omits static address (ephemeral),
 		// do not reuse a leftover PDP ephemeral address so we revert to a Google IP.
