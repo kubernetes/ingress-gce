@@ -19,13 +19,13 @@ require (
 	google.golang.org/api v0.297.0
 	gopkg.in/ini.v1 v1.67.3
 	istio.io/api v1.31.0
-	k8s.io/api v0.37.0
-	k8s.io/apiextensions-apiserver v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
-	k8s.io/cloud-provider v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apiextensions-apiserver v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
+	k8s.io/cloud-provider v0.37.1
 	k8s.io/cloud-provider-gcp/providers v0.28.3-0.20260819214436-4e24531247d7
-	k8s.io/component-base v0.37.0
+	k8s.io/component-base v0.37.1
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
