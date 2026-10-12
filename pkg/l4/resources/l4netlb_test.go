@@ -37,6 +37,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -58,6 +59,9 @@ import (
 const (
 	usersIP        = "35.10.211.60"
 	usersIPPremium = "35.10.211.70"
+	// IP collections (BYOIPv6 public delegated prefixes) in the test project.
+	testIPCollection      = "projects/test-project/regions/us-central1/publicDelegatedPrefixes/my-collection"
+	testOtherIPCollection = "projects/test-project/regions/us-central1/publicDelegatedPrefixes/other-collection"
 )
 
 var noExternalIPv6InSubnetError = regexp.MustCompile("subnet [a-z]([-a-z0-9]*[a-z0-9])? does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"networking.gke.io/load-balancer-subnet\" annotation on the Service")
@@ -2271,7 +2275,7 @@ func TestIPv6OnlyNetLBIPCollectionAnnotation(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
 
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
 
 	result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
@@ -2292,7 +2296,7 @@ func TestIPv6OnlyNetLBIPCollectionAnnotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to fetch forwarding rule %s - err %v", frName, err)
 	}
-	if fwdRule.IpCollection != "my-collection" {
+	if fwdRule.IpCollection != testIPCollection {
 		t.Errorf("fwdRule.IpCollection = %v, want my-collection", fwdRule.IpCollection)
 	}
 	if fwdRule.Subnetwork != "" {
@@ -2311,7 +2315,7 @@ func TestEnsureFrontendConflictingAnnotations(t *testing.T) {
 	if svc.Annotations == nil {
 		svc.Annotations = make(map[string]string)
 	}
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Annotations[annotations.CustomSubnetAnnotationKey] = "my-subnet"
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
@@ -2349,7 +2353,7 @@ func TestEnsureFrontendConflictingIPAnnotations(t *testing.T) {
 	if svc.Annotations == nil {
 		svc.Annotations = make(map[string]string)
 	}
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Spec.LoadBalancerIP = "1.2.3.4"
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
@@ -2387,7 +2391,7 @@ func TestEnsureFrontendConflictingIPAddressesAnnotation(t *testing.T) {
 	if svc.Annotations == nil {
 		svc.Annotations = make(map[string]string)
 	}
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = "1.2.3.4"
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
@@ -2424,7 +2428,7 @@ func TestEnsureFrontendIPv4OnlyIPCollectionError(t *testing.T) {
 	if svc.Annotations == nil {
 		svc.Annotations = make(map[string]string)
 	}
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol}
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
@@ -2461,7 +2465,7 @@ func TestEnsureFrontendDualStackIPCollectionError(t *testing.T) {
 	if svc.Annotations == nil {
 		svc.Annotations = make(map[string]string)
 	}
-	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = "my-collection"
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testIPCollection
 	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}
 
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw", klog.TODO()))
@@ -2500,7 +2504,7 @@ func TestIPv6NetLBIPCollectionWithStaticAddressValidation(t *testing.T) {
 		PrefixLength:     96,
 		AddressType:      "EXTERNAL",
 		Ipv6EndpointType: "NETLB",
-		IpCollection:     "my-collection",
+		IpCollection:     testIPCollection,
 	}
 	ipv6AddressMismatching := &ga.Address{
 		Name:             "ipv6-address-mismatching",
@@ -2509,7 +2513,7 @@ func TestIPv6NetLBIPCollectionWithStaticAddressValidation(t *testing.T) {
 		PrefixLength:     96,
 		AddressType:      "EXTERNAL",
 		Ipv6EndpointType: "NETLB",
-		IpCollection:     "other-collection",
+		IpCollection:     testOtherIPCollection,
 	}
 
 	testCases := []struct {
@@ -2528,14 +2532,14 @@ func TestIPv6NetLBIPCollectionWithStaticAddressValidation(t *testing.T) {
 		},
 		{
 			desc:                "Case 2: Static address matching ip-collection-v6 is accepted",
-			ipCollectionVal:     "my-collection",
+			ipCollectionVal:     testIPCollection,
 			staticAnnotationVal: "ipv6-address-matching",
 			addressToReserve:    ipv6AddressMatching,
 			expectError:         false,
 		},
 		{
 			desc:                "Case 3: Static address mismatching ip-collection-v6 is rejected",
-			ipCollectionVal:     "my-collection",
+			ipCollectionVal:     testIPCollection,
 			staticAnnotationVal: "ipv6-address-mismatching",
 			addressToReserve:    ipv6AddressMismatching,
 			expectError:         true,
@@ -2593,7 +2597,7 @@ func TestIPv6OnlyNetLBBYOIPClusterSubnetAccessType(t *testing.T) {
 	defer func() { flags.F.EnableBYOIPv6 = false }()
 	nodeNames := []string{"test-node-1"}
 
-	const ipCollection = "my-collection"
+	const ipCollection = testIPCollection
 	byoipAddress := &ga.Address{
 		Name:             "byoip-ipv6-address",
 		Address:          "2::2",
@@ -2743,7 +2747,7 @@ func TestIPv6OnlyNetLBStaticBYOIPExistingForwardingRuleNotRecreated(t *testing.T
 	defer func() { flags.F.EnableBYOIPv6 = false }()
 	nodeNames := []string{"test-node-1"}
 
-	const ipCollection = "my-collection"
+	const ipCollection = testIPCollection
 	byoipAddress := &ga.Address{
 		Name:             "byoip-ipv6-address",
 		Address:          "2::2",
@@ -2823,7 +2827,7 @@ func TestDualStackNetLBStaticBYOIPv6Address(t *testing.T) {
 		PrefixLength:     96,
 		AddressType:      "EXTERNAL",
 		Ipv6EndpointType: "NETLB",
-		IpCollection:     "my-collection",
+		IpCollection:     testIPCollection,
 	}
 	googleAddress := &ga.Address{
 		Name:             "google-ipv6-address",
@@ -2842,7 +2846,7 @@ func TestDualStackNetLBStaticBYOIPv6Address(t *testing.T) {
 		{
 			desc:          "dual-stack with static BYOIP IPv6 address is rejected",
 			staticAddress: byoipAddress,
-			wantUserError: `static IPv6 address "byoip-ipv6-address" is a BYOIP address from IP collection "my-collection", which is currently only supported for IPv6-only Services`,
+			wantUserError: fmt.Sprintf("static IPv6 address %q is a BYOIP address from IP collection %q, which is currently only supported for IPv6-only Services", "byoip-ipv6-address", testIPCollection),
 		},
 		{
 			desc:          "dual-stack with static Google IPv6 address is unchanged",
@@ -2908,5 +2912,479 @@ func TestDualStackNetLBStaticBYOIPv6Address(t *testing.T) {
 				t.Errorf("fwdRule.IPAddress = %q, want %q", fwdRule.IPAddress, tc.staticAddress.Address)
 			}
 		})
+	}
+}
+
+// byoipTestAddresses returns a static BYOIP address (reserved from
+// testIPCollection) and a static Google address for IPv6 NetLB tests.
+func byoipTestAddresses() (byoip, google *ga.Address) {
+	byoip = &ga.Address{
+		Name:             "byoip-ipv6-address",
+		Address:          "2::2",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+		IpCollection:     testIPCollection,
+	}
+	google = &ga.Address{
+		Name:             "google-ipv6-address",
+		Address:          "2::3",
+		IpVersion:        "IPV6",
+		PrefixLength:     96,
+		AddressType:      "EXTERNAL",
+		Ipv6EndpointType: "NETLB",
+	}
+	return byoip, google
+}
+
+// legacyForwardingRuleMarker is appended to the description of a forwarding
+// rule rewritten by the tests, so a recreate can be detected.
+const legacyForwardingRuleMarker = " legacy"
+
+// mustRewriteIPv6ForwardingRule replaces the IPv6 forwarding rule of the
+// Service with a copy modified by mutate, marking its description so the tests
+// can tell whether the controller recreated it afterwards.
+func mustRewriteIPv6ForwardingRule(t *testing.T, l4NetLB *L4NetLB, mutate func(fr *composite.ForwardingRule)) {
+	t.Helper()
+	frName := l4NetLB.ipv6FRName()
+	frKey := meta.RegionalKey(frName, l4NetLB.cloud.Region())
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("GetForwardingRule(%q) returned error: %v", frName, err)
+	}
+	if err := composite.DeleteForwardingRule(l4NetLB.cloud, frKey, meta.VersionGA, klog.TODO()); err != nil {
+		t.Fatalf("DeleteForwardingRule(%q) returned error: %v", frName, err)
+	}
+	legacyFwdRule := *fwdRule
+	legacyFwdRule.Description += legacyForwardingRuleMarker
+	mutate(&legacyFwdRule)
+	if err := composite.CreateForwardingRule(l4NetLB.cloud, frKey, &legacyFwdRule, klog.TODO()); err != nil {
+		t.Fatalf("CreateForwardingRule(%q) returned error: %v", frName, err)
+	}
+}
+
+func mustGetIPv6ForwardingRule(t *testing.T, l4NetLB *L4NetLB) *composite.ForwardingRule {
+	t.Helper()
+	frName := l4NetLB.ipv6FRName()
+	fwdRule, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO())
+	if err != nil {
+		t.Fatalf("GetForwardingRule(%q) returned error: %v", frName, err)
+	}
+	return fwdRule
+}
+
+// TestIPv6NetLBBYOIPForwardingRuleTransitions drives an IPv6-only NetLB Service
+// through configuration changes with an existing forwarding rule and checks
+// whether the rule is recreated, which subnet / IP collection / IP it ends up
+// with, and that no new BYOIP address is reserved when the existing IP can be kept.
+func TestIPv6NetLBBYOIPForwardingRuleTransitions(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	nodeNames := []string{"test-node-1"}
+	byoipAddress, googleAddress := byoipTestAddresses()
+
+	type svcConfig struct {
+		ipCollectionAnnotation string
+		staticAddressName      string
+		port                   int32
+	}
+	testCases := []struct {
+		desc string
+		// initial Service configuration; its forwarding rule is created by the first sync.
+		initial svcConfig
+		// mutateExisting rewrites the created forwarding rule to simulate a rule left by an older controller / GCE back-fill.
+		mutateExisting func(l4NetLB *L4NetLB, fr *composite.ForwardingRule)
+		// desired Service configuration for the second sync.
+		desired            svcConfig
+		wantRecreated      bool
+		wantSubnetCluster  bool
+		wantIPCollection   string
+		wantIP             string // "" = don't check
+		wantUserError      bool
+		wantNoNewReserveIP bool // no address reservation with an empty (new) IP during the second sync
+	}{
+		{
+			desc:    "(2) static BYOIP, existing rule has cluster subnet and no ip collection: recreated once as BYOIP",
+			initial: svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			mutateExisting: func(l4NetLB *L4NetLB, fr *composite.ForwardingRule) {
+				fr.Subnetwork = l4NetLB.cloud.SubnetworkURL()
+				fr.IpCollection = ""
+			},
+			desired:          svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			wantRecreated:    true,
+			wantIPCollection: testIPCollection,
+			wantIP:           byoipAddress.Address,
+		},
+		{
+			desc:    "(3) ip-collection-v6, existing legacy static BYOIP rule with subnet: kept, ip kept, no new reservation",
+			initial: svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			mutateExisting: func(l4NetLB *L4NetLB, fr *composite.ForwardingRule) {
+				fr.Subnetwork = l4NetLB.cloud.SubnetworkURL()
+			},
+			desired:            svcConfig{ipCollectionAnnotation: testIPCollection, port: 8080},
+			wantRecreated:      false,
+			wantIPCollection:   testIPCollection,
+			wantIP:             byoipAddress.Address,
+			wantNoNewReserveIP: true,
+		},
+		{
+			desc:             "(4) ip-collection-v6 changed to another collection: recreated with new collection",
+			initial:          svcConfig{ipCollectionAnnotation: testIPCollection, port: 8080},
+			mutateExisting:   func(*L4NetLB, *composite.ForwardingRule) {},
+			desired:          svcConfig{ipCollectionAnnotation: testOtherIPCollection, port: 8080},
+			wantRecreated:    true,
+			wantIPCollection: testOtherIPCollection,
+		},
+		{
+			desc:              "(5) ip-collection-v6 removed on EXTERNAL cluster: recreated as plain rule on cluster subnet",
+			initial:           svcConfig{ipCollectionAnnotation: testIPCollection, port: 8080},
+			mutateExisting:    func(*L4NetLB, *composite.ForwardingRule) {},
+			desired:           svcConfig{port: 8080},
+			wantRecreated:     true,
+			wantSubnetCluster: true,
+			wantIPCollection:  "",
+		},
+		{
+			desc:             "(6) static BYOIP port change: recreated with same ip",
+			initial:          svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			mutateExisting:   func(*L4NetLB, *composite.ForwardingRule) {},
+			desired:          svcConfig{staticAddressName: byoipAddress.Name, port: 9090},
+			wantRecreated:    true,
+			wantIPCollection: testIPCollection,
+			wantIP:           byoipAddress.Address,
+		},
+		{
+			desc:    "(7) legacy static BYOIP rule switched to static Google address: recreated on cluster subnet",
+			initial: svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			mutateExisting: func(l4NetLB *L4NetLB, fr *composite.ForwardingRule) {
+				fr.Subnetwork = l4NetLB.cloud.SubnetworkURL()
+			},
+			desired:           svcConfig{staticAddressName: googleAddress.Name, port: 8080},
+			wantRecreated:     true,
+			wantSubnetCluster: true,
+			wantIPCollection:  "",
+			wantIP:            googleAddress.Address,
+		},
+		{
+			desc:           "(8) static BYOIP address with mismatching ip-collection-v6: user error",
+			initial:        svcConfig{staticAddressName: byoipAddress.Name, port: 8080},
+			mutateExisting: func(*L4NetLB, *composite.ForwardingRule) {},
+			desired:        svcConfig{staticAddressName: byoipAddress.Name, ipCollectionAnnotation: testOtherIPCollection, port: 8080},
+			wantUserError:  true,
+		},
+	}
+
+	applyConfig := func(svc *v1.Service, cfg svcConfig) {
+		delete(svc.Annotations, annotations.IPCollectionV6AnnotationKey)
+		delete(svc.Annotations, annotations.StaticL4AddressesAnnotationKey)
+		if cfg.ipCollectionAnnotation != "" {
+			svc.Annotations[annotations.IPCollectionV6AnnotationKey] = cfg.ipCollectionAnnotation
+		}
+		if cfg.staticAddressName != "" {
+			svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = cfg.staticAddressName
+		}
+		svc.Spec.Ports[0].Port = cfg.port
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+			for _, addr := range []*ga.Address{byoipAddress, googleAddress} {
+				addrCopy := *addr
+				if err := l4NetLB.cloud.ReserveRegionAddress(&addrCopy, l4NetLB.cloud.Region()); err != nil {
+					t.Fatalf("ReserveRegionAddress(%q) returned error: %v", addr.Name, err)
+				}
+			}
+
+			applyConfig(svc, tc.initial)
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("initial EnsureFrontend() returned error: %v", result.Error)
+			}
+			for k, v := range result.Annotations {
+				svc.Annotations[k] = v
+			}
+			mustRewriteIPv6ForwardingRule(t, l4NetLB, func(fr *composite.ForwardingRule) { tc.mutateExisting(l4NetLB, fr) })
+
+			// Record every address reservation made during the second sync.
+			var reservedIPs []string
+			mockGCE := l4NetLB.cloud.Compute().(*cloud.MockGCE)
+			mockGCE.MockAddresses.InsertHook = func(ctx context.Context, key *meta.Key, obj *ga.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+				reservedIPs = append(reservedIPs, obj.Address)
+				return mock.InsertAddressHook(ctx, key, obj, m, options...)
+			}
+
+			applyConfig(svc, tc.desired)
+			result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if tc.wantUserError {
+				if result.Error == nil {
+					t.Fatalf("EnsureFrontend() returned nil error, want user error")
+				}
+				if !IsUserError(result.Error) {
+					t.Errorf("EnsureFrontend() returned non-user error %v, want user error", result.Error)
+				}
+				return
+			}
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+			}
+
+			fwdRule := mustGetIPv6ForwardingRule(t, l4NetLB)
+			gotRecreated := !strings.HasSuffix(fwdRule.Description, legacyForwardingRuleMarker)
+			if gotRecreated != tc.wantRecreated {
+				t.Errorf("forwarding rule recreated = %t, want %t (description %q)", gotRecreated, tc.wantRecreated, fwdRule.Description)
+			}
+			wantSubnetwork := ""
+			if tc.wantSubnetCluster {
+				wantSubnetwork = l4NetLB.cloud.SubnetworkURL()
+			}
+			if tc.wantRecreated && fwdRule.Subnetwork != wantSubnetwork {
+				t.Errorf("fwdRule.Subnetwork = %q, want %q", fwdRule.Subnetwork, wantSubnetwork)
+			}
+			if fwdRule.IpCollection != tc.wantIPCollection {
+				t.Errorf("fwdRule.IpCollection = %q, want %q", fwdRule.IpCollection, tc.wantIPCollection)
+			}
+			if tc.wantIP != "" {
+				if got := strings.Split(fwdRule.IPAddress, "/")[0]; got != tc.wantIP {
+					t.Errorf("fwdRule.IPAddress = %q, want %q", fwdRule.IPAddress, tc.wantIP)
+				}
+			}
+			if tc.wantNoNewReserveIP {
+				for _, ip := range reservedIPs {
+					if ip == "" {
+						t.Errorf("a new address was reserved from the IP collection during resync, want the existing IP to be kept (reservations: %q)", reservedIPs)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestIPv6NetLBBYOIPValidation covers the input handling of the BYOIPv6
+// resolution: the EnableBYOIPv6 flag, annotation forms, validation ordering,
+// the load-balancer-subnet annotation with a static BYOIP address, and GCE
+// errors while looking up the static address.
+func TestIPv6NetLBBYOIPValidation(t *testing.T) {
+	byoipAddress, _ := byoipTestAddresses()
+
+	testCases := []struct {
+		desc                        string
+		enableBYOIPv6               bool
+		clusterSubnetIPv6AccessType string
+		ipFamilies                  []v1.IPFamily
+		ipCollectionAnnotation      string
+		staticAddress               bool
+		customSubnet                *ga.Subnetwork
+		addressGetError             error
+		wantErrorContains           string
+		wantUserError               bool
+		wantResourceInError         string
+		wantFRIPCollection          string
+	}{
+		{
+			desc:                        "T2: flag off, static BYOIP address on INTERNAL cluster subnet fails like master",
+			enableBYOIPv6:               false,
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			staticAddress:               true,
+			wantErrorContains:           "does not have external IPv6 ranges",
+			wantUserError:               true,
+		},
+		{
+			desc:                        "T3: dual-stack with ip-collection-v6 and static BYOIP address: annotation error wins",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			ipCollectionAnnotation:      testIPCollection,
+			staticAddress:               true,
+			wantErrorContains:           annotations.IPCollectionV6AnnotationKey + " is currently only supported for IPv6-only Services",
+			wantUserError:               true,
+		},
+		{
+			desc:                        "T7: static BYOIP address with EXTERNAL load-balancer-subnet: accepted, subnet ignored",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			staticAddress:               true,
+			customSubnet:                &ga.Subnetwork{Name: "custom-ext", StackType: "IPV6_ONLY", Ipv6AccessType: subnetExternalIPv6AccessType},
+			wantFRIPCollection:          testIPCollection,
+		},
+		{
+			desc:                        "T7: static BYOIP address with INTERNAL load-balancer-subnet: accepted, subnet ignored",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			staticAddress:               true,
+			customSubnet:                &ga.Subnetwork{Name: "custom-int", StackType: "IPV6_ONLY", Ipv6AccessType: subnetInternalIPv6AccessType},
+			wantFRIPCollection:          testIPCollection,
+		},
+		{
+			desc:                        "region-relative ip-collection-v6 is resolved in the cluster project",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			ipCollectionAnnotation:      "regions/us-central1/publicDelegatedPrefixes/my-collection",
+			wantFRIPCollection:          testIPCollection,
+		},
+		{
+			desc:                        "full URL ip-collection-v6 is accepted as is",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetInternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			ipCollectionAnnotation:      "https://www.googleapis.com/compute/v1/" + testIPCollection,
+			wantFRIPCollection:          "https://www.googleapis.com/compute/v1/" + testIPCollection,
+		},
+		{
+			desc:                        "bare name ip-collection-v6 is a user error",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			ipCollectionAnnotation:      "my-collection",
+			wantErrorContains:           "invalid " + annotations.IPCollectionV6AnnotationKey,
+			wantUserError:               true,
+		},
+		{
+			desc:                        "T4: transient GCE error looking up the static address is not a user error",
+			enableBYOIPv6:               true,
+			clusterSubnetIPv6AccessType: subnetExternalIPv6AccessType,
+			ipFamilies:                  []v1.IPFamily{v1.IPv6Protocol},
+			staticAddress:               true,
+			addressGetError:             &googleapi.Error{Code: 500, Message: "backend error"},
+			wantErrorContains:           "backend error",
+			wantUserError:               false,
+			wantResourceInError:         annotations.AddressResource,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableBYOIPv6 = tc.enableBYOIPv6
+			defer func() { flags.F.EnableBYOIPv6 = false }()
+
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.IPFamilies = tc.ipFamilies
+			l4NetLB := mustSetupNetLBTestHandlerWithClusterSubnet(t, svc, nodeNamesForBYOIPTests, tc.clusterSubnetIPv6AccessType)
+
+			if tc.ipCollectionAnnotation != "" {
+				svc.Annotations[annotations.IPCollectionV6AnnotationKey] = tc.ipCollectionAnnotation
+			}
+			if tc.staticAddress {
+				addrCopy := *byoipAddress
+				if err := l4NetLB.cloud.ReserveRegionAddress(&addrCopy, l4NetLB.cloud.Region()); err != nil {
+					t.Fatalf("ReserveRegionAddress(%q) returned error: %v", byoipAddress.Name, err)
+				}
+				svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = byoipAddress.Name
+			}
+			if tc.customSubnet != nil {
+				key := meta.RegionalKey(tc.customSubnet.Name, l4NetLB.cloud.Region())
+				if err := l4NetLB.cloud.Compute().(*cloud.MockGCE).Subnetworks().Insert(context.TODO(), key, tc.customSubnet); err != nil {
+					t.Fatalf("failed to create subnet %q: %v", tc.customSubnet.Name, err)
+				}
+				svc.Annotations[annotations.CustomSubnetAnnotationKey] = tc.customSubnet.Name
+			}
+			if tc.addressGetError != nil {
+				mockGCE := l4NetLB.cloud.Compute().(*cloud.MockGCE)
+				mockGCE.MockAddresses.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, *ga.Address, error) {
+					if key.Name == byoipAddress.Name {
+						return true, nil, tc.addressGetError
+					}
+					return false, nil, nil
+				}
+			}
+
+			result := l4NetLB.EnsureFrontend(nodeNamesForBYOIPTests, svc, time.Now())
+			if tc.wantErrorContains != "" {
+				if result.Error == nil {
+					t.Fatalf("EnsureFrontend() returned nil error, want error containing %q", tc.wantErrorContains)
+				}
+				if !strings.Contains(result.Error.Error(), tc.wantErrorContains) {
+					t.Errorf("EnsureFrontend() returned error %q, want it to contain %q", result.Error, tc.wantErrorContains)
+				}
+				if got := IsUserError(result.Error); got != tc.wantUserError {
+					t.Errorf("IsUserError(%v) = %t, want %t", result.Error, got, tc.wantUserError)
+				}
+				// The pre-existing subnet pre-check leaves MetricsState untouched (classified by the caller);
+				// only the new BYOIPv6 validation errors set it.
+				if tc.enableBYOIPv6 && tc.wantUserError && result.MetricsState.Status != metrics.StatusUserError {
+					t.Errorf("result.MetricsState.Status = %v, want %v", result.MetricsState.Status, metrics.StatusUserError)
+				}
+				if result.GCEResourceInError != tc.wantResourceInError {
+					t.Errorf("result.GCEResourceInError = %q, want %q", result.GCEResourceInError, tc.wantResourceInError)
+				}
+				frName := l4NetLB.ipv6FRName()
+				if _, err := composite.GetForwardingRule(l4NetLB.cloud, meta.RegionalKey(frName, l4NetLB.cloud.Region()), meta.VersionGA, klog.TODO()); err == nil || !utils.IsNotFoundError(err) {
+					t.Errorf("forwarding rule %q should not exist after a failed validation, GetForwardingRule error = %v", frName, err)
+				}
+				return
+			}
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+			}
+			fwdRule := mustGetIPv6ForwardingRule(t, l4NetLB)
+			if fwdRule.Subnetwork != "" {
+				t.Errorf("fwdRule.Subnetwork = %q, want empty for BYOIPv6", fwdRule.Subnetwork)
+			}
+			if fwdRule.IpCollection != tc.wantFRIPCollection {
+				t.Errorf("fwdRule.IpCollection = %q, want %q", fwdRule.IpCollection, tc.wantFRIPCollection)
+			}
+		})
+	}
+}
+
+var nodeNamesForBYOIPTests = []string{"test-node-1"}
+
+// TestResolveBYOIPv6Memo verifies that the static address is looked up once per
+// sync and that EnsureFrontend resets the memo.
+func TestResolveBYOIPv6Memo(t *testing.T) {
+	flags.F.EnableBYOIPv6 = true
+	defer func() { flags.F.EnableBYOIPv6 = false }()
+	byoipAddress, _ := byoipTestAddresses()
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.IPFamilies = []v1.IPFamily{v1.IPv6Protocol}
+	l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNamesForBYOIPTests)
+	if err := l4NetLB.cloud.ReserveRegionAddress(byoipAddress, l4NetLB.cloud.Region()); err != nil {
+		t.Fatalf("ReserveRegionAddress(%q) returned error: %v", byoipAddress.Name, err)
+	}
+	svc.Annotations[annotations.StaticL4AddressesAnnotationKey] = byoipAddress.Name
+
+	gets := 0
+	mockGCE := l4NetLB.cloud.Compute().(*cloud.MockGCE)
+	mockGCE.MockAddresses.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, *ga.Address, error) {
+		if key.Name == byoipAddress.Name {
+			gets++
+		}
+		return false, nil, nil
+	}
+
+	l4NetLB.Service = svc
+	l4NetLB.byoIPv6 = nil
+	for i := 0; i < 3; i++ {
+		got, err := l4NetLB.resolveBYOIPv6()
+		if err != nil {
+			t.Fatalf("resolveBYOIPv6() returned error: %v", err)
+		}
+		want := byoIPv6Config{ipCollection: testIPCollection, addressName: byoipAddress.Name}
+		if got != want {
+			t.Errorf("resolveBYOIPv6() = %+v, want %+v", got, want)
+		}
+	}
+	if gets != 1 {
+		t.Errorf("static address was fetched %d times across 3 resolveBYOIPv6() calls, want 1", gets)
+	}
+
+	// EnsureFrontend resets the memo, so an annotation change is picked up.
+	delete(svc.Annotations, annotations.StaticL4AddressesAnnotationKey)
+	svc.Annotations[annotations.IPCollectionV6AnnotationKey] = testOtherIPCollection
+	if result := l4NetLB.EnsureFrontend(nodeNamesForBYOIPTests, svc, time.Now()); result.Error != nil {
+		t.Fatalf("EnsureFrontend() returned error: %v", result.Error)
+	}
+	if l4NetLB.byoIPv6 == nil || l4NetLB.byoIPv6.ipCollection != testOtherIPCollection || l4NetLB.byoIPv6.addressName != "" {
+		t.Errorf("memo after EnsureFrontend = %+v, want ipCollection %q from annotation", l4NetLB.byoIPv6, testOtherIPCollection)
 	}
 }

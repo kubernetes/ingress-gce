@@ -208,6 +208,17 @@ func TestIPv6ToUse(t *testing.T) {
 			name: "",
 		},
 		{
+			desc: "subnet change on forwarding rule with ip collection keeps the ip",
+			svc:  &apiv1.Service{},
+			fwd: &composite.ForwardingRule{
+				Subnetwork:   "other-subnetwork",
+				IpCollection: "projects/test/regions/us-central1/publicDelegatedPrefixes/my-collection",
+				IPAddress:    notReservedIPv6 + "/96",
+			},
+			want: notReservedIPv6,
+			name: "",
+		},
+		{
 			desc: "not reserved address",
 			svc: &apiv1.Service{
 				ObjectMeta: metav1.ObjectMeta{

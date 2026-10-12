@@ -325,6 +325,12 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 		byoIPv6, err := l4netlb.resolveBYOIPv6()
 		if err != nil {
 			result.Error = err
+			if IsUserError(err) {
+				result.MetricsState.Status = metrics.StatusUserError
+				result.MetricsLegacyState.IsUserError = true
+			} else {
+				result.GCEResourceInError = annotations.AddressResource
+			}
 			return result
 		}
 		// Symmetric to the ip-collection-v6 check above: a static BYOIP address is only supported for IPv6-only Services.
