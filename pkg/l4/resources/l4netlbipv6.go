@@ -39,6 +39,8 @@ import (
 const (
 	ipv6Suffix                   = "-ipv6"
 	subnetExternalIPv6AccessType = "EXTERNAL"
+	// publicDelegatedPrefixesResource is the GCE resource type of an IP collection.
+	publicDelegatedPrefixesResource = "publicDelegatedPrefixes"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 NetLB Load Balancers:
@@ -331,21 +333,24 @@ func (l4netlb *L4NetLB) resolveBYOIPv6() (byoIPv6Config, error) {
 }
 
 // normalizeIPCollection returns the IP collection from the
-// networking.gke.io/ip-collection-v6 annotation as a resource path with an
-// explicit project, so that it compares equal to the self link GCE returns on
-// forwarding rules and addresses. Accepted forms are a full URL,
-// projects/P/regions/R/publicDelegatedPrefixes/X and
-// regions/R/publicDelegatedPrefixes/X (resolved in the cluster project, as
-// GCE does). Anything else is a user error.
+// networking.gke.io/ip-collection-v6 annotation as the relative resource name
+// projects/P/regions/R/publicDelegatedPrefixes/X, so that it compares equal to
+// the self link GCE returns on forwarding rules and addresses. Accepted forms
+// are a full URL, projects/P/regions/R/publicDelegatedPrefixes/X and
+// regions/R/publicDelegatedPrefixes/X (resolved in the cluster project, as GCE
+// does). The prefix must be in the cluster region. Anything else is a user error.
 func (l4netlb *L4NetLB) normalizeIPCollection(ipCollection string) (string, error) {
-	switch {
-	case strings.HasPrefix(ipCollection, "https://"), strings.HasPrefix(ipCollection, "http://"), strings.HasPrefix(ipCollection, "projects/"):
-		return ipCollection, nil
-	case strings.HasPrefix(ipCollection, "regions/"):
-		return fmt.Sprintf("projects/%s/%s", l4netlb.cloud.ProjectID(), ipCollection), nil
-	default:
-		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: expected projects/PROJECT/regions/REGION/publicDelegatedPrefixes/NAME", annotations.IPCollectionV6AnnotationKey, ipCollection))
+	id, err := cloud.ParseResourceURL(strings.TrimSpace(ipCollection))
+	if err != nil || id.Resource != publicDelegatedPrefixesResource || id.Key == nil || id.Key.Name == "" || id.Key.Region == "" {
+		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: expected projects/PROJECT/regions/%s/publicDelegatedPrefixes/NAME", annotations.IPCollectionV6AnnotationKey, ipCollection, l4netlb.cloud.Region()))
 	}
+	if id.Key.Region != l4netlb.cloud.Region() {
+		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: the public delegated prefix must be in the cluster region %s", annotations.IPCollectionV6AnnotationKey, ipCollection, l4netlb.cloud.Region()))
+	}
+	if id.ProjectID == "" {
+		id.ProjectID = l4netlb.cloud.ProjectID()
+	}
+	return id.RelativeResourceName(), nil
 }
 
 // ipv6IPCollection returns the IP collection the IPv6 forwarding rule of the
