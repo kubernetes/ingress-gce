@@ -466,6 +466,25 @@ func TestEqualIPv6(t *testing.T) {
 		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
 		IpCollection:        "other-collection",
 	}
+	ipCollectionWithSubnetFwdRule := &composite.ForwardingRule{
+		Name:                "ip-collection-fwd-rule-with-subnet",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		IpCollection:        "my-collection",
+		Subnetwork:          "http://www.googleapis.com/projects/test/regions/us-central1/subnetworks/cluster-subnet",
+	}
+	subnetFwdRule := &composite.ForwardingRule{
+		Name:                "fwd-rule-with-subnet",
+		IPAddress:           "0::1/32",
+		Ports:               []string{"123"},
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+		Subnetwork:          "http://www.googleapis.com/projects/test/regions/us-central1/subnetworks/cluster-subnet",
+	}
 
 	testCases := []struct {
 		desc        string
@@ -539,6 +558,24 @@ func TestEqualIPv6(t *testing.T) {
 			newFwdRule:  ipCollectionFwdRule1,
 			expectEqual: true,
 		},
+		{
+			desc:        "same ip collection, existing has back-filled subnetwork",
+			oldFwdRule:  ipCollectionWithSubnetFwdRule,
+			newFwdRule:  ipCollectionFwdRule1,
+			expectEqual: true,
+		},
+		{
+			desc:        "no ip collection, different subnetwork",
+			oldFwdRule:  subnetFwdRule,
+			newFwdRule:  tcpFwdRule,
+			expectEqual: false,
+		},
+		{
+			desc:        "same subnetwork, only one has ip collection",
+			oldFwdRule:  subnetFwdRule,
+			newFwdRule:  ipCollectionWithSubnetFwdRule,
+			expectEqual: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -549,6 +586,37 @@ func TestEqualIPv6(t *testing.T) {
 			}
 			if got != tc.expectEqual {
 				t.Errorf("EqualIPv6(_, _) = %t, want %t", got, tc.expectEqual)
+			}
+		})
+	}
+}
+
+func TestEqualIPCollections(t *testing.T) {
+	t.Parallel()
+
+	const fullURL = "https://www.googleapis.com/compute/v1/projects/p/regions/r/publicDelegatedPrefixes/x"
+
+	testCases := []struct {
+		desc string
+		a, b string
+		want bool
+	}{
+		{desc: "both empty", a: "", b: "", want: true},
+		{desc: "one empty", a: "", b: fullURL, want: false},
+		{desc: "same partial path", a: "projects/p/regions/r/publicDelegatedPrefixes/x", b: "projects/p/regions/r/publicDelegatedPrefixes/x", want: true},
+		{desc: "partial path vs full url", a: "projects/p/regions/r/publicDelegatedPrefixes/x", b: fullURL, want: true},
+		{desc: "different name", a: "projects/p/regions/r/publicDelegatedPrefixes/y", b: fullURL, want: false},
+		{desc: "different project", a: "projects/q/regions/r/publicDelegatedPrefixes/x", b: fullURL, want: false},
+		{desc: "region-relative path vs full url is not resolved", a: "regions/r/publicDelegatedPrefixes/x", b: fullURL, want: false},
+		{desc: "bare name vs full url", a: "x", b: fullURL, want: false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := forwardingrules.EqualIPCollections(tc.a, tc.b); got != tc.want {
+				t.Errorf("EqualIPCollections(%q, %q) = %t, want %t", tc.a, tc.b, got, tc.want)
 			}
 		})
 	}

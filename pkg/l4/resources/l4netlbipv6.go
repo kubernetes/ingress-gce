@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
@@ -38,6 +39,8 @@ import (
 const (
 	ipv6Suffix                   = "-ipv6"
 	subnetExternalIPv6AccessType = "EXTERNAL"
+	// publicDelegatedPrefixesResource is the GCE resource type of an IP collection.
+	publicDelegatedPrefixesResource = "publicDelegatedPrefixes"
 )
 
 // ensureIPv6Resources creates resources specific to IPv6 L4 NetLB Load Balancers:
@@ -292,4 +295,71 @@ func (l4netlb *L4NetLB) serviceSubnetHasExternalIPv6Range() error {
 				"subnet %s does not have external IPv6 ranges, required for an external IPv6 Service. You can specify an external IPv6 subnet using the \"%s\" annotation on the Service", subnetName, annotations.CustomSubnetAnnotationKey))
 	}
 	return nil
+}
+
+// resolveBYOIPv6 returns the BYOIPv6 configuration of the Service: the IP
+// collection (public delegated prefix) the IPv6 forwarding rule must use, or an
+// empty one if the Service does not use BYOIPv6. The IP collection comes from
+// the networking.gke.io/ip-collection-v6 annotation if set, otherwise from the
+// static IPv6 address referenced by networking.gke.io/load-balancer-ip-addresses
+// (an address reserved from an IP collection is a BYOIP address, so the
+// forwarding rule must not use a subnet either).
+// The result is cached for the duration of the current sync; EnsureFrontend
+// resets the cache.
+func (l4netlb *L4NetLB) resolveBYOIPv6() (byoIPv6Config, error) {
+	if l4netlb.byoIPv6 != nil {
+		return *l4netlb.byoIPv6, nil
+	}
+	config := byoIPv6Config{}
+	if flags.F.EnableBYOIPv6 {
+		svcAnnotations := annotations.FromService(l4netlb.Service)
+		if ipCollection := svcAnnotations.GetIPCollectionV6(); ipCollection != "" {
+			normalized, err := l4netlb.normalizeIPCollection(ipCollection)
+			if err != nil {
+				return byoIPv6Config{}, err
+			}
+			config.ipCollection = normalized
+		} else {
+			ipCollection, addressName, err := svcAnnotations.IPv6AddressIPCollection(l4netlb.cloud)
+			if err != nil {
+				return byoIPv6Config{}, fmt.Errorf("failed to get ip collection of static ipv6 address: %w", err)
+			}
+			config.ipCollection = ipCollection
+			config.addressName = addressName
+		}
+	}
+	l4netlb.byoIPv6 = &config
+	return config, nil
+}
+
+// normalizeIPCollection returns the IP collection from the
+// networking.gke.io/ip-collection-v6 annotation as the relative resource name
+// projects/P/regions/R/publicDelegatedPrefixes/X, so that it compares equal to
+// the self link GCE returns on forwarding rules and addresses. Accepted forms
+// are a full URL, projects/P/regions/R/publicDelegatedPrefixes/X and
+// regions/R/publicDelegatedPrefixes/X (resolved in the cluster project, as GCE
+// does). The prefix must be in the cluster region. Anything else is a user error.
+func (l4netlb *L4NetLB) normalizeIPCollection(ipCollection string) (string, error) {
+	id, err := cloud.ParseResourceURL(strings.TrimSpace(ipCollection))
+	if err != nil || id.Resource != publicDelegatedPrefixesResource || id.Key == nil || id.Key.Name == "" || id.Key.Region == "" {
+		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: expected projects/PROJECT/regions/%s/publicDelegatedPrefixes/NAME", annotations.IPCollectionV6AnnotationKey, ipCollection, l4netlb.cloud.Region()))
+	}
+	if id.Key.Region != l4netlb.cloud.Region() {
+		return "", l4utils.NewUserError(fmt.Errorf("invalid %s %q: the public delegated prefix must be in the cluster region %s", annotations.IPCollectionV6AnnotationKey, ipCollection, l4netlb.cloud.Region()))
+	}
+	if id.ProjectID == "" {
+		id.ProjectID = l4netlb.cloud.ProjectID()
+	}
+	return id.RelativeResourceName(), nil
+}
+
+// ipv6IPCollection returns the IP collection the IPv6 forwarding rule of the
+// Service must use, or an empty string if the Service does not use BYOIPv6.
+// See resolveBYOIPv6.
+func (l4netlb *L4NetLB) ipv6IPCollection() (string, error) {
+	config, err := l4netlb.resolveBYOIPv6()
+	if err != nil {
+		return "", err
+	}
+	return config.ipCollection, nil
 }
