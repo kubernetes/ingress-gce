@@ -90,6 +90,22 @@ type L4NetLB struct {
 	svcLogger                        klog.Logger
 	useNEGs                          bool
 	l4lbConfigLister                 cache.Store
+	// byoIPv6 caches the BYOIPv6 configuration of the Service for the
+	// duration of one EnsureFrontend call. nil means not resolved yet.
+	byoIPv6 *byoIPv6Config
+}
+
+// byoIPv6Config describes the BYOIPv6 (bring your own IPv6) configuration of
+// a Service, resolved from its annotations and the static address they reference.
+type byoIPv6Config struct {
+	// ipCollection is the IP collection (public delegated prefix) the IPv6
+	// forwarding rule must use. Empty if the Service does not use BYOIPv6.
+	ipCollection string
+	// addressName is the name of the static address from the
+	// networking.gke.io/load-balancer-ip-addresses annotation the IP collection
+	// was derived from. Empty if ipCollection comes from the
+	// networking.gke.io/ip-collection-v6 annotation or is empty.
+	addressName string
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -255,6 +271,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 	l4netlb.svcLogger.V(3).Info("EnsureFrontend started for service", "len(nodeNames)", len(nodeNames), "syncType", result.SyncType)
 
 	l4netlb.Service = svc
+	l4netlb.byoIPv6 = nil
 
 	networkInfo, err := l4netlb.networkResolver.ServiceNetwork(svc)
 	if err != nil {
@@ -304,12 +321,35 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service, 
 		return result
 	}
 
-	// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
 	if l4netlb.enableDualStack && l4utils.NeedsIPv6(svc) {
-		err := l4netlb.serviceSubnetHasExternalIPv6Range()
+		byoIPv6, err := l4netlb.resolveBYOIPv6()
 		if err != nil {
 			result.Error = err
+			if IsUserError(err) {
+				result.MetricsState.Status = metrics.StatusUserError
+				result.MetricsLegacyState.IsUserError = true
+			} else {
+				result.GCEResourceInError = annotations.AddressResource
+			}
 			return result
+		}
+		// Symmetric to the ip-collection-v6 check above: a static BYOIP address is only supported for IPv6-only Services.
+		if byoIPv6.addressName != "" && l4utils.NeedsIPv4(svc) {
+			err := fmt.Errorf("static IPv6 address %q is a BYOIP address from IP collection %q, which is currently only supported for IPv6-only Services", byoIPv6.addressName, byoIPv6.ipCollection)
+			result.Error = l4utils.NewUserError(err)
+			result.MetricsState.Status = metrics.StatusUserError
+			result.MetricsLegacyState.IsUserError = true
+			return result
+		}
+		// If service requires IPv6 LoadBalancer -- verify that Subnet with External IPv6 ranges is used.
+		// BYOIPv6 Services (ip-collection-v6 annotation, or a static address reserved from an
+		// IP collection) are exempt: their forwarding rule takes the IP from the IP collection
+		// and does not use a subnet at all (see ensureIPv6ForwardingRule).
+		if byoIPv6.ipCollection == "" {
+			if err := l4netlb.serviceSubnetHasExternalIPv6Range(); err != nil {
+				result.Error = err
+				return result
+			}
 		}
 	}
 

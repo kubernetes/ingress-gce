@@ -191,11 +191,18 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		return nil, l4utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule subnet: %w", err)
 	}
 
-	var ipCollection string
-	if flags.F.EnableBYOIPv6 {
-		ipCollection = annotations.FromService(l4netlb.Service).GetIPCollectionV6()
+	ipCollection, err := l4netlb.ipv6IPCollection()
+	if err != nil {
+		return nil, l4utils.ResourceResync, fmt.Errorf("error getting ipv6 forwarding rule ip collection: %w", err)
 	}
 	if ipCollection != "" {
+		// BYOIPv6 forwarding rules take the IP from the IP collection and must not specify a subnet.
+		// A networking.gke.io/load-balancer-subnet annotation is only rejected together with
+		// ip-collection-v6 (see EnsureFrontend); with a static BYOIP address it is accepted and
+		// ignored, so Services created with the pre-fix workaround keep working after upgrade.
+		if subnetworkURL != "" {
+			frLogger.V(2).Info("Ignoring subnet for BYOIPv6 forwarding rule", "ignoredSubnetworkURL", subnetworkURL, "ipCollection", ipCollection)
+		}
 		subnetworkURL = ""
 	}
 	frLogger.V(2).Info("subnetworkURL for service", "subnetworkURL", subnetworkURL)
@@ -209,7 +216,9 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	}
 
 	// If the IP collection changed, we cannot reuse the old forwarding rule's IP.
-	if fwdRuleToDetermineIP != nil && fwdRuleToDetermineIP.IpCollection != ipCollection {
+	// A static address from the Service annotation (ipv6AddressName != "") is always kept.
+	if ipv6AddressName == "" && fwdRuleToDetermineIP != nil && !forwardingrules.EqualIPCollections(fwdRuleToDetermineIP.IpCollection, ipCollection) {
+		frLogger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed IP collection", "existingIPCollection", fwdRuleToDetermineIP.IpCollection, "expectedIPCollection", ipCollection)
 		ipv6AddrToUse = ""
 	}
 
@@ -269,11 +278,11 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 		}
 	}
 
-	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddrToUse, subnetworkURL, netTier)
+	expectedIPv6FwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddrToUse, subnetworkURL, ipCollection, netTier)
 	if err != nil {
-		return nil, l4utils.ResourceResync, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, netTier, err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("l4netlb.buildExpectedIPv6ForwardingRule(%s, %s, %s, %s, %v) returned error %w, want nil", bsLink, ipv6AddrToUse, subnetworkURL, ipCollection, netTier, err)
 	}
-	frLogger.V(2).Info("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_) for service", "expectedIPv6FwdRule", expectedIPv6FwdRule)
+	frLogger.V(2).Info("l4netlb.buildExpectedIPv6ForwardingRule(_,_,_,_,_) for service", "expectedIPv6FwdRule", expectedIPv6FwdRule)
 
 	if existingIPv6FwdRule != nil {
 		if existingIPv6FwdRule.NetworkTier != expectedIPv6FwdRule.NetworkTier {
@@ -305,7 +314,7 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 	return createdFr, l4utils.ResourceUpdate, err
 }
 
-func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL string, netTier cloud.NetworkTier) (*composite.ForwardingRule, error) {
+func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL, ipCollection string, netTier cloud.NetworkTier) (*composite.ForwardingRule, error) {
 	frName := l4netlb.ipv6FRName()
 
 	if l4netlb.mixedProtocolUsingL3() {
@@ -346,11 +355,6 @@ func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse
 			portRange, ports = "", nil
 			allPorts = true
 		}
-	}
-
-	var ipCollection string
-	if flags.F.EnableBYOIPv6 {
-		ipCollection = annotations.FromService(l4netlb.Service).GetIPCollectionV6()
 	}
 
 	fr := &composite.ForwardingRule{

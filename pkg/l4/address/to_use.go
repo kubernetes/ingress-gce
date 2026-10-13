@@ -68,7 +68,10 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
 		return "", "", nil
 	}
-	if requestedSubnet != ipv6FwdRule.Subnetwork {
+	// Forwarding rules with an IP collection (BYOIP) take the IP from the collection,
+	// not from the subnet, so a subnet change is irrelevant for them. IP collection
+	// changes are handled by the caller.
+	if ipv6FwdRule.IpCollection == "" && requestedSubnet != ipv6FwdRule.Subnetwork {
 		logger.V(2).Info("ipv6AddressToUse: reset IPv6 Address due to changed subnet")
 		return "", "", nil
 	}
