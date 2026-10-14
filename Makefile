@@ -57,6 +57,11 @@ VERBOSE ?= 1
 # Include standard build rules.
 include build/rules.mk
 
+# Multi-arch buildx rules for the L4 LB and NEG controller images
+# (l4lb-controller, neg-controller). Must come after rules.mk so that `all`
+# stays the default target.
+include build/l4lbnegrules.mk
+
 # Additional rule to build an image of glbc for e2e testing.
 # TODO(rramkumar): Find a way not to use "latest" as the tag.
 push-e2e:
