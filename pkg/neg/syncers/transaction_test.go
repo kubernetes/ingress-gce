@@ -5513,7 +5513,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 				},
 			}
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 				bindingName,
 				namespace,
@@ -5713,7 +5713,7 @@ func TestNEGBindingSyncerClusterURLValidation(t *testing.T) {
 				namespace,
 				fakeBindingClient,
 				bindingInformer.GetIndexer(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 				registry,
 				klog.TODO(),
 			)

@@ -62,7 +62,7 @@ const minLabelLength = 5
 // GetPodLabelMap will return the label map extracted from a pod according to PodLabelPropagationConfig.
 // The returned map has the pod label key as key and label value as value.
 // This function will raise an error if pod label truncation happens or truncation fails.
-func GetPodLabelMap(pod *v1.Pod, lpConfig PodLabelPropagationConfig) (PodLabelMap, error) {
+func GetPodLabelMap(pod *v1.Pod, lpConfig PodLabelPropagationConfig, m *metrics.NegMetrics) (PodLabelMap, error) {
 	labelMap := PodLabelMap{}
 	var errs []error
 	for _, label := range lpConfig.Labels {
@@ -75,7 +75,7 @@ func GetPodLabelMap(pod *v1.Pod, lpConfig PodLabelPropagationConfig) (PodLabelMa
 			labelVal, err := truncatePodLabel(lpKey, val, label.MaxLabelSizeBytes)
 			if err != nil {
 				errs = append(errs, err)
-				publishLabelPropagationTruncationMetrics(err)
+				publishLabelPropagationTruncationMetrics(err, m)
 			}
 
 			// Add the label to the map only if the truncation result is valid
@@ -92,11 +92,11 @@ func GetPodLabelMap(pod *v1.Pod, lpConfig PodLabelPropagationConfig) (PodLabelMa
 
 // publishLabelPropagationTruncationMetrics publishes errors occured during
 // label truncation.
-func publishLabelPropagationTruncationMetrics(err error) {
+func publishLabelPropagationTruncationMetrics(err error, m *metrics.NegMetrics) {
 	if errors.Is(err, ErrLabelTruncated) {
-		metrics.PublishLabelPropagationError(Truncated)
+		m.PublishLabelPropagationError(Truncated)
 	} else if errors.Is(err, ErrLabelTruncationFailed) {
-		metrics.PublishLabelPropagationError(TruncationFailure)
+		m.PublishLabelPropagationError(TruncationFailure)
 	}
 }
 

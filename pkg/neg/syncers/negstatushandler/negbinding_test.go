@@ -205,7 +205,7 @@ func TestReportStatus(t *testing.T) {
 			indexer.Add(defaultBinding.DeepCopy())
 			fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), defaultBinding.DeepCopy(), metav1.CreateOptions{})
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			registry := newMockRegistry()
 			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -405,7 +405,7 @@ func TestReportSyncStatus(t *testing.T) {
 			indexer.Add(binding.DeepCopy())
 			fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding.DeepCopy(), metav1.CreateOptions{})
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			registry := newMockRegistry()
 			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -511,7 +511,7 @@ func TestSubnetToZonesMap(t *testing.T) {
 
 			indexer.Add(tc.binding.DeepCopy())
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			registry := newMockRegistry()
 			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -534,7 +534,7 @@ func TestSubnetToZonesMapInvalidTypeInCache(t *testing.T) {
 	fakeClient := fakenegbinding.NewSimpleClientset()
 	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	registry := newMockRegistry()
 	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -564,7 +564,7 @@ func TestSubnetToZonesMapNotInStore(t *testing.T) {
 	fakeClient := fakenegbinding.NewSimpleClientset()
 	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	registry := newMockRegistry()
 	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -605,7 +605,7 @@ func TestPatchStatusNoChanges(t *testing.T) {
 	indexer.Add(defaultBinding.DeepCopy())
 	fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), defaultBinding.DeepCopy(), metav1.CreateOptions{})
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	registry := newMockRegistry()
 	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, negMetrics, registry, klog.TODO())
 
@@ -714,7 +714,7 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 
 	registry := newMockRegistry()
 	ownerKey := fmt.Sprintf("%s/%s", namespace, name)
-	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.NewNegMetrics(), registry, klog.TODO())
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.FakeNegMetrics(), registry, klog.TODO())
 
 	// Case 1: No conflicts. ReportStatus should succeed normally (Attached=True)
 	registry.Acquire("neg-1", ownerKey)

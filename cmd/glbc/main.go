@@ -165,10 +165,6 @@ func main() {
 		}
 	}
 
-	// register NEG prometheus metrics
-	metrics.RegisterMetrics()
-	syncMetrics.RegisterMetrics()
-
 	if flags.F.EnableNEGController {
 		negCRDMeta := svcneg.CRDMeta()
 		if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
@@ -286,8 +282,6 @@ func main() {
 				klog.Fatalf("Failed to create ProviderConfig client: %v", err)
 			}
 			ctx := context.Background()
-			syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, rootLogger)
-			go syncerMetrics.Run(stopCh)
 
 			if flags.F.LeaderElection.LeaderElect {
 				err := multiprojectstart.StartWithLeaderElection(
@@ -306,7 +300,6 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
-					syncerMetrics,
 				)
 				if err != nil {
 					rootLogger.Error(err, "Failed to start multi-project syncer with leader election")
@@ -326,7 +319,6 @@ func main() {
 					gceCreator,
 					namer,
 					stopCh,
-					syncerMetrics,
 				)
 			}
 		}, rOption.wg)
@@ -746,8 +738,14 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		adapter = ctx.Cloud
 	}
 
-	negMetrics := metrics.NewNegMetrics()
-	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	negMetrics, err := metrics.NewNegMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize NEG metrics: %w", err)
+	}
+	syncerMetrics, err := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize syncer metrics: %w", err)
+	}
 	go syncerMetrics.Run(stopCh)
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
