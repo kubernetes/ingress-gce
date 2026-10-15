@@ -21,6 +21,7 @@ type cleanupSyncer struct {
 	cloud         negtypes.NetworkEndpointGroupCloud
 	statusHandler *negstatushandler.NEGBindingStatusHandler
 	bindingLister cache.Indexer
+	clusterURL    string
 	logger        klog.Logger
 
 	syncCh chan struct{}
@@ -37,6 +38,7 @@ func NewCleanupSyncer(
 	cloud negtypes.NetworkEndpointGroupCloud,
 	statusHandler *negstatushandler.NEGBindingStatusHandler,
 	bindingLister cache.Indexer,
+	clusterURL string,
 	logger klog.Logger,
 ) negtypes.NegSyncer {
 	return &cleanupSyncer{
@@ -44,6 +46,7 @@ func NewCleanupSyncer(
 		cloud:         cloud,
 		statusHandler: statusHandler,
 		bindingLister: bindingLister,
+		clusterURL:    clusterURL,
 		logger:        logger.WithName("CleanupSyncer"),
 		syncCh:        make(chan struct{}, 1),
 		stopCh:        make(chan struct{}),
@@ -138,7 +141,7 @@ func (s *cleanupSyncer) cleanUp() error {
 
 	var errs []error
 	for _, ref := range binding.Status.NetworkEndpointGroups {
-		err := s.cleanUpNEG(ref.ResourceURL)
+		err := s.cleanUpNEG(ref)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -154,10 +157,10 @@ func (s *cleanupSyncer) cleanUp() error {
 	return utilerrors.NewAggregate(errs)
 }
 
-func (s *cleanupSyncer) cleanUpNEG(negURL string) error {
-	negID, err := cloud.ParseResourceURL(negURL)
+func (s *cleanupSyncer) cleanUpNEG(ref negbindingv1beta1.StatusNegRef) error {
+	negID, err := cloud.ParseResourceURL(ref.ResourceURL)
 	if err != nil {
-		s.logger.Error(err, "Failed to parse NEG URL, assuming already cleaned up", "negURL", negURL)
+		s.logger.Error(err, "Failed to parse NEG URL, assuming already cleaned up", "negURL", ref.ResourceURL)
 		return nil
 	}
 
@@ -178,6 +181,34 @@ func (s *cleanupSyncer) cleanUpNEG(negURL string) error {
 
 	if len(endpointsWithStatus) == 0 {
 		s.logger.V(3).Info("NEG is already empty", "neg", negName, "zone", zone)
+		return nil
+	}
+
+	neg, err := s.cloud.GetNetworkEndpointGroup(negName, zone, apiVersion, s.logger)
+	if err != nil {
+		if utils.IsNotFoundError(err) {
+			s.logger.Info("NEG was not found during cleanup, assuming already cleaned up", "neg", negName, "zone", zone)
+			return nil
+		}
+		return fmt.Errorf("failed to get NEG %q in zone %q: %w", negName, zone, err)
+	}
+
+	expectedNEGDesc := utils.BoundNEGDescription{
+		ClusterURL: s.clusterURL,
+		Namespace:  s.Namespace,
+		BackendRef: s.Name,
+	}
+	negLogger := s.logger.WithValues("neg", negName, "zone", zone)
+	if err := verifyNEGDescription(neg, zone, expectedNEGDesc, false, negLogger); err != nil {
+		return nil
+	}
+	if !utils.EqualResourceIDs(neg.Subnetwork, ref.SubnetURL) {
+		negLogger.Error(
+			nil,
+			"Found NEG whose subnetwork mismatches status subnetwork, skipping cleanup",
+			"currentSubnetwork", neg.Subnetwork,
+			"expectedSubnetwork", ref.SubnetURL,
+		)
 		return nil
 	}
 
