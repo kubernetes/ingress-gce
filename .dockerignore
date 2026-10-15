@@ -1,0 +1,8 @@
+# Keep the docker build context small. Nothing here is copied by any Dockerfile.
+# Note: bin/ must stay in the context, the legacy Dockerfiles `ADD bin/...`.
+.git
+.go
+.cache
+_output
+docs
+hack

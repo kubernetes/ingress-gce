@@ -36,6 +36,7 @@ bin/
 .*-dockerfile
 .*-push
 bin/
+_output/
 docs/deploy/resources/*.gen
 __debug_bin*
 

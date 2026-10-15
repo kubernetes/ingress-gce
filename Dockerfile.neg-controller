@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Copyright 2026 The Kubernetes Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,8 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This image requires ca-certificate, which is pre-installed in distroless.
-FROM gcr.io/distroless/static:latest
+# Multi-arch image for the NEG controller. Build with:
+#   make image-neg-controller                  (see build/l4lbnegrules.mk)
+#   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.neg-controller .
 
-ADD bin/ARG_ARCH/glbc /glbc
-ENTRYPOINT ["/glbc"]
+# Overridden by the Makefile with the Go version from go.mod.
+ARG GOLANG_IMAGE=golang:1.26.9
+# TODO: pin by digest, e.g. gcr.io/distroless/static-debian12:nonroot@sha256:...
+ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
+
+# --- builder: runs on the build host and cross-compiles for the target platform ---
+FROM --platform=$BUILDPLATFORM ${GOLANG_IMAGE} AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=UNKNOWN
+ARG GIT_COMMIT=UNKNOWN
+ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOTOOLCHAIN=local GOFLAGS=-trimpath
+WORKDIR /src
+# vendor/ is picked up automatically. The bind mount avoids copying the source tree
+# into a layer; the cache mount keeps Go's build cache between builds and is shared
+# with Dockerfile.l4lb-controller (cache id defaults to the target path).
+#
+# TODO: build ./cmd/neg-controller once it is split out of cmd/glbc.
+RUN --mount=type=bind,target=. \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build \
+      -ldflags "-X k8s.io/ingress-gce/pkg/version.Version=${VERSION} -X k8s.io/ingress-gce/pkg/version.GitCommit=${GIT_COMMIT}" \
+      -o /out/neg-controller ./cmd/glbc
+
+# --- runtime ---------------------------------------------------------------------
+# distroless ships ca-certificates; the :nonroot variant runs as uid/gid 65532.
+FROM ${BASE_IMAGE}
+COPY --from=builder /out/neg-controller /neg-controller
+ENTRYPOINT ["/neg-controller"]
