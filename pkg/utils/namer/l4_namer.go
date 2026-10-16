@@ -88,9 +88,11 @@ func (namer *L4Namer) NonDefaultSubnetNEG(namespace, name, subnetName string, _ 
 
 // NonDefaultSubnetCustomNEG returns the gce neg name in the non-default subnet
 // when the NEG name is a custom one.
-// Custom Name NEG for L4 NEG is not allowed.
 func (n *L4Namer) NonDefaultSubnetCustomNEG(customNEGName, subnetName string) (string, error) {
-	return "", fmt.Errorf("Custom NEG is not allowed for L4")
+	if len(customNEGName) > MaxDefaultSubnetNegNameLength {
+		return "", ErrCustomNEGNameTooLong
+	}
+	return fmt.Sprintf("%s-%s", customNEGName, subnetHash(subnetName)), nil
 }
 
 // L4Firewall returns the gce Firewall name based on the service namespace and name

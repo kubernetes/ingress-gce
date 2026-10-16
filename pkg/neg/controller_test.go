@@ -500,7 +500,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, "", defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -521,7 +521,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	if err = controller.processService(svcKey); err != nil {
 		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB)
+	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4InternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -1358,7 +1358,7 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			svc:            serviceILBWithFinalizer,
 			networkInfo:    defaultNetwork,
 			runL4ILB:       true,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, defaultNetwork, negtypes.L4InternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, false, "", defaultNetwork, negtypes.L4InternalLB),
 		},
 		{
 			desc:           "ILB legacy service",
@@ -1370,7 +1370,7 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			desc:           "RBS Multinet Service",
 			svc:            newTestRBSMultinetService(controller, true, 80),
 			networkInfo:    secondaryNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, secondaryNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", secondaryNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service",
@@ -1383,14 +1383,14 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			svc:            newTestRBSService(controller, true, 80, common.NetLBFinalizerV3),
 			networkInfo:    defaultNetwork,
 			runL4NetLB:     true,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service with NEG without RBS annotations",
 			svc:            svcWithAnnotations(newTestRBSService(controller, true, 80, common.NetLBFinalizerV3), nil),
 			networkInfo:    defaultNetwork,
 			runL4NetLB:     true,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "RBS non-multinet Service with NEG but NEGs not enabled for NetLB",
@@ -1412,32 +1412,32 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 			svc:            serviceExternalLoadBalancerClass,
 			networkInfo:    defaultNetwork,
 			runL4NetLB:     true,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "Service with ILB loadBalancerClass",
 			svc:            serviceInternalLoadBalancerClass,
 			networkInfo:    defaultNetwork,
 			runL4ILB:       true,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4InternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4InternalLB),
 		},
 		{
 			desc:           "Service with custom-neg-load-balancer loadBalancerClass (internal)",
 			svc:            serviceCustomNegLBInternal,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "Service with custom-neg-load-balancer loadBalancerClass (external)",
 			svc:            serviceCustomNegLBExternal,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 		{
 			desc:           "Service with custom-neg-load-balancer loadBalancerClass (external without annotation)",
 			svc:            serviceCustomNegLBExternalWithoutAnnotation,
 			networkInfo:    defaultNetwork,
-			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, defaultNetwork, negtypes.L4ExternalLB),
+			wantSvcPortMap: negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", defaultNetwork, negtypes.L4ExternalLB),
 		},
 	}
 
@@ -1788,7 +1788,7 @@ func TestEnableNEGServiceWithL4NetLB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, networkInfo, negtypes.L4ExternalLB)
+	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName, controller.l4Namer, true, "", networkInfo, negtypes.L4ExternalLB)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)

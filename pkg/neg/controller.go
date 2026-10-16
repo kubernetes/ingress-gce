@@ -43,6 +43,7 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	l4annotations "k8s.io/ingress-gce/pkg/l4/annotations"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
 	metrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
@@ -917,7 +918,21 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 		l4LBType = negtypes.L4ExternalLB
 	}
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, networkInfo, l4LBType))
+	var customNegName string
+	if flags.F.EnableL4CustomStandaloneNEGNames && wantsStandaloneNEGLB {
+		customName, err := l4annotations.StandaloneNEGName(service)
+		if err != nil {
+			err = l4utils.NewUserError(err)
+			c.recorder.Event(service, apiv1.EventTypeWarning, "InvalidNEGName", err.Error())
+			return err
+		}
+		if customName != "" {
+			negUsage.CustomNamedNeg = 1
+			customNegName = customName
+		}
+	}
+
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal, customNegName, networkInfo, l4LBType))
 }
 
 // netLBServiceNeedsNEG determines if NEGs need to be created for L4 NetLB.
