@@ -140,22 +140,11 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	if neg == nil {
 		needToCreate = true
 	} else {
-		if customName && neg.Description == "" {
-			negLogger.Error(nil, "Found Neg with custom name but empty description")
-			return nil, fmt.Errorf("found a custom named neg %s with an empty description", negName)
-		}
-		if matches, err := expectedDesc.MatchesString(neg.Description, negName, zone); !matches {
-			negLogger.Error(err, "Neg Name is already in use")
-			// Wrap returned error from MatchesString() since we need to check if error is ErrNEGUsedByAnotherSyncer.
-			return nil, fmt.Errorf("found conflicting description in neg %s: %w", negName, err)
+		if err := verifyNEGDescription(neg, zone, expectedDesc, customName, negLogger); err != nil {
+			return nil, err
 		}
 
-		if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
-			// Only perform the following checks when the NEGs are not Non-GCP NEGs.
-			// Non-GCP NEGs do not have associated network and subnetwork.
-			(!utils.EqualResourceIDs(neg.Network, networkInfo.NetworkURL) ||
-				!utils.EqualResourceIDs(neg.Subnetwork, networkInfo.SubnetworkURL)) {
-
+		if err := verifyNEGNetwork(neg, zone, networkEndpointType, networkInfo.NetworkURL, networkInfo.SubnetworkURL); err != nil {
 			if !manageLifecycle {
 				negLogger.Error(
 					nil,
@@ -165,7 +154,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 					"currentSubnetwork", neg.Subnetwork,
 					"expectedSubnetwork", networkInfo.SubnetworkURL,
 				)
-				return nil, fmt.Errorf("NEG %s in zone %s does not match network and subnetwork of the cluster", negName, zone)
+				return nil, err
 			}
 
 			needToCreate = true
@@ -221,6 +210,33 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	}
 
 	return neg, nil
+}
+
+// verifyNEGDescription verifies that the NEG's description matches expectedDesc.
+func verifyNEGDescription(neg *composite.NetworkEndpointGroup, zone string, expectedDesc utils.NEGDescription, customName bool, negLogger klog.Logger) error {
+	if customName && neg.Description == "" {
+		negLogger.Error(nil, "Found NEG with custom name but empty description")
+		return fmt.Errorf("found a custom named neg %s with an empty description", neg.Name)
+	}
+	if matches, err := expectedDesc.MatchesString(neg.Description, neg.Name, zone); !matches {
+		negLogger.Error(err, "NEG name is already in use")
+		// Wrap returned error from MatchesString() since we need to check if error is ErrNEGUsedByAnotherSyncer.
+		return fmt.Errorf("found conflicting description in neg %s: %w", neg.Name, err)
+	}
+	return nil
+}
+
+// verifyNEGNetwork verifies that the NEG's network and subnetwork match expectedNetworkURL and expectedSubnetworkURL
+// when the NEG is not a Non-GCP NEG.
+func verifyNEGNetwork(neg *composite.NetworkEndpointGroup, zone string, networkEndpointType negtypes.NetworkEndpointType, expectedNetworkURL, expectedSubnetworkURL string) error {
+	// Only perform the following checks when the NEGs are not Non-GCP NEGs.
+	// Non-GCP NEGs do not have associated network and subnetwork.
+	if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
+		(!utils.EqualResourceIDs(neg.Network, expectedNetworkURL) ||
+			!utils.EqualResourceIDs(neg.Subnetwork, expectedSubnetworkURL)) {
+		return fmt.Errorf("NEG %s in zone %s does not match network and subnetwork of the cluster", neg.Name, zone)
+	}
+	return nil
 }
 
 type ZoneNetworkEndpointMapResult struct {
@@ -686,7 +702,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, statusHandler negtypes.NEGStatusHandler, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus, checkAllLocations bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus, checkAllLocations bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
@@ -701,22 +717,11 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 			return nil, nil, nil, err
 		}
 	} else {
-		// Include only ensured locations (which contain verified NEGs) and ones listed in status.
+		// Include only ensured locations (which contain verified NEGs and ones listed in status).
 		// Used for NEG Binding as it stores all previously managed NEGs in its status.
 		for subnet, zones := range ensuredZonesPerSubnet {
 			allZonesPerSubnet[subnet] = zones.Clone()
 		}
-	}
-
-	statusZonesPerSubnet, err := statusHandler.SubnetToZonesMap()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get status zones: %w", err)
-	}
-	for subnet, zones := range statusZonesPerSubnet {
-		if _, ok := allZonesPerSubnet[subnet]; !ok {
-			allZonesPerSubnet[subnet] = sets.New[string]()
-		}
-		allZonesPerSubnet[subnet] = allZonesPerSubnet[subnet].Union(zones)
 	}
 
 	for subnet, negName := range subnetToNegMapping {

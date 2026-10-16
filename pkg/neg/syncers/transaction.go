@@ -303,11 +303,12 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	needInitDrainStatus := s.needInit && s.enableL4NEGDetachCancel && s.endpointsCalculator.Mode() == negtypes.L4LocalMode
 
 	var ensureErr error
-	var ensuredSubnetZones map[string]sets.Set[string]
+	var ensuredSubnetZones shared.ZonesPerSubnetMap
 	if s.needInit || topologyChange {
 		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "topologyChange", topologyChange)
 
-		// Passing ensured NEGs forward from ensureNetworkEndpointGroups() if called during this sync as reading from statusHandler in the same sync might result in reading stale data.
+		// Passing ensured NEGs forward from ensureNetworkEndpointGroups() if called during this sync as reading from statusHandler in the same sync might not yet contain newly ensured NEGs.
+		// For binding syncers, ensureNetworkEndpointGroups() also unions verified status NEGs that need to be cleaned up.
 		ensuredSubnetZones, ensureErr = s.ensureNetworkEndpointGroups()
 		if ensureErr == nil {
 			s.needInit = false
@@ -323,9 +324,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 	} else {
 		var err error
-		ensuredSubnetZones, err = s.statusHandler.SubnetToZonesMap()
+		ensuredSubnetZones, err = s.statusSubnetToZonesMap()
+		// Resync with ensuring NEGs in case NEGs can't be read from statusHandler or contain NEGs which don't pass validation
 		if err != nil {
-			return fmt.Errorf("failed to get subnet to zones map from status handler: %w", err)
+			s.needInit = true
+			return err
 		}
 	}
 	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
@@ -337,7 +340,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.statusHandler, ensuredSubnetZones, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, !s.NegSyncerKey.IsBindingKey())
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, ensuredSubnetZones, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, !s.NegSyncerKey.IsBindingKey())
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -727,9 +730,15 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		}
 	}
 
-	oldNegs, oldNegErrs := s.getNEGsToKeepInStatus(ensuredSubnetZones)
+	oldNegs, statusZonesPerSubnet, oldNegErrs := s.getNEGsToKeepInStatus(ensuredSubnetZones)
 	negObjs = append(negObjs, oldNegs...)
 	errList = append(errList, oldNegErrs...)
+	for subnet, zones := range statusZonesPerSubnet {
+		if _, ok := ensuredSubnetZones[subnet]; !ok {
+			ensuredSubnetZones[subnet] = sets.New[string]()
+		}
+		ensuredSubnetZones[subnet] = ensuredSubnetZones[subnet].Union(zones)
+	}
 
 	if updateNEGStatus {
 		if err := s.statusHandler.ReportStatus(negObjs, errList); err != nil {
@@ -739,6 +748,85 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 
 	s.syncMetricsCollector.UpdateSyncerNegCount(s.NegSyncerKey, negsByLocation)
 	return ensuredSubnetZones, utilerrors.NewAggregate(errList)
+}
+
+// statusSubnetToZonesMap retrieves the subnet-to-zones mapping from statusHandler and, for binding syncers,
+// verifies that each NEG exists and matches the expected description, network, and subnetwork.
+func (s *transactionSyncer) statusSubnetToZonesMap() (shared.ZonesPerSubnetMap, error) {
+	zonesPerSubnet, err := s.statusHandler.SubnetToZonesMap()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subnet to zones map from status handler: %w", err)
+	}
+	if !s.NegSyncerKey.IsBindingKey() {
+		return zonesPerSubnet, nil
+	}
+	return s.verifyNetworkEndpointGroupsFromBindingStatus(zonesPerSubnet)
+}
+
+// verifyNetworkEndpointGroupsFromBindingStatus checks that each NEG in zonesPerSubnet exists in GCE and matches the expected
+// BoundNEGDescription, network, and subnetwork. It returns a map containing only the valid NEGs and an error
+// if one or more NEGs are missing or fail verification.
+func (s *transactionSyncer) verifyNetworkEndpointGroupsFromBindingStatus(zonesPerSubnet shared.ZonesPerSubnetMap) (shared.ZonesPerSubnetMap, error) {
+	verifiedZonesPerSubnet := make(shared.ZonesPerSubnetMap)
+	if len(zonesPerSubnet) == 0 {
+		return verifiedZonesPerSubnet, nil
+	}
+
+	baseSubnetID, err := cloud.ParseResourceURL(s.networkInfo.SubnetworkURL)
+	if err != nil {
+		s.logger.Error(err, "Failed to parse subnetwork URL when verifying NEGs", "subnetworkURL", s.networkInfo.SubnetworkURL)
+		return nil, err
+	}
+
+	expectedNEGDesc := utils.BoundNEGDescription{
+		ClusterURL: s.clusterURL,
+		Namespace:  s.Namespace,
+		BackendRef: s.NegSyncerKey.Name,
+	}
+
+	var errList []error
+	for subnet, zones := range zonesPerSubnet {
+		negName, err := s.getNEGName(subnet)
+		if err != nil {
+			s.logger.Error(err, "Unable to get the name of the NEG based on the subnet name", "subnetName", subnet)
+			errList = append(errList, err)
+			continue
+		}
+		expectedSubnetworkURL := cloud.SelfLink(meta.VersionGA, baseSubnetID.ProjectID, baseSubnetID.Resource, meta.RegionalKey(subnet, baseSubnetID.Key.Region))
+
+		for zone := range zones {
+			negLogger := s.logger.WithValues("negName", negName, "zone", zone)
+			neg, err := s.cloud.GetNetworkEndpointGroup(negName, zone, s.NegSyncerKey.GetAPIVersion(), s.logger)
+			if err != nil {
+				negLogger.Error(err, "Failed to get NEG")
+				errList = append(errList, err)
+				continue
+			}
+			if err := verifyNEGDescription(neg, zone, expectedNEGDesc, false, negLogger); err != nil {
+				errList = append(errList, err)
+				continue
+			}
+			if err := verifyNEGNetwork(neg, zone, s.NegSyncerKey.NegType, s.networkInfo.NetworkURL, expectedSubnetworkURL); err != nil {
+				negLogger.Error(
+					nil,
+					"Found NEG whose network and/or subnetwork mismatches expected network and subnetwork",
+					"currentNetwork", neg.Network,
+					"expectedNetwork", s.networkInfo.NetworkURL,
+					"currentSubnetwork", neg.Subnetwork,
+					"expectedSubnetwork", expectedSubnetworkURL,
+				)
+				errList = append(errList, err)
+				continue
+			}
+
+			if _, ok := verifiedZonesPerSubnet[subnet]; !ok {
+				verifiedZonesPerSubnet[subnet] = sets.New[string]()
+			}
+			verifiedZonesPerSubnet[subnet].Insert(zone)
+		}
+	}
+
+	return verifiedZonesPerSubnet, utilerrors.NewAggregate(errList)
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
@@ -1241,23 +1329,24 @@ func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabe
 	return labelPropagationStats
 }
 
-// getNEGsToKeepInStatus returns a list of NEGs that should be kept in status even though are not in target topology.
+// getNEGsToKeepInStatus returns a list of NEGs that should be kept in status even though are not in target topology,
+// along with the verified status subnet-to-zones map.
 // Mainly used to keep track of NEGs which are currently cleaned up as part of NEGBinding flow.
-func (s *transactionSyncer) getNEGsToKeepInStatus(ensuredSubnetZones shared.ZonesPerSubnetMap) ([]*composite.NetworkEndpointGroup, []error) {
+func (s *transactionSyncer) getNEGsToKeepInStatus(ensuredSubnetZones shared.ZonesPerSubnetMap) ([]*composite.NetworkEndpointGroup, shared.ZonesPerSubnetMap, []error) {
 	var negObjs []*composite.NetworkEndpointGroup
 	var errList []error
 
 	if !s.NegSyncerKey.IsBindingKey() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	existingZones, err := s.statusHandler.SubnetToZonesMap()
+	verifiedNEGs, err := s.statusSubnetToZonesMap()
 	if err != nil {
-		s.logger.Error(err, "Failed to get subnet to zones map from status handler")
-		return nil, []error{err}
+		s.logger.Error(err, "Failed to get verified subnet to zones map from status")
+		errList = append(errList, err)
 	}
 
-	for subnet, zones := range existingZones {
+	for subnet, zones := range verifiedNEGs {
 		for zone := range zones {
 			// Still desired NEG - will be left in status by standard flow
 			if desiredZones, ok := ensuredSubnetZones[subnet]; ok && desiredZones.Has(zone) {
@@ -1311,7 +1400,7 @@ func (s *transactionSyncer) getNEGsToKeepInStatus(ensuredSubnetZones shared.Zone
 			}
 		}
 	}
-	return negObjs, errList
+	return negObjs, verifiedNEGs, errList
 }
 
 // hasEndpoints returns true if the NEG has any endpoints attached in GCE.
