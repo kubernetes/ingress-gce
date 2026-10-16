@@ -25,13 +25,14 @@ import (
 
 func TestIngress(t *testing.T) {
 	for _, tc := range []struct {
-		desc         string
-		ing          *v1.Ingress
-		allowHTTP    bool
-		useNamedTLS  string
-		staticIPName string
-		ingressClass string
-		wantErr      bool
+		desc              string
+		ing               *v1.Ingress
+		allowHTTP         bool
+		useNamedTLS       string
+		staticIPName      string
+		ingressClass      string
+		allowGlobalAccess bool
+		wantErr           bool
 	}{
 		{
 			desc:      "Empty ingress",
@@ -71,6 +72,46 @@ func TestIngress(t *testing.T) {
 			staticIPName: "1.2.3.4",
 			ingressClass: "gce",
 		},
+		{
+			desc: "AllowGlobalAccess set to true",
+			ing: &v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AllowGlobalAccessKey: "true",
+						IngressClassKey:      GceL7ILBIngressClass,
+					},
+				},
+			},
+			allowHTTP:         true,
+			ingressClass:      GceL7ILBIngressClass,
+			allowGlobalAccess: true,
+		},
+		{
+			desc: "AllowGlobalAccess set to false",
+			ing: &v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AllowGlobalAccessKey: "false",
+						IngressClassKey:      GceL7ILBIngressClass,
+					},
+				},
+			},
+			allowHTTP:         true,
+			ingressClass:      GceL7ILBIngressClass,
+			allowGlobalAccess: false,
+		},
+		{
+			desc: "AllowGlobalAccess invalid value defaults to false",
+			ing: &v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AllowGlobalAccessKey: "invalid",
+					},
+				},
+			},
+			allowHTTP:         true,
+			allowGlobalAccess: false,
+		},
 	} {
 		ing := FromIngress(tc.ing)
 
@@ -89,6 +130,9 @@ func TestIngress(t *testing.T) {
 		}
 		if x := ing.IngressClass(); x != tc.ingressClass {
 			t.Errorf("ingress %+v; IngressClass() = %v, want %v", tc.ing, x, tc.ingressClass)
+		}
+		if x := ing.AllowGlobalAccess(); x != tc.allowGlobalAccess {
+			t.Errorf("ingress %+v; AllowGlobalAccess() = %v, want %v", tc.ing, x, tc.allowGlobalAccess)
 		}
 	}
 }
