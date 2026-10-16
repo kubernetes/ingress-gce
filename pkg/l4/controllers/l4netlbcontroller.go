@@ -145,7 +145,7 @@ func NewL4NetLBController(
 	}
 	negMetrics, err := negmetrics.NewNegMetrics()
 	if err != nil {
-		klog.Fatalf("Failed to initialize NEG metrics: %v", err)
+		logger.Error(err, "Failed to initialize NEG metrics")
 	}
 	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
 	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud, negMetrics), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)

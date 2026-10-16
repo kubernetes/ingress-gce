@@ -44,22 +44,31 @@ func RunHTTPServer(healthChecker func() systemhealth.HealthCheckResults, logger 
 	http.HandleFunc("/flag", flagHandler)
 	http.Handle("/metrics", promhttp.Handler())
 	if flags.F.EnableMultiProjectMode {
-		gatherer, ok := mtmetrics.DefaultMultiGatherer.(prometheus.Gatherer)
-		if !ok {
-			klog.Fatal("Failed to initialize multi-tenant metrics: mtmetrics.DefaultMultiGatherer does not implement prometheus.Gatherer")
-		}
-		http.HandleFunc("/metrics/multitenancy", loopbackOnly(promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{})))
+		registerMultitenancyMetricsHandler(http.DefaultServeMux, logger)
 	}
 
 	logger.V(0).Info("Running http server", "port", flags.F.HealthzPort)
 	klog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
+func registerMultitenancyMetricsHandler(mux *http.ServeMux, logger klog.Logger) {
+	gatherer, ok := mtmetrics.DefaultMultiGatherer.(prometheus.Gatherer)
+	if !ok {
+		logger.Error(nil, "Failed to initialize multi-tenant metrics: mtmetrics.DefaultMultiGatherer does not implement prometheus.Gatherer")
+		return
+	}
+	mux.HandleFunc("/metrics/multitenancy", loopbackOnly(promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{})))
+}
+
 func loopbackOnly(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			http.Error(w, "Forbidden: accessed from outside localhost", http.StatusForbidden)
+			return
+		}
 		ip := net.ParseIP(host)
-		if err == nil && ip != nil && ip.IsLoopback() {
+		if ip != nil && ip.IsLoopback() {
 			next.ServeHTTP(w, r)
 			return
 		}

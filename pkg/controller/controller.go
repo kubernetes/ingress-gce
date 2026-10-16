@@ -135,7 +135,7 @@ func NewLoadBalancerController(
 
 	negMetrics, err := negmetrics.NewNegMetrics()
 	if err != nil {
-		klog.Fatalf("Failed to initialize NEG metrics: %v", err)
+		logger.Error(err, "Failed to initialize NEG metrics")
 	}
 
 	lbc := LoadBalancerController{
