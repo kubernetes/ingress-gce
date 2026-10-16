@@ -71,22 +71,51 @@ func MergePatchBytes(old, cur interface{}) ([]byte, error) {
 	return patchBytes, nil
 }
 
+// AddResourceVersionPrecondition returns patchBytes with
+// metadata.resourceVersion set to resourceVersion. The API server treats a
+// resourceVersion carried in a merge patch as a precondition and rejects the
+// patch with a Conflict if the object has changed since it was read, so a
+// patch computed from a stale read fails instead of overwriting a newer
+// write. An empty resourceVersion returns the patch unchanged, leaving it
+// unconditional.
+func AddResourceVersionPrecondition(patchBytes []byte, resourceVersion string) ([]byte, error) {
+	if resourceVersion == "" {
+		return patchBytes, nil
+	}
+	var patch map[string]interface{}
+	if err := json.Unmarshal(patchBytes, &patch); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal patch: %v", err)
+	}
+	if patch == nil {
+		patch = map[string]interface{}{}
+	}
+	metadata, ok := patch["metadata"].(map[string]interface{})
+	if !ok {
+		metadata = map[string]interface{}{}
+		patch["metadata"] = metadata
+	}
+	metadata["resourceVersion"] = resourceVersion
+	return json.Marshal(patch)
+}
+
 // PatchServiceObjectMetadata patches the given service's metadata based on new
-// service metadata.
-func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata metav1.ObjectMeta) error {
+// service metadata. On success it returns the service as stored by the API
+// server, including its updated ResourceVersion; on error the returned service
+// may be nil.
+func PatchServiceObjectMetadata(client coreclient.CoreV1Interface, svc *corev1.Service, newObjectMetadata metav1.ObjectMeta) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.ObjectMeta = newObjectMetadata
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }
 
 // PatchServiceLoadBalancerStatus patches the given service's LoadBalancerStatus
-// based on new service's load-balancer status.
-func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) error {
+// based on new service's load-balancer status. On success it returns the
+// service as stored by the API server, including its updated ResourceVersion;
+// on error the returned service may be nil.
+func PatchServiceLoadBalancerStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.LoadBalancerStatus) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.Status.LoadBalancer = newStatus
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }
 
 // PatchProviderConfigObjectMetadata patches the given ProviderConfig's metadata based on new metadata.
@@ -104,10 +133,11 @@ func PatchProviderConfigObjectMetadata(client providerconfigclient.Interface, pc
 }
 
 // PatchServiceStatus patches the given service's ServiceStatus
-// based on new service's status.
-func PatchServiceStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.ServiceStatus) error {
+// based on new service's status. On success it returns the service as stored
+// by the API server, including its updated ResourceVersion; on error the
+// returned service may be nil.
+func PatchServiceStatus(client coreclient.CoreV1Interface, svc *corev1.Service, newStatus corev1.ServiceStatus) (*corev1.Service, error) {
 	newSvc := svc.DeepCopy()
 	newSvc.Status = newStatus
-	_, err := svchelpers.PatchService(client, svc, newSvc)
-	return err
+	return svchelpers.PatchService(client, svc, newSvc)
 }
