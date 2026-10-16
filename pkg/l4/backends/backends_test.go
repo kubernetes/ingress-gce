@@ -355,6 +355,7 @@ func TestBackendSvcEqual(t *testing.T) {
 		compareConnectionTracking      bool
 		withZonalAffinityEnabled       bool
 		withL4LoggingManagementEnabled bool
+		withOrchestrationInfoEnabled   bool
 		wantEqual                      bool
 		skipBidirectionalCheck         bool
 	}{
@@ -1000,13 +1001,56 @@ func TestBackendSvcEqual(t *testing.T) {
 			newBackendService: &composite.BackendService{},
 			wantEqual:         true,
 		},
+		{
+			desc:              "Test orchestration info missing on existing backend service",
+			oldBackendService: &composite.BackendService{},
+			newBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-1"},
+			},
+			withOrchestrationInfoEnabled: true,
+			wantEqual:                    false,
+		},
+		{
+			desc: "Test with changed orchestration info resource URI",
+			oldBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-1"},
+			},
+			newBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-2"},
+			},
+			withOrchestrationInfoEnabled: true,
+			wantEqual:                    false,
+		},
+		{
+			desc: "Test with equal orchestration info",
+			oldBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-1"},
+			},
+			newBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-1"},
+			},
+			withOrchestrationInfoEnabled: true,
+			wantEqual:                    true,
+		},
+		{
+			desc:              "Test orchestration info is ignored when the flag is disabled",
+			oldBackendService: &composite.BackendService{},
+			newBackendService: &composite.BackendService{
+				OrchestrationInfo: &composite.BackendServiceOrchestrationInfo{ResourceUri: "resource-uri-1"},
+			},
+			withOrchestrationInfoEnabled: false,
+			wantEqual:                    true,
+		},
 	} {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			oldZonalAffinityFlag := flags.F.EnableL4ILBZonalAffinity
+			oldOrchestrationInfoFlag := flags.F.EnableL4OrchestrationInfo
 			flags.F.EnableL4ILBZonalAffinity = tc.withZonalAffinityEnabled
+			flags.F.EnableL4OrchestrationInfo = tc.withOrchestrationInfoEnabled
 			defer func() {
 				flags.F.EnableL4ILBZonalAffinity = oldZonalAffinityFlag
+				flags.F.EnableL4OrchestrationInfo = oldOrchestrationInfoFlag
 			}()
 
 			result := backendSvcEqual(tc.newBackendService, tc.oldBackendService, tc.compareConnectionTracking, tc.withL4LoggingManagementEnabled)
@@ -1574,5 +1618,139 @@ func TestEnsureL4BackendServiceDoesNotUpdateLoadBalancingScheme(t *testing.T) {
 				t.Errorf("BackendService.LoadBalancingScheme = %s, want %s", bs.LoadBalancingScheme, tc.desiredScheme)
 			}
 		})
+	}
+}
+
+// TestEnsureL4BackendServiceOrchestrationInfo verifies that OrchestrationInfo is
+// set only when the flag is enabled and the cluster name is known, that the
+// resource URI uses the cluster location, and that a resync does not update.
+func TestEnsureL4BackendServiceOrchestrationInfo(t *testing.T) {
+	for _, tc := range []struct {
+		desc                    string
+		enableOrchestrationInfo bool
+		clusterName             string
+		regionalCluster         bool
+		wantOrchestrationInfo   *composite.BackendServiceOrchestrationInfo
+	}{
+		{
+			desc:                    "Zonal cluster",
+			enableOrchestrationInfo: true,
+			clusterName:             "test-cluster",
+			wantOrchestrationInfo: &composite.BackendServiceOrchestrationInfo{
+				ResourceUri: "//container.googleapis.com/projects/test-project/zones/us-central1-b/clusters/test-cluster/k8s/namespaces/test-ns/services/test-service",
+			},
+		},
+		{
+			desc:                    "Regional cluster",
+			enableOrchestrationInfo: true,
+			clusterName:             "test-cluster",
+			regionalCluster:         true,
+			wantOrchestrationInfo: &composite.BackendServiceOrchestrationInfo{
+				ResourceUri: "//container.googleapis.com/projects/test-project/locations/us-central1/clusters/test-cluster/k8s/namespaces/test-ns/services/test-service",
+			},
+		},
+		{
+			desc:                    "Flag disabled",
+			enableOrchestrationInfo: false,
+			clusterName:             "test-cluster",
+			wantOrchestrationInfo:   nil,
+		},
+		{
+			desc:                    "Cluster name not set",
+			enableOrchestrationInfo: true,
+			clusterName:             "",
+			wantOrchestrationInfo:   nil,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			oldEnableOrchestrationInfo := flags.F.EnableL4OrchestrationInfo
+			oldClusterName := flags.F.GKEClusterName
+			flags.F.EnableL4OrchestrationInfo = tc.enableOrchestrationInfo
+			flags.F.GKEClusterName = tc.clusterName
+			defer func() {
+				flags.F.EnableL4OrchestrationInfo = oldEnableOrchestrationInfo
+				flags.F.GKEClusterName = oldClusterName
+			}()
+
+			vals := gce.DefaultTestClusterValues()
+			vals.Regional = tc.regionalCluster
+			fakeGCE := gce.NewFakeGCECloud(vals)
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			backendPool := NewPool(fakeGCE, l4namer)
+
+			namespacedName := types.NamespacedName{Name: "test-service", Namespace: "test-ns"}
+			params := L4BackendServiceParams{
+				Name:            l4namer.L4Backend(namespacedName.Namespace, namespacedName.Name),
+				HealthCheckLink: l4namer.L4HealthCheck(namespacedName.Namespace, namespacedName.Name, false),
+				Protocol:        "TCP",
+				SessionAffinity: string(v1.ServiceAffinityNone),
+				Scheme:          string(cloud.SchemeInternal),
+				NamespacedName:  namespacedName,
+				NetworkInfo:     network.DefaultNetwork(fakeGCE),
+			}
+			bs, _, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+			if err != nil {
+				t.Fatalf("EnsureL4BackendService() returned error %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.wantOrchestrationInfo, bs.OrchestrationInfo); diff != "" {
+				t.Errorf("BackendService.OrchestrationInfo mismatch (-want +got):\n%s", diff)
+			}
+
+			// Syncing again with the same params must not update the backend service.
+			_, syncStatus, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+			if err != nil {
+				t.Fatalf("second EnsureL4BackendService() returned error %v, want nil", err)
+			}
+			if syncStatus != l4utils.ResourceResync {
+				t.Errorf("second EnsureL4BackendService() sync status = %v, want %v (no update)", syncStatus, l4utils.ResourceResync)
+			}
+		})
+	}
+}
+
+// TestEnsureL4BackendServiceBackfillsOrchestrationInfo verifies that enabling the
+// flag updates an existing backend service that was created without OrchestrationInfo.
+func TestEnsureL4BackendServiceBackfillsOrchestrationInfo(t *testing.T) {
+	oldEnableOrchestrationInfo := flags.F.EnableL4OrchestrationInfo
+	oldClusterName := flags.F.GKEClusterName
+	defer func() {
+		flags.F.EnableL4OrchestrationInfo = oldEnableOrchestrationInfo
+		flags.F.GKEClusterName = oldClusterName
+	}()
+	flags.F.GKEClusterName = "test-cluster"
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
+	l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+	backendPool := NewPool(fakeGCE, l4namer)
+
+	namespacedName := types.NamespacedName{Name: "test-service", Namespace: "test-ns"}
+	params := L4BackendServiceParams{
+		Name:            l4namer.L4Backend(namespacedName.Namespace, namespacedName.Name),
+		HealthCheckLink: l4namer.L4HealthCheck(namespacedName.Namespace, namespacedName.Name, false),
+		Protocol:        "TCP",
+		SessionAffinity: string(v1.ServiceAffinityNone),
+		Scheme:          string(cloud.SchemeInternal),
+		NamespacedName:  namespacedName,
+		NetworkInfo:     network.DefaultNetwork(fakeGCE),
+	}
+
+	// Create the backend service with the flag disabled, like an older controller version would.
+	flags.F.EnableL4OrchestrationInfo = false
+	if _, _, err := backendPool.EnsureL4BackendService(params, klog.TODO()); err != nil {
+		t.Fatalf("EnsureL4BackendService() with flag disabled returned error %v, want nil", err)
+	}
+
+	flags.F.EnableL4OrchestrationInfo = true
+	bs, syncStatus, err := backendPool.EnsureL4BackendService(params, klog.TODO())
+	if err != nil {
+		t.Fatalf("EnsureL4BackendService() with flag enabled returned error %v, want nil", err)
+	}
+	if syncStatus != l4utils.ResourceUpdate {
+		t.Errorf("EnsureL4BackendService() sync status = %v, want %v (update)", syncStatus, l4utils.ResourceUpdate)
+	}
+	wantResourceURI := "//container.googleapis.com/projects/test-project/zones/us-central1-b/clusters/test-cluster/k8s/namespaces/test-ns/services/test-service"
+	if bs.OrchestrationInfo == nil || bs.OrchestrationInfo.ResourceUri != wantResourceURI {
+		t.Errorf("BackendService.OrchestrationInfo = %+v, want ResourceUri %q", bs.OrchestrationInfo, wantResourceURI)
 	}
 }
