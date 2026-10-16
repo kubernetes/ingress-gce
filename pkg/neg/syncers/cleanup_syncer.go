@@ -168,26 +168,13 @@ func (s *cleanupSyncer) cleanUpNEG(ref negbindingv1beta1.StatusNegRef) error {
 	zone := negID.Key.Zone
 	apiVersion := s.GetAPIVersion()
 
-	s.logger.Info("Cleaning up endpoints in NEG", "neg", negName, "zone", zone)
+	negLogger := s.logger.WithValues("neg", negName, "zone", zone)
+	negLogger.Info("Cleaning up endpoints in NEG")
 
-	endpointsWithStatus, err := s.cloud.ListNetworkEndpoints(negName, zone, false, apiVersion, s.logger)
+	neg, err := s.cloud.GetNetworkEndpointGroup(negName, zone, apiVersion, negLogger)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			s.logger.Info("NEG was not found during cleanup, assuming already cleaned up", "neg", negName, "zone", zone)
-			return nil
-		}
-		return fmt.Errorf("failed to list endpoints for NEG %q in zone %q: %w", negName, zone, err)
-	}
-
-	if len(endpointsWithStatus) == 0 {
-		s.logger.V(3).Info("NEG is already empty", "neg", negName, "zone", zone)
-		return nil
-	}
-
-	neg, err := s.cloud.GetNetworkEndpointGroup(negName, zone, apiVersion, s.logger)
-	if err != nil {
-		if utils.IsNotFoundError(err) {
-			s.logger.Info("NEG was not found during cleanup, assuming already cleaned up", "neg", negName, "zone", zone)
+			negLogger.Info("NEG was not found during cleanup, assuming already cleaned up")
 			return nil
 		}
 		return fmt.Errorf("failed to get NEG %q in zone %q: %w", negName, zone, err)
@@ -198,7 +185,6 @@ func (s *cleanupSyncer) cleanUpNEG(ref negbindingv1beta1.StatusNegRef) error {
 		Namespace:  s.Namespace,
 		BackendRef: s.Name,
 	}
-	negLogger := s.logger.WithValues("neg", negName, "zone", zone)
 	if err := verifyNEGDescription(neg, zone, expectedNEGDesc, false, negLogger); err != nil {
 		return nil
 	}
@@ -209,6 +195,20 @@ func (s *cleanupSyncer) cleanUpNEG(ref negbindingv1beta1.StatusNegRef) error {
 			"currentSubnetwork", neg.Subnetwork,
 			"expectedSubnetwork", ref.SubnetURL,
 		)
+		return nil
+	}
+
+	endpointsWithStatus, err := s.cloud.ListNetworkEndpoints(negName, zone, false, apiVersion, negLogger)
+	if err != nil {
+		if utils.IsNotFoundError(err) {
+			negLogger.Info("NEG was not found during cleanup, assuming already cleaned up")
+			return nil
+		}
+		return fmt.Errorf("failed to list endpoints for NEG %q in zone %q: %w", negName, zone, err)
+	}
+
+	if len(endpointsWithStatus) == 0 {
+		negLogger.V(3).Info("NEG is already empty")
 		return nil
 	}
 
