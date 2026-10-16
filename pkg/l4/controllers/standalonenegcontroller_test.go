@@ -61,16 +61,18 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 	globalBsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/backendServices/bs1", project)
 
 	testCases := []struct {
-		desc               string
-		svc                *v1.Service
-		frs                map[string]*composite.ForwardingRule
-		bss                map[string]*composite.BackendService
-		svcNegs            []*negv1beta1.ServiceNetworkEndpointGroup
-		getBSErr           error
-		expectIPs          []string
-		expectEventReasons []string
-		expectError        bool
-		expectCondition    *metav1.Condition
+		desc                string
+		svc                 *v1.Service
+		frs                 map[string]*composite.ForwardingRule
+		bss                 map[string]*composite.BackendService
+		hcs                 map[string]*composite.HealthCheck
+		svcNegs             []*negv1beta1.ServiceNetworkEndpointGroup
+		getBSErr            error
+		expectIPs           []string
+		expectedAnnotations map[string]string
+		expectEventReasons  []string
+		expectError         bool
+		expectCondition     *metav1.Condition
 	}{
 		{
 			desc: "Multiple forwarding rules, one missing, success",
@@ -1468,6 +1470,295 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				Message: "The service NEGs are not attached to the load balancer backend service",
 			},
 		},
+		{
+			desc: "Expect external health checks annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs", project, region),
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionBeta,
+				},
+			},
+			bss: map[string]*composite.BackendService{
+				"bs": {
+					Name:         "bs",
+					Scope:        meta.Regional,
+					Version:      meta.VersionBeta,
+					HealthChecks: []string{"hc"},
+					Backends: []*composite.Backend{
+						{
+							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
+						},
+					},
+				},
+			},
+			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            l4Namer.L4Backend("default", "svc"),
+						Namespace:       "default",
+						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc"}},
+					},
+					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
+						},
+					},
+				},
+			},
+			hcs: map[string]*composite.HealthCheck{
+				"hc": {
+					Name:    "hc",
+					Type:    "HTTP",
+					Scope:   meta.Regional,
+					Version: meta.VersionBeta,
+					HttpHealthCheck: &composite.HTTPHealthCheck{
+						Port: 12345,
+					},
+				},
+			},
+			expectIPs:          []string{frIP},
+			expectError:        false,
+			expectEventReasons: []string{"UpdateExternalHealthCheckSuccessful"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 10.0.0.100",
+			},
+			expectedAnnotations: map[string]string{
+				"networking.gke.io/external-hc": "10.0.0.100:12345",
+			},
+		},
+		{
+			desc: "Expect external health checks annotation multiple IPs",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: "fr1,fr2,global/forwardingRules/fr3",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				"fr1": {
+					Name:                "fr1",
+					IPAddress:           frIP,
+					BackendService:      fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs1", project, region),
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionBeta,
+				},
+				"fr2": {
+					Name:                "fr2",
+					IPAddress:           "10.0.0.101",
+					BackendService:      fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs2", project, region),
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionBeta,
+				},
+				"fr3": {
+					Name:                "global/forwardingRules/fr3",
+					IPAddresses:         []string{"10.0.0.102", "10.0.0.103"},
+					BackendService:      fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/backendServices/bs3", project),
+					LoadBalancingScheme: "EXTERNAL_PASSTHROUGH",
+					IPProtocol:          "TCP",
+					Scope:               meta.Global,
+					Version:             meta.VersionBeta,
+				},
+			},
+			bss: map[string]*composite.BackendService{
+				"bs1": {
+					Name:         "bs1",
+					Scope:        meta.Regional,
+					Version:      meta.VersionBeta,
+					HealthChecks: []string{"hc"},
+					Backends: []*composite.Backend{
+						{
+							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
+						},
+					},
+				},
+				"bs2": {
+					Name:         "bs2",
+					Scope:        meta.Regional,
+					Version:      meta.VersionBeta,
+					HealthChecks: []string{"hc2"},
+					Backends: []*composite.Backend{
+						{
+							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-2", project),
+						},
+					},
+				},
+				"bs3": {
+					Name:         "bs3",
+					Scope:        meta.Global,
+					Version:      meta.VersionBeta,
+					HealthChecks: []string{"hc3"},
+					Backends: []*composite.Backend{
+						{
+							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-3", project),
+						},
+					},
+				},
+			},
+			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            l4Namer.L4Backend("default", "svc"),
+						Namespace:       "default",
+						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc"}},
+					},
+					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-2", project)},
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-3", project)},
+						},
+					},
+				},
+			},
+			hcs: map[string]*composite.HealthCheck{
+				"hc": {
+					Name:    "hc",
+					Type:    "HTTP",
+					Scope:   meta.Regional,
+					Version: meta.VersionBeta,
+					HttpHealthCheck: &composite.HTTPHealthCheck{
+						Port: 12345,
+					},
+				},
+				"hc2": {
+					Name:    "hc2",
+					Type:    "HTTP",
+					Scope:   meta.Regional,
+					Version: meta.VersionBeta,
+					HttpHealthCheck: &composite.HTTPHealthCheck{
+						Port: 12346,
+					},
+				},
+				"hc3": {
+					Name:    "hc3",
+					Type:    "HTTP",
+					Scope:   meta.Global,
+					Version: meta.VersionBeta,
+					HttpHealthCheck: &composite.HTTPHealthCheck{
+						Port: 12347,
+					},
+				},
+			},
+			expectIPs:          []string{"10.0.0.100", "10.0.0.101", "10.0.0.102", "10.0.0.103"},
+			expectError:        false,
+			expectEventReasons: []string{"UpdateExternalHealthCheckSuccessful"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 10.0.0.100, 10.0.0.101, 10.0.0.102, 10.0.0.103",
+			},
+			expectedAnnotations: map[string]string{
+				"networking.gke.io/external-hc": "10.0.0.100:12345,10.0.0.101:12346,10.0.0.102:12347,10.0.0.103:12347",
+			},
+		},
+		{
+			desc: "External health checks port collision",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc",
+					Namespace: "default",
+					Annotations: map[string]string{
+						annotations.CustomForwardingRuleKey: frName,
+					},
+				},
+				Spec: v1.ServiceSpec{
+					Type:              v1.ServiceTypeLoadBalancer,
+					LoadBalancerClass: &lbClass,
+				},
+			},
+			frs: map[string]*composite.ForwardingRule{
+				frName: {
+					Name:                frName,
+					IPAddress:           frIP,
+					BackendService:      fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/bs", project, region),
+					LoadBalancingScheme: "EXTERNAL",
+					IPProtocol:          "TCP",
+					Scope:               meta.Regional,
+					Version:             meta.VersionBeta,
+				},
+			},
+			bss: map[string]*composite.BackendService{
+				"bs": {
+					Name:         "bs",
+					Scope:        meta.Regional,
+					Version:      meta.VersionBeta,
+					PortName:     "12345",
+					HealthChecks: []string{"hc"},
+					Backends: []*composite.Backend{
+						{
+							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
+						},
+					},
+				},
+			},
+			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            l4Namer.L4Backend("default", "svc"),
+						Namespace:       "default",
+						OwnerReferences: []metav1.OwnerReference{{Kind: "Service", Name: "svc"}},
+					},
+					Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+						NetworkEndpointGroups: []negv1beta1.NegObjectReference{
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
+						},
+					},
+				},
+			},
+			hcs: map[string]*composite.HealthCheck{
+				"hc": {
+					Name:    "hc",
+					Type:    "HTTP",
+					Scope:   meta.Regional,
+					Version: meta.VersionBeta,
+					HttpHealthCheck: &composite.HTTPHealthCheck{
+						Port: 12345,
+					},
+				},
+			},
+			expectIPs:          []string{frIP},
+			expectError:        false,
+			expectEventReasons: []string{"PortCollision"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionTrue,
+				Reason:  "IPProgrammed",
+				Message: "IPs programmed: 10.0.0.100",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1518,6 +1809,19 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 							}),
 						}
 					}
+				}
+			}
+
+			// Populate fakeGCE client with health checks defined in each test case
+			for name, hc := range tc.hcs {
+				key, err := composite.CreateKey(fakeGCE, name, hc.Scope)
+				t.Logf("key: %v", key)
+				if err != nil {
+					t.Fatalf("Failed to create key for health check %s: %v", name, err)
+				}
+				err = composite.CreateHealthCheck(fakeGCE, key, hc, klog.TODO())
+				if err != nil {
+					t.Fatalf("Failed to create health check %s: %v", name, err)
 				}
 			}
 
@@ -1589,6 +1893,14 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					if updatedSvc.Status.LoadBalancer.Ingress[i].IP != ip {
 						t.Errorf("Expected IP %s, got %v", ip, updatedSvc.Status.LoadBalancer.Ingress[i].IP)
 					}
+				}
+			}
+			for k, v := range tc.expectedAnnotations {
+				av, ok := updatedSvc.Annotations[k]
+				if !ok {
+					t.Errorf("Expected annotation %s to be present", k)
+				} else if av != v {
+					t.Errorf("Expected annotation %s:%s, got %s:%s", k, v, k, av)
 				}
 			}
 
