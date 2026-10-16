@@ -2282,6 +2282,23 @@ func TestNegObjectCrd(t *testing.T) {
 	}
 }
 
+// fakeRecordingCloud wraps a NetworkEndpointGroupCloud and counts NEG create and delete calls.
+type fakeRecordingCloud struct {
+	negtypes.NetworkEndpointGroupCloud
+	creates int
+	deletes int
+}
+
+func (c *fakeRecordingCloud) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string, logger klog.Logger) error {
+	c.creates++
+	return c.NetworkEndpointGroupCloud.CreateNetworkEndpointGroup(neg, zone, logger)
+}
+
+func (c *fakeRecordingCloud) DeleteNetworkEndpointGroup(name string, zone string, version meta.Version, logger klog.Logger) error {
+	c.deletes++
+	return c.NetworkEndpointGroupCloud.DeleteNetworkEndpointGroup(name, zone, version, logger)
+}
+
 func TestNEGRecreate(t *testing.T) {
 	var (
 		testZone             = "test-zone"
@@ -2317,14 +2334,15 @@ func TestNEGRecreate(t *testing.T) {
 	}.String()
 
 	testCases := []struct {
-		desc           string
-		network        string
-		subnetwork     string
-		negType        negtypes.NetworkEndpointType
-		negDescription string
-		expectRecreate bool
-		expectError    bool
-		customName     bool
+		desc              string
+		network           string
+		subnetwork        string
+		negType           negtypes.NetworkEndpointType
+		negDescription    string
+		expectRecreate    bool
+		expectError       bool
+		expectErrContains string
+		customName        bool
 	}{
 		{
 			desc:           "incorrect network, empty neg description, GCP endpoint type",
@@ -2345,14 +2363,15 @@ func TestNEGRecreate(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			desc:           "correct network, correct subnetwork, customName, empty neg description, GCP endpoint type",
-			network:        testNetwork,
-			subnetwork:     testSubnetwork,
-			negType:        negtypes.VmIpPortEndpointType,
-			negDescription: "",
-			expectRecreate: false,
-			expectError:    true,
-			customName:     true,
+			desc:              "correct network, correct subnetwork, customName, empty neg description, GCP endpoint type",
+			network:           testNetwork,
+			subnetwork:        testSubnetwork,
+			negType:           negtypes.VmIpPortEndpointType,
+			negDescription:    "",
+			expectRecreate:    false,
+			expectError:       true,
+			expectErrContains: fmt.Sprintf("found a custom named neg %s with an empty description", negName),
+			customName:        true,
 		},
 		{
 			desc:           "correct network, correct subnetwork, customName, matching neg description, GCP endpoint type",
@@ -2360,7 +2379,7 @@ func TestNEGRecreate(t *testing.T) {
 			subnetwork:     testSubnetwork,
 			negType:        negtypes.VmIpPortEndpointType,
 			negDescription: matchingNegDesc,
-			expectRecreate: true,
+			expectRecreate: false,
 			expectError:    false,
 			customName:     true,
 		},
@@ -2393,22 +2412,24 @@ func TestNEGRecreate(t *testing.T) {
 			customName:     true,
 		},
 		{
-			desc:           "incorrect network, different neg description, GCP endpoint type",
-			network:        diffNetwork,
-			subnetwork:     diffSubnetwork,
-			negType:        negtypes.VmIpPortEndpointType,
-			negDescription: anotherNegDesc,
-			expectRecreate: false,
-			expectError:    true,
+			desc:              "incorrect network, different neg description, GCP endpoint type",
+			network:           diffNetwork,
+			subnetwork:        diffSubnetwork,
+			negType:           negtypes.VmIpPortEndpointType,
+			negDescription:    anotherNegDesc,
+			expectRecreate:    false,
+			expectError:       true,
+			expectErrContains: fmt.Sprintf("found conflicting description in neg %s", negName),
 		},
 		{
-			desc:           "correct network, incorrect subnetwork, different neg description, GCP endpoint type",
-			network:        testNetwork,
-			subnetwork:     diffSubnetwork,
-			negType:        negtypes.VmIpPortEndpointType,
-			negDescription: anotherNegDesc,
-			expectRecreate: false,
-			expectError:    true,
+			desc:              "correct network, incorrect subnetwork, different neg description, GCP endpoint type",
+			network:           testNetwork,
+			subnetwork:        diffSubnetwork,
+			negType:           negtypes.VmIpPortEndpointType,
+			negDescription:    anotherNegDesc,
+			expectRecreate:    false,
+			expectError:       true,
+			expectErrContains: fmt.Sprintf("found conflicting description in neg %s", negName),
 		},
 		{
 			desc:           "incorrect network, Non GCP endpoint type",
@@ -2449,6 +2470,9 @@ func TestNEGRecreate(t *testing.T) {
 			ServiceName: testServiceName,
 			Port:        testPort,
 		}
+		// Wrap the cloud only after the initial NEG is created, so that only
+		// calls made by ensureNetworkEndpointGroup are counted.
+		recordingCloud := &fakeRecordingCloud{NetworkEndpointGroupCloud: fakeCloud}
 		// Ensure with the correct network and subnet
 		_, err := ensureNetworkEndpointGroup(
 			testServiceNameSpace,
@@ -2458,7 +2482,7 @@ func TestNEGRecreate(t *testing.T) {
 			testNamedPort,
 			expectedNegDesc,
 			tc.negType,
-			fakeCloud,
+			recordingCloud,
 			nil,
 			nil,
 			apiVersion,
@@ -2468,25 +2492,44 @@ func TestNEGRecreate(t *testing.T) {
 			klog.TODO(),
 			metrics.FakeNegMetrics(),
 		)
+
+		gotRecreate := recordingCloud.deletes == 1 && recordingCloud.creates == 1
+		if gotRecreate != tc.expectRecreate {
+			t.Errorf("Neg recreated = %t (deletes=%d, creates=%d), want %t", gotRecreate, recordingCloud.deletes, recordingCloud.creates, tc.expectRecreate)
+		}
+
 		if !tc.expectError && err != nil {
-			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
-		} else if tc.expectError && err == nil {
-			t.Errorf("TestCase: %s, Expected error when ensure network endpoint groups", tc.desc)
+			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
+		} else if tc.expectError {
+			if err == nil {
+				t.Errorf("Expected error when ensure network endpoint groups")
+			} else if tc.expectErrContains != "" && !strings.Contains(err.Error(), tc.expectErrContains) {
+				t.Errorf("Expected error containing %q, but got %q", tc.expectErrContains, err.Error())
+			}
 		}
 
 		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion, klog.TODO())
 		if err != nil {
-			t.Errorf("TestCase: %s, Failed to retrieve NEG %q: %v", tc.desc, negName, err)
+			t.Fatalf("Failed to retrieve NEG %q: %v", negName, err)
 		}
-
 		if neg == nil {
-			t.Errorf("TestCase: %s, Failed to find neg", tc.desc)
+			t.Fatalf("Failed to find neg %q", negName)
 		}
 
-		if tc.expectRecreate && (neg.Subnetwork != testSubnetwork || neg.Network != testNetwork) {
-			t.Errorf("TestCase: %s\n Neg should have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", tc.desc, testSubnetwork, neg.Subnetwork, testNetwork, testNetwork)
-		} else if !tc.expectRecreate && (neg.Subnetwork != tc.subnetwork || neg.Network != tc.network) {
-			t.Errorf("TestCase: %s\n Neg should not have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", tc.desc, tc.subnetwork, neg.Subnetwork, tc.network, neg.Network)
+		if tc.expectRecreate {
+			if neg.Subnetwork != testSubnetwork || neg.Network != testNetwork {
+				t.Errorf("Neg should have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", testSubnetwork, neg.Subnetwork, testNetwork, neg.Network)
+			}
+			if wantDesc := expectedNegDesc.String(); neg.Description != wantDesc {
+				t.Errorf("Neg should have been recreated. Expected description %s, and found %s", wantDesc, neg.Description)
+			}
+		} else {
+			if neg.Subnetwork != tc.subnetwork || neg.Network != tc.network {
+				t.Errorf("Neg should not have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", tc.subnetwork, neg.Subnetwork, tc.network, neg.Network)
+			}
+			if neg.Description != tc.negDescription {
+				t.Errorf("Neg should not have been recreated. Expected description %s, and found %s", tc.negDescription, neg.Description)
+			}
 		}
 	}
 }
@@ -4815,7 +4858,7 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			negtypes.MockNetworkEndpointAPIs(fakeGCE)
-			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnet, metrics.NewNegMetrics())
+			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnet, metrics.FakeNegMetrics())
 
 			// A NEG with the requested name already exists, owned by somebody else.
 			// Network and subnetwork match the cluster's so the recreate path is not triggered
@@ -4848,7 +4891,7 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 				true,
 				networkInfo,
 				klog.TODO(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 			)
 
 			if gotErr := err != nil; gotErr != tc.expectErr {

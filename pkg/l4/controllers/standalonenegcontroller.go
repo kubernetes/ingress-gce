@@ -354,7 +354,8 @@ func (lc *StandaloneNEGLBController) getServiceNEGLinks(svc *v1.Service) (sets.S
 			return nil, fmt.Errorf("failed to retrieve ServiceNetworkEndpointGroup")
 		}
 		if !metav1.IsControlledBy(svcNeg, svc) {
-			return nil, fmt.Errorf("retrieved NetworkEndpointGroup is not controller by the service %s", svc.Name)
+			err := fmt.Errorf("retrieved ServiceNetworkEndpointGroup %s is not controller by the service %s", svcNeg.Name, svc.Name)
+			return nil, l4utils.NewUserError(err)
 		}
 
 		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {

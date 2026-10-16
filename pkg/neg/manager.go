@@ -304,7 +304,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					string(manager.kubeSystemUID),
 					manager.clusterURL,
 					manager.syncerMetrics,
-					manager.isCustomNegName(syncerKey.NegType, portInfo.NegName),
+					portInfo.CustomName,
 					true,
 					manager.logger,
 					manager.lpConfig,
@@ -337,12 +337,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	manager.negMetrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
 
 	return successfulSyncers, errorSyncers, err
-}
-
-func (manager *syncerManager) isCustomNegName(negType negtypes.NetworkEndpointType, negName string) bool {
-	isL7CustomNegName := negType == negtypes.VmIpPortEndpointType && !manager.namer.IsNEG(negName)
-	isL4CustomNegName := negType == negtypes.VmIpEndpointType && !manager.l4Namer.IsNEG(negName)
-	return isL7CustomNegName || isL4CustomNegName
 }
 
 // updatePreprovisioningZones updates the tracked pre-provisioning zones for the service

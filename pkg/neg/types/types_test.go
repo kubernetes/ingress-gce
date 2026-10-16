@@ -455,8 +455,8 @@ func TestCustomNamedNegs(t *testing.T) {
 			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
 			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1, svcPortTuple2: negName2},
 			expectedPortInfoMap: PortInfoMap{
-				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false, NetworkInfo: *defaultNetwork},
-				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: negName2, ReadinessGate: false, NetworkInfo: *defaultNetwork},
+				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, CustomName: true, ReadinessGate: false, NetworkInfo: *defaultNetwork},
+				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: negName2, CustomName: true, ReadinessGate: false, NetworkInfo: *defaultNetwork},
 			},
 		},
 		{
@@ -464,7 +464,7 @@ func TestCustomNamedNegs(t *testing.T) {
 			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
 			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1},
 			expectedPortInfoMap: PortInfoMap{
-				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false, NetworkInfo: *defaultNetwork},
+				PortInfoMapKey{port1}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, CustomName: true, ReadinessGate: false, NetworkInfo: *defaultNetwork},
 				PortInfoMapKey{port2}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false, NetworkInfo: *defaultNetwork},
 			},
 		},
