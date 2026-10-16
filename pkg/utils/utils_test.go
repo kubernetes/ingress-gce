@@ -25,8 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/klog/v2"
-
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -923,37 +921,109 @@ func TestHasVIP(t *testing.T) {
 	}
 }
 
-func TestGetNodePrimaryIP(t *testing.T) {
+func TestGetNodeInternalIPs(t *testing.T) {
 	t.Parallel()
-	internalIP := "1.2.3.4"
-	node := &api_v1.Node{
-		Status: api_v1.NodeStatus{
-			Addresses: []api_v1.NodeAddress{
-				{
-					Type:    api_v1.NodeInternalIP,
-					Address: internalIP,
+	testCases := []struct {
+		desc     string
+		node     *api_v1.Node
+		wantIPv4 string
+		wantIPv6 string
+	}{
+		{
+			desc:     "nil node",
+			node:     nil,
+			wantIPv4: "",
+			wantIPv6: "",
+		},
+		{
+			desc: "IPv4 only",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeInternalIP, Address: "10.0.0.1"},
+					},
 				},
 			},
+			wantIPv4: "10.0.0.1",
+			wantIPv6: "",
 		},
-	}
-	out := utils.GetNodePrimaryIP(node, klog.TODO())
-	if out != internalIP {
-		t.Errorf("Expected Primary IP %s, got %s", internalIP, out)
+		{
+			desc: "IPv6 only",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeInternalIP, Address: "2001:db8::1"},
+					},
+				},
+			},
+			wantIPv4: "",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc: "Dual stack IPv4 first",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeInternalIP, Address: "10.0.0.1"},
+						{Type: api_v1.NodeInternalIP, Address: "2001:db8::1"},
+					},
+				},
+			},
+			wantIPv4: "10.0.0.1",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc: "Dual stack IPv6 first",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeInternalIP, Address: "2001:db8::1"},
+						{Type: api_v1.NodeInternalIP, Address: "10.0.0.1"},
+					},
+				},
+			},
+			wantIPv4: "10.0.0.1",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc: "Multiple IPv4 and IPv6 addresses",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeExternalIP, Address: "35.0.0.1"},
+						{Type: api_v1.NodeInternalIP, Address: "10.0.0.1"},
+						{Type: api_v1.NodeInternalIP, Address: "10.0.0.2"},
+						{Type: api_v1.NodeInternalIP, Address: "2001:db8::1"},
+						{Type: api_v1.NodeInternalIP, Address: "2001:db8::2"},
+					},
+				},
+			},
+			wantIPv4: "10.0.0.1",
+			wantIPv6: "2001:db8::1",
+		},
+		{
+			desc: "External IP only",
+			node: &api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Addresses: []api_v1.NodeAddress{
+						{Type: api_v1.NodeExternalIP, Address: "35.0.0.1"},
+					},
+				},
+			},
+			wantIPv4: "",
+			wantIPv6: "",
+		},
 	}
 
-	node = &api_v1.Node{
-		Status: api_v1.NodeStatus{
-			Addresses: []api_v1.NodeAddress{
-				{
-					Type:    api_v1.NodeExternalIP,
-					Address: "11.12.13.14",
-				},
-			},
-		},
-	}
-	out = utils.GetNodePrimaryIP(node, klog.TODO())
-	if out != "" {
-		t.Errorf("Expected Primary IP '', got %s", out)
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			gotIPv4, gotIPv6 := utils.GetNodeInternalIPs(tc.node)
+			if gotIPv4 != tc.wantIPv4 || gotIPv6 != tc.wantIPv6 {
+				t.Errorf("GetNodeInternalIPs() = (%q, %q), want (%q, %q)", gotIPv4, gotIPv6, tc.wantIPv4, tc.wantIPv6)
+			}
+		})
 	}
 }
 
