@@ -739,8 +739,9 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		}
 	}
 
-	oldNegs, oldNegErrs := s.getNEGsToKeepInStatus(checkedNEGs)
-	negObjs = append(negObjs, oldNegs...)
+	ensuredOldNegs, statusOnlyOldNegs, oldNegErrs := s.getNEGsToKeepInStatus(checkedNEGs)
+	negObjs = append(negObjs, ensuredOldNegs...)
+	negObjs = append(negObjs, statusOnlyOldNegs...)
 	errList = append(errList, oldNegErrs...)
 
 	if updateNEGStatus {
@@ -1255,27 +1256,28 @@ func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabe
 
 // getNEGsToKeepInStatus returns a list of NEGs that should be kept in status even though are not in target topology.
 // Mainly used to keep track of NEGs which are currently cleaned up as part of NEGBinding flow.
-func (s *transactionSyncer) getNEGsToKeepInStatus(checkedNEGs sets.Set[negZoneKey]) ([]*composite.NetworkEndpointGroup, []error) {
-	var negObjs []*composite.NetworkEndpointGroup
+func (s *transactionSyncer) getNEGsToKeepInStatus(checkedNEGs sets.Set[negZoneKey]) ([]*composite.NetworkEndpointGroup, []*composite.NetworkEndpointGroup, []error) {
+	var ensuredOldNegs []*composite.NetworkEndpointGroup
+	var statusOnlyOldNegs []*composite.NetworkEndpointGroup
 	var errList []error
 
 	if !s.NegSyncerKey.IsBindingKey() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	existingZones, err := s.statusHandler.SubnetToZonesMap()
 	if err != nil {
 		s.logger.Error(err, "Failed to get subnet to zones map from status handler")
-		return nil, []error{err}
+		return nil, nil, []error{err}
 	}
 	if len(existingZones) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	defaultSubnetID, err := cloud.ParseResourceURL(s.networkInfo.SubnetworkURL)
 	if err != nil {
 		s.logger.Error(err, "Failed to parse subnetwork URL", "subnetURL", s.networkInfo.SubnetworkURL)
-		return nil, []error{err}
+		return nil, nil, []error{err}
 	}
 
 	expectedDesc := utils.BoundNEGDescription{
@@ -1312,7 +1314,7 @@ func (s *transactionSyncer) getNEGsToKeepInStatus(checkedNEGs sets.Set[negZoneKe
 
 				// Try to still preserve NEG in case of error (if not 404)
 				s.logger.Info("Preserving previously managed NEG in status after retrieval error", "neg", negName, "zone", zone)
-				negObjs = append(negObjs, &composite.NetworkEndpointGroup{
+				statusOnlyOldNegs = append(statusOnlyOldNegs, &composite.NetworkEndpointGroup{
 					Name:       negName,
 					Zone:       zone,
 					SelfLink:   cloud.SelfLink(s.NegSyncerKey.GetAPIVersion(), defaultSubnetID.ProjectID, "networkEndpointGroups", meta.ZonalKey(negName, zone)),
@@ -1336,19 +1338,20 @@ func (s *transactionSyncer) getNEGsToKeepInStatus(checkedNEGs sets.Set[negZoneKe
 			if err != nil {
 				s.logger.Error(err, "Failed to check if NEG has endpoints", "neg", negName, "zone", zone)
 				errList = append(errList, err)
-				hasEndpoints = true // Keep in status to be safe on error
+				statusOnlyOldNegs = append(statusOnlyOldNegs, negObj)
+				continue
 			}
 
 			// NEG not cleaned up - should be preserved in status
 			if hasOngoingTransactions || hasEndpoints {
 				s.logger.Info("Including old NEG in status as it still has endpoints or pending transactions", "neg", negName, "zone", zone, "hasEndpoints", hasEndpoints, "hasTransactions", hasOngoingTransactions)
-				negObjs = append(negObjs, negObj)
+				ensuredOldNegs = append(ensuredOldNegs, negObj)
 			} else {
 				s.logger.Info("Excluding previously managed NEG from status as it has no endpoints and no pending transactions", "neg", negName, "zone", zone)
 			}
 		}
 	}
-	return negObjs, errList
+	return ensuredOldNegs, statusOnlyOldNegs, errList
 }
 
 // hasEndpoints returns true if the NEG has any endpoints attached in GCE.

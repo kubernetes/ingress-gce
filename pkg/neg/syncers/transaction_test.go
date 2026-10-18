@@ -5465,10 +5465,12 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 		zone2StatusSubnetURL   string
 		extraStatusRefs        []negbindingv1beta1.StatusNegRef
 		getNEGErrZones         sets.Set[string]
+		listEPErrZones         sets.Set[string]
 		attachEndpoints        bool
 		attachEndpointsToZone1 bool
 		addTransactions        bool
 		expectOldInStatus      bool
+		expectOldEnsured       bool
 		expectedOldStatusRef   *negbindingv1beta1.StatusNegRef
 		expectErr              bool
 	}{
@@ -5477,18 +5479,21 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			attachEndpoints:   true,
 			addTransactions:   false,
 			expectOldInStatus: true,
+			expectOldEnsured:  true,
 		},
 		{
 			desc:              "Old NEG has no endpoints and no transactions, should remove from status",
 			attachEndpoints:   false,
 			addTransactions:   false,
 			expectOldInStatus: false,
+			expectOldEnsured:  false,
 		},
 		{
 			desc:              "Old NEG has no endpoints but has attach transactions, should keep in status",
 			attachEndpoints:   false,
 			addTransactions:   true,
 			expectOldInStatus: true,
+			expectOldEnsured:  true,
 		},
 		{
 			desc:              "Failed target NEG has endpoints, should not be re-checked or kept in status",
@@ -5496,6 +5501,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			zone2Subnetwork:   otherSubnetwork,
 			attachEndpoints:   true,
 			expectOldInStatus: false,
+			expectOldEnsured:  false,
 			expectErr:         true,
 		},
 		{
@@ -5508,6 +5514,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			},
 			attachEndpointsToZone1: true,
 			expectOldInStatus:      false,
+			expectOldEnsured:       false,
 		},
 		{
 			desc: "Old NEG has invalid description, should remove from status without error",
@@ -5518,6 +5525,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			}.String(),
 			attachEndpoints:   true,
 			expectOldInStatus: false,
+			expectOldEnsured:  false,
 			expectErr:         false,
 		},
 		{
@@ -5525,6 +5533,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			zone2Subnetwork:   otherSubnetwork,
 			attachEndpoints:   true,
 			expectOldInStatus: false,
+			expectOldEnsured:  false,
 			expectErr:         false,
 		},
 		{
@@ -5533,11 +5542,19 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			zone2StatusSubnetURL: otherSubnetwork,
 			getNEGErrZones:       sets.New(testZone2),
 			expectOldInStatus:    true,
+			expectOldEnsured:     false,
 			expectedOldStatusRef: &negbindingv1beta1.StatusNegRef{
 				ResourceURL: cloud.SelfLink(meta.VersionGA, "mock-project", "networkEndpointGroups", meta.ZonalKey(negName, testZone2)),
 				SubnetURL:   otherSubnetwork,
 			},
 			expectErr: true,
+		},
+		{
+			desc:              "Old NEG has non-404 ListNetworkEndpoints error, should preserve in status only and not as ensured",
+			listEPErrZones:    sets.New(testZone2),
+			expectOldInStatus: true,
+			expectOldEnsured:  false,
+			expectErr:         true,
 		},
 	}
 
@@ -5690,10 +5707,11 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			}
 
 			cloudProvider := fakeCloud
-			if tc.getNEGErrZones.Len() > 0 {
+			if tc.getNEGErrZones.Len() > 0 || tc.listEPErrZones.Len() > 0 {
 				cloudProvider = &errorInjectingNEGCloud{
 					NetworkEndpointGroupCloud: fakeCloud,
 					getNEGErrZones:            tc.getNEGErrZones,
+					listEPErrZones:            tc.listEPErrZones,
 				}
 			}
 
@@ -5717,6 +5735,24 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 					Subnet:    subnetName,
 					Zone:      testZone2,
 				})
+			}
+
+			initialChecked := sets.New[negZoneKey]()
+			for _, z := range specZones {
+				initialChecked.Insert(negZoneKey{negName: negName, zone: z})
+			}
+			ensuredOldNegs, statusOnlyOldNegs, _ := syncer.getNEGsToKeepInStatus(initialChecked)
+			wantEnsuredLen := 0
+			wantStatusOnlyLen := 0
+			if tc.expectOldInStatus {
+				if tc.expectOldEnsured {
+					wantEnsuredLen = 1
+				} else {
+					wantStatusOnlyLen = 1
+				}
+			}
+			if len(ensuredOldNegs) != wantEnsuredLen || len(statusOnlyOldNegs) != wantStatusOnlyLen {
+				t.Errorf("getNEGsToKeepInStatus() = (%d ensured, %d statusOnly), want (%d ensured, %d statusOnly)", len(ensuredOldNegs), len(statusOnlyOldNegs), wantEnsuredLen, wantStatusOnlyLen)
 			}
 
 			_, err = syncer.ensureNetworkEndpointGroups()
