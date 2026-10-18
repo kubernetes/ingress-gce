@@ -600,6 +600,11 @@ func (s *transactionSyncer) listTargetZonesPerSubnet() (shared.ZonesPerSubnetMap
 	return zonesPerSubnet, nil
 }
 
+type negZoneKey struct {
+	negName string
+	zone    string
+}
+
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnetMap, error) {
 
@@ -613,6 +618,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	updateNEGStatus := true
 	negsByLocation := make(map[string]int)
 	ensuredSubnetZones := make(shared.ZonesPerSubnetMap)
+	checkedNEGs := sets.New[negZoneKey]()
 
 	// Get default subnet from syncer's networkInfo.
 	defaultSubnet, err := utils.KeyName(s.networkInfo.SubnetworkURL)
@@ -687,6 +693,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		}
 
 		for zone := range zones {
+			key := negZoneKey{negName: negName, zone: zone}
+			if checkedNEGs.Has(key) {
+				continue
+			}
+			checkedNEGs.Insert(key)
+
 			var negObj *composite.NetworkEndpointGroup
 			negObj, err = ensureNetworkEndpointGroup(
 				s.Namespace,
@@ -727,7 +739,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		}
 	}
 
-	oldNegs, oldNegErrs := s.getNEGsToKeepInStatus(ensuredSubnetZones)
+	oldNegs, oldNegErrs := s.getNEGsToKeepInStatus(checkedNEGs)
 	negObjs = append(negObjs, oldNegs...)
 	errList = append(errList, oldNegErrs...)
 
@@ -1243,7 +1255,7 @@ func collectLabelStats(currentPodLabelMap, addPodLabelMap labels.EndpointPodLabe
 
 // getNEGsToKeepInStatus returns a list of NEGs that should be kept in status even though are not in target topology.
 // Mainly used to keep track of NEGs which are currently cleaned up as part of NEGBinding flow.
-func (s *transactionSyncer) getNEGsToKeepInStatus(ensuredSubnetZones shared.ZonesPerSubnetMap) ([]*composite.NetworkEndpointGroup, []error) {
+func (s *transactionSyncer) getNEGsToKeepInStatus(checkedNEGs sets.Set[negZoneKey]) ([]*composite.NetworkEndpointGroup, []error) {
 	var negObjs []*composite.NetworkEndpointGroup
 	var errList []error
 
@@ -1259,17 +1271,19 @@ func (s *transactionSyncer) getNEGsToKeepInStatus(ensuredSubnetZones shared.Zone
 
 	for subnet, zones := range existingZones {
 		for zone := range zones {
-			// Still desired NEG - will be left in status by standard flow
-			if desiredZones, ok := ensuredSubnetZones[subnet]; ok && desiredZones.Has(zone) {
-				continue
-			}
-
 			negName, err := s.getNEGName(subnet)
 			if err != nil {
 				s.logger.Error(err, "Failed to get NEG name for subnet", "subnet", subnet)
 				errList = append(errList, err)
 				continue
 			}
+
+			// Skip NEGs that were already attempted to be ensured or checked
+			key := negZoneKey{negName: negName, zone: zone}
+			if checkedNEGs.Has(key) {
+				continue
+			}
+			checkedNEGs.Insert(key)
 
 			hasOngoingTransactions := s.hasTransactions(subnet, zone)
 			hasEndpoints, err := s.hasEndpoints(negName, zone)
