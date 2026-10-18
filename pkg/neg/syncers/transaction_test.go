@@ -5435,11 +5435,18 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 	negName := "neg-default"
 	clusterURL := "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/test-cluster"
 
+	otherSubnetwork := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/other-subnet"
+
 	testCases := []struct {
-		desc              string
-		attachEndpoints   bool
-		addTransactions   bool
-		expectOldInStatus bool
+		desc                   string
+		specZones              []string
+		zone2Subnetwork        string
+		extraStatusRefs        []negbindingv1beta1.StatusNegRef
+		attachEndpoints        bool
+		attachEndpointsToZone1 bool
+		addTransactions        bool
+		expectOldInStatus      bool
+		expectErr              bool
 	}{
 		{
 			desc:              "Old NEG has endpoints, should keep in status",
@@ -5459,6 +5466,25 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			addTransactions:   true,
 			expectOldInStatus: true,
 		},
+		{
+			desc:              "Failed target NEG has endpoints, should not be re-checked or kept in status",
+			specZones:         []string{testZone1, testZone2},
+			zone2Subnetwork:   otherSubnetwork,
+			attachEndpoints:   true,
+			expectOldInStatus: false,
+			expectErr:         true,
+		},
+		{
+			desc: "Same NEG referenced under multiple status subnets, should be checked at most once",
+			extraStatusRefs: []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", testZone1, negName).SelfLink(meta.VersionAlpha),
+					SubnetURL:   otherSubnetwork,
+				},
+			},
+			attachEndpointsToZone1: true,
+			expectOldInStatus:      false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -5467,6 +5493,23 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 
 			fakeBindingClient := fakenegbinding.NewSimpleClientset()
 			bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+
+			specZones := tc.specZones
+			if len(specZones) == 0 {
+				specZones = []string{testZone1}
+			}
+
+			statusRefs := []negbindingv1beta1.StatusNegRef{
+				{
+					ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", testZone1, negName).SelfLink(meta.VersionAlpha),
+					SubnetURL:   testSubnetwork,
+				},
+				{
+					ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", testZone2, negName).SelfLink(meta.VersionAlpha),
+					SubnetURL:   testSubnetwork,
+				},
+			}
+			statusRefs = append(statusRefs, tc.extraStatusRefs...)
 
 			binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
 				ObjectMeta: metav1.ObjectMeta{
@@ -5483,21 +5526,12 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 						{
 							Name:   negName,
 							Subnet: subnetName,
-							Zones:  []string{testZone1},
+							Zones:  specZones,
 						},
 					},
 				},
 				Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
-					NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
-						{
-							ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", testZone1, negName).SelfLink(meta.VersionAlpha),
-							SubnetURL:   testSubnetwork,
-						},
-						{
-							ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", testZone2, negName).SelfLink(meta.VersionAlpha),
-							SubnetURL:   testSubnetwork,
-						},
-					},
+					NetworkEndpointGroups: statusRefs,
 				},
 			}
 
@@ -5539,16 +5573,28 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create desired NEG: %v", err)
 			}
+			zone2Subnetwork := tc.zone2Subnetwork
+			if zone2Subnetwork == "" {
+				zone2Subnetwork = testSubnetwork
+			}
 			err = fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 				Name:        negName,
 				Network:     testNetwork,
-				Subnetwork:  testSubnetwork,
+				Subnetwork:  zone2Subnetwork,
 				Description: boundDesc,
 			}, testZone2, klog.TODO())
 			if err != nil {
 				t.Fatalf("Failed to create old NEG: %v", err)
 			}
 
+			if tc.attachEndpointsToZone1 {
+				err = fakeCloud.AttachNetworkEndpoints(negName, testZone1, []*composite.NetworkEndpoint{
+					{IpAddress: "10.0.0.1", Port: 80},
+				}, meta.VersionAlpha, klog.TODO())
+				if err != nil {
+					t.Fatalf("Failed to attach endpoints to zone1: %v", err)
+				}
+			}
 			if tc.attachEndpoints {
 				err = fakeCloud.AttachNetworkEndpoints(negName, testZone2, []*composite.NetworkEndpoint{
 					{IpAddress: "10.0.0.1", Port: 80},
@@ -5577,7 +5623,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 					{Name: subnetName, SubnetPath: testSubnetwork},
 				},
 				zones: map[string]sets.Set[string]{
-					subnetName: sets.New(testZone1),
+					subnetName: sets.New(specZones...),
 				},
 			}
 
@@ -5604,8 +5650,8 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 			}
 
 			_, err = syncer.ensureNetworkEndpointGroups()
-			if err != nil {
-				t.Fatalf("ensureNetworkEndpointGroups failed: %v", err)
+			if (err != nil) != tc.expectErr {
+				t.Fatalf("ensureNetworkEndpointGroups() error = %v, expectErr %v", err, tc.expectErr)
 			}
 
 			updatedBinding, err := fakeBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
@@ -5624,6 +5670,9 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 				actualNegURLs.Insert(ref.ResourceURL)
 			}
 
+			if len(updatedBinding.Status.NetworkEndpointGroups) != expectedNegURLs.Len() {
+				t.Errorf("Expected %d status NEG entries, got %d: %+v", expectedNegURLs.Len(), len(updatedBinding.Status.NetworkEndpointGroups), updatedBinding.Status.NetworkEndpointGroups)
+			}
 			if !actualNegURLs.Equal(expectedNegURLs) {
 				t.Errorf("Expected status NEGs to be %v, but got %v", expectedNegURLs.UnsortedList(), actualNegURLs.UnsortedList())
 			}
