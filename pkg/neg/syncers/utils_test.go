@@ -535,6 +535,138 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	}
 }
 
+func TestVerifyNEGDescription(t *testing.T) {
+	t.Parallel()
+	expectedDesc := utils.StandardNEGDescription{
+		ClusterUID:  "kube-system-uid",
+		Namespace:   "test-ns",
+		ServiceName: "test-svc",
+		Port:        "80",
+	}
+	conflictingDesc := utils.StandardNEGDescription{
+		ClusterUID:  "kube-system-uid",
+		Namespace:   "test-ns",
+		ServiceName: "other-svc",
+		Port:        "80",
+	}
+
+	testCases := []struct {
+		desc       string
+		neg        *composite.NetworkEndpointGroup
+		customName bool
+		wantErr    bool
+	}{
+		{
+			desc: "matching description",
+			neg: &composite.NetworkEndpointGroup{
+				Name:        "test-neg",
+				Description: expectedDesc.String(),
+			},
+			customName: false,
+			wantErr:    false,
+		},
+		{
+			desc: "custom name with empty description",
+			neg: &composite.NetworkEndpointGroup{
+				Name:        "custom-neg",
+				Description: "",
+			},
+			customName: true,
+			wantErr:    true,
+		},
+		{
+			desc: "non-custom name with empty description",
+			neg: &composite.NetworkEndpointGroup{
+				Name:        "test-neg",
+				Description: "",
+			},
+			customName: false,
+			wantErr:    false,
+		},
+		{
+			desc: "conflicting description",
+			neg: &composite.NetworkEndpointGroup{
+				Name:        "test-neg",
+				Description: conflictingDesc.String(),
+			},
+			customName: false,
+			wantErr:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := verifyNEGDescription(tc.neg, negtypes.TestZone1, expectedDesc, tc.customName, klog.TODO())
+			if (err != nil) != tc.wantErr {
+				t.Errorf("verifyNEGDescription() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestVerifyNEGNetwork(t *testing.T) {
+	t.Parallel()
+	expectedNetwork := "https://www.googleapis.com/compute/v1/projects/mock-project/global/networks/default"
+	expectedSubnetwork := defaultTestSubnetURL
+
+	testCases := []struct {
+		desc                string
+		neg                 *composite.NetworkEndpointGroup
+		networkEndpointType negtypes.NetworkEndpointType
+		wantErr             bool
+	}{
+		{
+			desc: "matching network and subnetwork",
+			neg: &composite.NetworkEndpointGroup{
+				Name:       "test-neg",
+				Network:    expectedNetwork,
+				Subnetwork: expectedSubnetwork,
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			wantErr:             false,
+		},
+		{
+			desc: "mismatched network",
+			neg: &composite.NetworkEndpointGroup{
+				Name:       "test-neg",
+				Network:    "https://www.googleapis.com/compute/v1/projects/mock-project/global/networks/other",
+				Subnetwork: expectedSubnetwork,
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			wantErr:             true,
+		},
+		{
+			desc: "mismatched subnetwork",
+			neg: &composite.NetworkEndpointGroup{
+				Name:       "test-neg",
+				Network:    expectedNetwork,
+				Subnetwork: multinetworkingTestSubnetURL,
+			},
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			wantErr:             true,
+		},
+		{
+			desc: "non-GCP NEG ignores network and subnetwork",
+			neg: &composite.NetworkEndpointGroup{
+				Name:       "non-gcp-neg",
+				Network:    "",
+				Subnetwork: "",
+			},
+			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
+			wantErr:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := verifyNEGNetwork(tc.neg, negtypes.TestZone1, tc.networkEndpointType, expectedNetwork, expectedSubnetwork)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("verifyNEGNetwork() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestToZoneNetworkEndpointMap(t *testing.T) {
 	t.Parallel()
 	nodeInformer := zonegetter.FakeNodeInformer()
