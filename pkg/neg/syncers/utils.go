@@ -699,7 +699,7 @@ func podBelongsToService(pod *apiv1.Pod, service *apiv1.Service) error {
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map.
-func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, statusHandler negtypes.NEGStatusHandler, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus, checkAllLocations bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
+func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string, topologyProvider negtypes.TopologyProvider, ensuredZonesPerSubnet map[string]sets.Set[string], cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, enableDualStackNEG bool, networkInfo network.NetworkInfo, logger klog.Logger, negMetrics *metrics.NegMetrics, retrieveDrainStatus, checkAllLocations bool) (map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, labels.EndpointPodLabelMap, map[negtypes.NetworkEndpoint]string, error) {
 	zoneNetworkEndpointMap := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}
 	endpointPodLabelMap := labels.EndpointPodLabelMap{}
 	drainingEndpoints := make(map[negtypes.NetworkEndpoint]string)
@@ -714,22 +714,11 @@ func retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping map[string]string
 			return nil, nil, nil, err
 		}
 	} else {
-		// Include only ensured locations (which contain verified NEGs) and ones listed in status.
-		// Used for NEG Binding as it stores all previously managed NEGs in its status.
+		// Include only ensured locations (which contain verified NEGs).
+		// Used for NEG Binding as it ensures both target and draining status NEGs.
 		for subnet, zones := range ensuredZonesPerSubnet {
 			allZonesPerSubnet[subnet] = zones.Clone()
 		}
-	}
-
-	statusZonesPerSubnet, err := statusHandler.SubnetToZonesMap()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get status zones: %w", err)
-	}
-	for subnet, zones := range statusZonesPerSubnet {
-		if _, ok := allZonesPerSubnet[subnet]; !ok {
-			allZonesPerSubnet[subnet] = sets.New[string]()
-		}
-		allZonesPerSubnet[subnet] = allZonesPerSubnet[subnet].Union(zones)
 	}
 
 	for subnet, negName := range subnetToNegMapping {

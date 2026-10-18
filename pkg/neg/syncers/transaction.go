@@ -304,7 +304,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var ensureErr error
 	var ensuredSubnetZones map[string]sets.Set[string]
-	if s.needInit || topologyChange {
+	if s.needInit || topologyChange || s.NegSyncerKey.IsBindingKey() {
 		s.logger.Info("Need to ensure network endpoint groups", "needInit", s.needInit, "topologyChange", topologyChange)
 
 		// Passing ensured NEGs forward from ensureNetworkEndpointGroups() if called during this sync as reading from statusHandler in the same sync might result in reading stale data.
@@ -337,7 +337,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		return err
 	}
 
-	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, s.statusHandler, ensuredSubnetZones, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, !s.NegSyncerKey.IsBindingKey())
+	currentMap, currentPodLabelMap, drainingEndpoints, err := retrieveExistingZoneNetworkEndpointMap(subnetToNegMapping, s.topologyProvider, ensuredSubnetZones, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.enableDualStackNEG, s.networkInfo, s.logger, s.negMetrics, needInitDrainStatus, !s.NegSyncerKey.IsBindingKey())
 	if err != nil {
 		return fmt.Errorf("%w: %w", negtypes.ErrCurrentNegEPNotFound, err)
 	}
@@ -740,6 +740,24 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	}
 
 	ensuredOldNegs, statusOnlyOldNegs, oldNegErrs := s.getNEGsToKeepInStatus(checkedNEGs)
+	for _, negObj := range ensuredOldNegs {
+		subnet, err := utils.KeyName(negObj.Subnetwork)
+		if err != nil {
+			s.logger.Error(err, "Failed to extract subnet name from old NEG subnetwork URL", "subnetwork", negObj.Subnetwork)
+			errList = append(errList, err)
+			continue
+		}
+		negID, err := cloud.ParseResourceURL(negObj.SelfLink)
+		if err != nil {
+			s.logger.Error(err, "Failed to parse old NEG selfLink", "selfLink", negObj.SelfLink)
+			errList = append(errList, err)
+			continue
+		}
+		if _, ok := ensuredSubnetZones[subnet]; !ok {
+			ensuredSubnetZones[subnet] = sets.New[string]()
+		}
+		ensuredSubnetZones[subnet].Insert(negID.Key.Zone)
+	}
 	negObjs = append(negObjs, ensuredOldNegs...)
 	negObjs = append(negObjs, statusOnlyOldNegs...)
 	errList = append(errList, oldNegErrs...)
