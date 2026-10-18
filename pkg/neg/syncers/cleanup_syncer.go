@@ -7,6 +7,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -15,6 +16,12 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
+
+type negToClean struct {
+	negName string
+	zone    string
+	ref     *composite.NetworkEndpointGroup
+}
 
 type cleanupSyncer struct {
 	negtypes.NegSyncerKey
@@ -136,33 +143,64 @@ func (s *cleanupSyncer) cleanUp() error {
 	}
 	binding := bindingObj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
 
+	negsToClean := s.getNEGsToClean(binding)
+
 	var errs []error
-	for _, ref := range binding.Status.NetworkEndpointGroups {
-		err := s.cleanUpNEG(ref.ResourceURL)
-		if err != nil {
+	var remainingNEGs []*composite.NetworkEndpointGroup
+	for _, neg := range negsToClean {
+		if err := s.cleanUpNEG(neg.negName, neg.zone); err != nil {
 			errs = append(errs, err)
+			remainingNEGs = append(remainingNEGs, neg.ref)
 		}
 	}
 
-	if len(errs) == 0 && binding.DeletionTimestamp != nil {
-		s.logger.Info("Binding is deleting and cleanup succeeded, clearing status NEGs to trigger finalizer removal")
-		err := s.statusHandler.ReportStatus(nil, nil)
-		if err != nil {
-			return fmt.Errorf("failed to clear status NEGs: %w", err)
-		}
+	if err := s.statusHandler.ReportStatus(remainingNEGs, errs); err != nil {
+		errs = append(errs, fmt.Errorf("failed to report status NEGs: %w", err))
 	}
 	return utilerrors.NewAggregate(errs)
 }
 
-func (s *cleanupSyncer) cleanUpNEG(negURL string) error {
-	negID, err := cloud.ParseResourceURL(negURL)
-	if err != nil {
-		s.logger.Error(err, "Failed to parse NEG URL, assuming already cleaned up", "negURL", negURL)
-		return nil
+func (s *cleanupSyncer) getNEGsToClean(binding *negbindingv1beta1.NetworkEndpointGroupBinding) []negToClean {
+	var negsToClean []negToClean
+	seenLocations := sets.New[negtypes.NEGLocation]()
+
+	for _, statusRef := range binding.Status.NetworkEndpointGroups {
+		negID, err := cloud.ParseResourceURL(statusRef.ResourceURL)
+		if err != nil {
+			s.logger.Error(err, "Failed to parse NEG URL, assuming already cleaned up", "negURL", statusRef.ResourceURL)
+			continue
+		}
+		subnetID, err := cloud.ParseResourceURL(statusRef.SubnetURL)
+		if err != nil {
+			s.logger.Error(err, "Failed to parse subnet URL, assuming already cleaned up", "subnetURL", statusRef.SubnetURL)
+			continue
+		}
+
+		loc := negtypes.NEGLocation{
+			Subnet: subnetID.Key.Name,
+			Zone:   negID.Key.Zone,
+		}
+		if seenLocations.Has(loc) {
+			s.logger.Info("Duplicate location in status, ignoring", "subnet", loc.Subnet, "zone", loc.Zone, "negURL", statusRef.ResourceURL)
+			continue
+		}
+		seenLocations.Insert(loc)
+
+		negsToClean = append(negsToClean, negToClean{
+			negName: negID.Key.Name,
+			zone:    negID.Key.Zone,
+			ref: &composite.NetworkEndpointGroup{
+				Name:       negID.Key.Name,
+				SelfLink:   statusRef.ResourceURL,
+				Subnetwork: statusRef.SubnetURL,
+			},
+		})
 	}
 
-	negName := negID.Key.Name
-	zone := negID.Key.Zone
+	return negsToClean
+}
+
+func (s *cleanupSyncer) cleanUpNEG(negName, zone string) error {
 	apiVersion := s.GetAPIVersion()
 
 	s.logger.Info("Cleaning up endpoints in NEG", "neg", negName, "zone", zone)
