@@ -19,6 +19,7 @@ package flags
 import (
 	goflag "flag"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	flag "github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/config"
 	leaderelectionconfig "k8s.io/component-base/config/options"
 	"k8s.io/ingress-gce/pkg/validation"
@@ -78,6 +80,7 @@ var F = struct {
 	NumNegGCWorkers                  int
 	NodePortRanges                   PortRanges
 	ResyncPeriod                     time.Duration
+	ResyncPeriodJitterFactor         float64
 	L4NetLBProvisionDeadline         time.Duration
 	NumL4Workers                     int
 	NumL4NetLBWorkers                int
@@ -281,6 +284,13 @@ the pod secrets for creating a Kubernetes client.`)
 		`Path to kubeconfig file with authorization and master location information.`)
 	flag.DurationVar(&F.ResyncPeriod, "sync-period", 10*time.Minute,
 		`Relist and confirm cloud resources this often.`)
+	flag.Float64Var(&F.ResyncPeriodJitterFactor, "sync-period-jitter-factor", 0,
+		`Maximum fractional random jitter added to --sync-period. When set to f > 0,
+the effective resync period is drawn once at startup, uniformly at random from
+[sync-period, (1+f)*sync-period), e.g. 0.2 extends a 10m period by up to 2m.
+Use it to de-synchronize the periodic resyncs of many controller instances
+(e.g. one per cluster) that would otherwise relist and confirm cloud resources
+in lockstep. Must be in [0, 1]; 0 disables jitter.`)
 	flag.DurationVar(&F.L4NetLBProvisionDeadline, "l4-netlb-provision-deadline", 20*time.Minute,
 		`Deadline latency for L4 NetLB provisioning.`)
 	flag.IntVar(&F.NumL4Workers, "num-l4-workers", 5,
@@ -424,6 +434,28 @@ func Validate() {
 	if F.EnableL3ForwardingRuleForNetLBMixedProtocol && !F.EnableL4NetLBMixedProtocol {
 		klog.Fatalf("The flag --enable-l3-default-forwarding-rule-for-netlb-mixed-protocol requires --enable-l4netlb-mixed-protocol to be true.")
 	}
+
+	if f := F.ResyncPeriodJitterFactor; math.IsNaN(f) || f < 0 || f > 1 {
+		klog.Fatalf("The flag --sync-period-jitter-factor must be in the range [0, 1], got %v.", f)
+	}
+}
+
+// JitteredResyncPeriod returns period extended by a random duration of up to
+// jitterFactor*period, i.e. a value uniformly distributed in
+// [period, (1+jitterFactor)*period). A jitterFactor <= 0 returns period
+// unchanged.
+//
+// A new random value is drawn on every call, so call it once per process and
+// share the result: all informers of one controller instance then resync
+// together, while different instances (e.g. one per cluster) drift apart
+// instead of hitting the cloud APIs in lockstep.
+func JitteredResyncPeriod(period time.Duration, jitterFactor float64) time.Duration {
+	if jitterFactor <= 0 {
+		// Do not delegate this case to wait.Jitter, which treats a
+		// non-positive factor as "use the default factor of 1.0".
+		return period
+	}
+	return wait.Jitter(period, jitterFactor)
 }
 
 // Setup will register, parse and validate flags. Setup should be called before any flags are used.

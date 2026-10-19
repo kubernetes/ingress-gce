@@ -2,6 +2,7 @@ package neg
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
@@ -116,6 +117,7 @@ func StartNEGController(
 		clusterNamer,
 		l4Namer,
 		lpConfig,
+		informers.ResyncPeriod.Duration,
 		joinedStopCh,
 		logger,
 		mtFactory,
@@ -182,6 +184,7 @@ func createNEGController(
 	clusterNamer *namer.Namer,
 	l4Namer *namer.L4Namer,
 	lpConfig labels.PodLabelPropagationConfig,
+	resyncPeriod time.Duration,
 	stopCh <-chan struct{},
 	logger klog.Logger,
 	factory mtmetrics.MetricFactory,
@@ -223,7 +226,7 @@ func createNEGController(
 		negtypes.NewAdapterWithRateLimitSpecs(cloud, flags.F.GCERateLimit.Values(), adapter, negMetrics),
 		zoneGetter,
 		clusterNamer,
-		flags.F.ResyncPeriod,
+		resyncPeriod,
 		flags.F.NegGCPeriod,
 		flags.F.NumNegGCWorkers,
 		flags.F.EnableReadinessReflector,
