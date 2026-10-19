@@ -239,7 +239,7 @@ func NewControllerContext(
 	}
 
 	if negBindingClient != nil {
-		context.NEGBindingInformer = informernegbinding.NewNetworkEndpointGroupBindingInformer(negBindingClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		context.NEGBindingInformer = informernegbinding.NewNetworkEndpointGroupBindingInformer(negBindingClient, config.Namespace, 0, utils.NewNamespaceIndexer())
 		_ = context.NEGBindingInformer.AddIndexers(cache.Indexers{neg.ServiceKeyIndex: neg.ServiceKeyIndexFunc})
 	}
 
