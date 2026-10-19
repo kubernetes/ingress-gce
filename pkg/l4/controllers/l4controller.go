@@ -81,10 +81,12 @@ type L4Controller struct {
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
-	syncTracker     utils.TimeTracker
-	forwardingRules ForwardingRulesGetter
-	enableDualStack bool
-	hasSynced       func() bool
+	syncTracker utils.TimeTracker
+	// periodicEnqueuer re-enqueues services on informer resyncs.
+	periodicEnqueuer *periodicEnqueuer
+	forwardingRules  ForwardingRulesGetter
+	enableDualStack  bool
+	hasSynced        func() bool
 
 	serviceVersions *serviceVersionsTracker
 
@@ -99,17 +101,21 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		ctx.NumL4Workers = 1
 	}
 	l4c := &L4Controller{
-		ctx:             ctx,
-		client:          ctx.KubeClient,
-		stopCh:          stopCh,
-		numWorkers:      ctx.NumL4Workers,
-		namer:           ctx.L4Namer,
-		zoneGetter:      ctx.ZoneGetter,
-		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
-		enableDualStack: ctx.EnableL4ILBDualStack,
-		serviceVersions: NewServiceVersionsTracker(),
-		logger:          logger,
-		hasSynced:       ctx.HasSynced,
+		ctx:              ctx,
+		client:           ctx.KubeClient,
+		stopCh:           stopCh,
+		numWorkers:       ctx.NumL4Workers,
+		namer:            ctx.L4Namer,
+		zoneGetter:       ctx.ZoneGetter,
+		forwardingRules:  forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional, logger),
+		enableDualStack:  ctx.EnableL4ILBDualStack,
+		serviceVersions:  NewServiceVersionsTracker(),
+		periodicEnqueuer: newPeriodicEnqueuer(ctx.ResyncPeriod, ctx.L4ResyncSpreadFactor),
+		logger:           logger,
+		hasSynced:        ctx.HasSynced,
+	}
+	if window := l4c.periodicEnqueuer.window; window > 0 {
+		logger.Info("Spreading periodic re-enqueues of services", "window", window, "resyncPeriod", ctx.ResyncPeriod)
 	}
 	negMetrics, err := negmetrics.NewNegMetrics()
 	if err != nil {
@@ -180,9 +186,11 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 			if needsILB && reflect.DeepEqual(old, cur) {
 				// this will happen when informers run a resync on all the existing services even when the object is
 				// not modified.
-				svcLogger.V(3).Info("Periodic enqueueing of service")
-				l4c.svcQueue.Enqueue(curSvc)
-				l4c.enqueueTracker.Track()
+				l4c.periodicEnqueuer.enqueue(svcKey, func() {
+					svcLogger.V(3).Info("Periodic enqueueing of service")
+					l4c.svcQueue.Enqueue(curSvc)
+					l4c.enqueueTracker.Track()
+				})
 			} else if needsILB {
 				l4c.serviceVersions.SetLastIgnored(svcKey, curSvc.ResourceVersion, svcLogger)
 			}
