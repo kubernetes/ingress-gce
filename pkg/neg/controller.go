@@ -18,6 +18,7 @@ package neg
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -174,6 +175,26 @@ func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) 
 		}
 	}
 	return false
+}
+
+// negBindingUpdateRequiresSync reports whether the change from old to cur
+// requires enqueuing the NEGBinding for processing. Every syncer execution
+// patches Status (e.g. LastSyncTime and Conditions), which triggers an
+// informer Update event. Avoid enqueuing on status-only updates so we do not
+// trigger EnsureSyncerForNEGBinding -> syncer.Sync() in a self-reinforcing
+// loop that bypasses syncer exponential backoff and retries indefinitely
+// after maxRetries.
+func negBindingUpdateRequiresSync(old, cur *negbindingv1beta1.NetworkEndpointGroupBinding) bool {
+	specChanged := !reflect.DeepEqual(old.Spec, cur.Spec)
+	deletionStarted := (old.DeletionTimestamp == nil) != (cur.DeletionTimestamp == nil)
+	// During deletion, the syncer clears Status.NetworkEndpointGroups once
+	// endpoint draining completes; we must enqueue this transition so
+	// ReconcileDeletion can remove the finalizer.
+	drainingCompleted := cur.DeletionTimestamp != nil &&
+		len(old.Status.NetworkEndpointGroups) > 0 &&
+		len(cur.Status.NetworkEndpointGroups) == 0
+
+	return specChanged || deletionStarted || drainingCompleted
 }
 
 func buildClusterURL(cloud negtypes.NetworkEndpointGroupCloud) (string, error) {
@@ -512,7 +533,19 @@ func NewController(
 			AddFunc:    negController.enqueueNEGBinding,
 			DeleteFunc: negController.enqueueNEGBinding,
 			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueNEGBinding(cur)
+				oldBinding, ok1 := old.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+				if !ok1 {
+					logger.Error(nil, "Unexpected object type in NEGBinding update", "old", fmt.Sprintf("%T", old))
+					return
+				}
+				curBinding, ok2 := cur.(*negbindingv1beta1.NetworkEndpointGroupBinding)
+				if !ok2 {
+					logger.Error(nil, "Unexpected object type in NEGBinding update", "cur", fmt.Sprintf("%T", cur))
+					return
+				}
+				if negBindingUpdateRequiresSync(oldBinding, curBinding) {
+					negController.enqueueNEGBinding(cur)
+				}
 			},
 		})
 	}
