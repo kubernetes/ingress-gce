@@ -28,6 +28,7 @@ type cleanupSyncer struct {
 	cloud         negtypes.NetworkEndpointGroupCloud
 	statusHandler *negstatushandler.NEGBindingStatusHandler
 	bindingLister cache.Indexer
+	expectedDesc  utils.BoundNEGDescription
 	logger        klog.Logger
 
 	syncCh chan struct{}
@@ -44,6 +45,7 @@ func NewCleanupSyncer(
 	cloud negtypes.NetworkEndpointGroupCloud,
 	statusHandler *negstatushandler.NEGBindingStatusHandler,
 	bindingLister cache.Indexer,
+	clusterURL string,
 	logger klog.Logger,
 ) negtypes.NegSyncer {
 	return &cleanupSyncer{
@@ -51,11 +53,16 @@ func NewCleanupSyncer(
 		cloud:         cloud,
 		statusHandler: statusHandler,
 		bindingLister: bindingLister,
-		logger:        logger.WithName("CleanupSyncer"),
-		syncCh:        make(chan struct{}, 1),
-		stopCh:        make(chan struct{}),
-		stopped:       true,
-		retryDelay:    minRetryDelay,
+		expectedDesc: utils.BoundNEGDescription{
+			ClusterURL: clusterURL,
+			Namespace:  negSyncerKey.Namespace,
+			BackendRef: negSyncerKey.Name,
+		},
+		logger:     logger.WithName("CleanupSyncer"),
+		syncCh:     make(chan struct{}, 1),
+		stopCh:     make(chan struct{}),
+		stopped:    true,
+		retryDelay: minRetryDelay,
 	}
 }
 
@@ -143,10 +150,8 @@ func (s *cleanupSyncer) cleanUp() error {
 	}
 	binding := bindingObj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
 
-	negsToClean := s.getNEGsToClean(binding)
+	negsToClean, remainingNEGs, errs := s.getNEGsToClean(binding)
 
-	var errs []error
-	var remainingNEGs []*composite.NetworkEndpointGroup
 	for _, neg := range negsToClean {
 		if err := s.cleanUpNEG(neg.negName, neg.zone); err != nil {
 			errs = append(errs, err)
@@ -160,8 +165,10 @@ func (s *cleanupSyncer) cleanUp() error {
 	return utilerrors.NewAggregate(errs)
 }
 
-func (s *cleanupSyncer) getNEGsToClean(binding *negbindingv1beta1.NetworkEndpointGroupBinding) []negToClean {
+func (s *cleanupSyncer) getNEGsToClean(binding *negbindingv1beta1.NetworkEndpointGroupBinding) ([]negToClean, []*composite.NetworkEndpointGroup, []error) {
 	var negsToClean []negToClean
+	var statusOnlyNEGs []*composite.NetworkEndpointGroup
+	var errs []error
 	seenLocations := sets.New[negtypes.NEGLocation]()
 
 	for _, statusRef := range binding.Status.NetworkEndpointGroups {
@@ -186,18 +193,49 @@ func (s *cleanupSyncer) getNEGsToClean(binding *negbindingv1beta1.NetworkEndpoin
 		}
 		seenLocations.Insert(loc)
 
+		negName := negID.Key.Name
+		zone := negID.Key.Zone
+		negRef := &composite.NetworkEndpointGroup{
+			Name:       negName,
+			SelfLink:   statusRef.ResourceURL,
+			Subnetwork: statusRef.SubnetURL,
+		}
+
+		neg, err := s.cloud.GetNetworkEndpointGroup(negName, zone, s.GetAPIVersion(), s.logger)
+		if err != nil {
+			if utils.IsNotFoundError(err) {
+				s.logger.Info("NEG was not found during cleanup, assuming already cleaned up", "neg", negName, "zone", zone)
+				continue
+			}
+			errs = append(errs, fmt.Errorf("failed to get NEG %q in zone %q: %w", negName, zone, err))
+			statusOnlyNEGs = append(statusOnlyNEGs, negRef)
+			continue
+		}
+
+		if !s.verifyNEG(neg, zone, statusRef.SubnetURL) {
+			continue
+		}
+
 		negsToClean = append(negsToClean, negToClean{
-			negName: negID.Key.Name,
-			zone:    negID.Key.Zone,
-			ref: &composite.NetworkEndpointGroup{
-				Name:       negID.Key.Name,
-				SelfLink:   statusRef.ResourceURL,
-				Subnetwork: statusRef.SubnetURL,
-			},
+			negName: negName,
+			zone:    zone,
+			ref:     negRef,
 		})
 	}
 
-	return negsToClean
+	return negsToClean, statusOnlyNEGs, errs
+}
+
+func (s *cleanupSyncer) verifyNEG(neg *composite.NetworkEndpointGroup, zone, expectedSubnetURL string) bool {
+	if err := verifyNEGDescription(neg, zone, s.expectedDesc, true, s.logger); err != nil {
+		s.logger.Error(err, "Skipping NEG cleanup due to description mismatch", "neg", neg.Name, "zone", zone)
+		return false
+	}
+	if err := verifyNEGNetwork(neg, zone, s.NegType, s.cloud.NetworkURL(), expectedSubnetURL); err != nil {
+		s.logger.Error(err, "Skipping NEG cleanup due to network/subnetwork mismatch", "neg", neg.Name, "zone", zone)
+		return false
+	}
+	return true
 }
 
 func (s *cleanupSyncer) cleanUpNEG(negName, zone string) error {
