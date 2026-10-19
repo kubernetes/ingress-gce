@@ -17,9 +17,11 @@ limitations under the License.
 package syncers
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -78,6 +80,7 @@ type transactionSyncer struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	nodeLister          cache.Indexer
+	negBindingLister    cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
 	topologyProvider    negtypes.TopologyProvider
@@ -151,6 +154,7 @@ func NewTransactionSyncer(
 	serviceLister cache.Indexer,
 	endpointSliceLister cache.Indexer,
 	nodeLister cache.Indexer,
+	negBindingLister cache.Indexer,
 	statusHandler negtypes.NEGStatusHandler,
 	reflector readiness.Reflector,
 	epc negtypes.NetworkEndpointsCalculator,
@@ -183,6 +187,7 @@ func NewTransactionSyncer(
 		podLister:                 podLister,
 		serviceLister:             serviceLister,
 		endpointSliceLister:       endpointSliceLister,
+		negBindingLister:          negBindingLister,
 		recorder:                  recorder,
 		cloud:                     cloud,
 		topologyProvider:          topologyProvider,
@@ -206,7 +211,7 @@ func NewTransactionSyncer(
 		negMetrics:                negMetrics,
 	}
 	// Syncer implements life cycle logic
-	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger, negMetrics)
+	syncer := newSyncer(negSyncerKey, serviceLister, negBindingLister, recorder, ts, logger, negMetrics)
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = backoff.NewDelayRetryHandler(func() { syncer.Sync() }, backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay))
@@ -731,6 +736,13 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	negObjs = append(negObjs, oldNegs...)
 	errList = append(errList, oldNegErrs...)
 
+	slices.SortFunc(negObjs, func(a, b *composite.NetworkEndpointGroup) int {
+		return cmp.Compare(a.SelfLink, b.SelfLink)
+	})
+	slices.SortFunc(errList, func(a, b error) int {
+		return cmp.Compare(a.Error(), b.Error())
+	})
+
 	if updateNEGStatus {
 		if err := s.statusHandler.ReportStatus(negObjs, errList); err != nil {
 			s.logger.Error(err, "Failed to report ensured NEGs on Status reporter")
@@ -887,6 +899,12 @@ func checkEndpointBatchErr(err error, operation transactionOp) error {
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
+	if s.NegSyncerKey.IsBindingKey() {
+		if binding := getNEGBinding(s.negBindingLister, s.Namespace, s.NEGBindingName, s.logger, s.negMetrics); binding != nil {
+			s.recorder.Event(binding, eventType, reason, eventDesc)
+		}
+		return
+	}
 	if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
 		s.recorder.Event(svc, eventType, reason, eventDesc)
 	}

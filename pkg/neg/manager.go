@@ -298,6 +298,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					manager.serviceLister,
 					manager.endpointSliceLister,
 					manager.nodeLister,
+					nil,
 					statusHandler,
 					manager.reflector,
 					epc,

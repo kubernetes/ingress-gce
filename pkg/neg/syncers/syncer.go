@@ -45,8 +45,9 @@ type syncer struct {
 	core syncerCore
 
 	// event recording
-	serviceLister cache.Indexer
-	recorder      record.EventRecorder
+	serviceLister    cache.Indexer
+	negBindingLister cache.Indexer
+	recorder         record.EventRecorder
 
 	// syncer states
 	stateLock    sync.Mutex
@@ -62,18 +63,19 @@ type syncer struct {
 	negMetrics *metrics.NegMetrics
 }
 
-func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore, logger klog.Logger, negMetrics *metrics.NegMetrics) *syncer {
+func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister, negBindingLister cache.Indexer, recorder record.EventRecorder, core syncerCore, logger klog.Logger, negMetrics *metrics.NegMetrics) *syncer {
 	return &syncer{
-		NegSyncerKey:  negSyncerKey,
-		core:          core,
-		serviceLister: serviceLister,
-		recorder:      recorder,
-		stopped:       true,
-		shuttingDown:  false,
-		clock:         clock.RealClock{},
-		backoff:       backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
-		logger:        logger,
-		negMetrics:    negMetrics,
+		NegSyncerKey:     negSyncerKey,
+		core:             core,
+		serviceLister:    serviceLister,
+		negBindingLister: negBindingLister,
+		recorder:         recorder,
+		stopped:          true,
+		shuttingDown:     false,
+		clock:            clock.RealClock{},
+		backoff:          backoff.NewExponentialBackoffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		logger:           logger,
+		negMetrics:       negMetrics,
 	}
 }
 
@@ -108,8 +110,14 @@ func (s *syncer) Start() error {
 
 				s.logger.Error(err, "Sync failed", "syncerKey", s.NegSyncerKey.String(), "retry", retryMsg)
 
-				if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
+				if s.NegSyncerKey.IsBindingKey() {
+					if binding := getNEGBinding(s.negBindingLister, s.Namespace, s.NEGBindingName, s.logger, s.negMetrics); binding != nil {
+						s.recorder.Eventf(binding, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEGBinding %q %s: %v", s.NegSyncerKey.NEGBindingName, retryMsg, err)
+					}
+				} else {
+					if svc := getService(s.serviceLister, s.Namespace, s.Name, s.logger, s.negMetrics); svc != nil {
+						s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMsg, err)
+					}
 				}
 			} else {
 				s.backoff.ResetDelay()

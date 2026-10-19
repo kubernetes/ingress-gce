@@ -18,14 +18,21 @@ package syncers
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/backoff"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	fakenegbinding "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
+	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -88,6 +95,7 @@ func newSyncerTester() *syncerTester {
 	s := newSyncer(
 		negSyncerKey,
 		testContext.ServiceInformer.GetIndexer(),
+		nil,
 		record.NewFakeRecorder(100),
 		st,
 		klog.TODO(),
@@ -182,4 +190,96 @@ func TestRetryOnSyncError(t *testing.T) {
 	if syncCount != maxRetry+1 {
 		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncCount)
 	}
+}
+
+func TestSyncerEventRecording(t *testing.T) {
+	testContext := negtypes.NewTestContext()
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+	}
+	if err := testContext.ServiceInformer.GetIndexer().Add(svc); err != nil {
+		t.Fatalf("Failed to add service to indexer: %v", err)
+	}
+
+	fakeBindingClient := fakenegbinding.NewSimpleClientset()
+	bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+	bindingName := "test-binding"
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      bindingName,
+		},
+	}
+	if err := bindingInformer.GetIndexer().Add(binding); err != nil {
+		t.Fatalf("Failed to add binding to indexer: %v", err)
+	}
+
+	t.Run("standard syncer records SyncNetworkEndpointGroupFailed on Service", func(t *testing.T) {
+		recorder := record.NewFakeRecorder(10)
+		st := &syncerTester{syncError: true, ch: make(chan interface{})}
+		s := newSyncer(
+			negtypes.NegSyncerKey{
+				Namespace: testServiceNamespace,
+				Name:      testServiceName,
+				NegName:   testNegName,
+			},
+			testContext.ServiceInformer.GetIndexer(),
+			nil,
+			recorder,
+			st,
+			klog.TODO(),
+			testContext.NegMetrics,
+		)
+		s.backoff = backoff.NewExponentialBackoffHandler(0, 0, 0)
+		if err := s.Start(); err != nil {
+			t.Fatalf("Failed to start syncer: %v", err)
+		}
+		defer s.Stop()
+
+		select {
+		case event := <-recorder.Events:
+			want := fmt.Sprintf(`Warning SyncNetworkEndpointGroupFailed Failed to sync NEG %q (will retry): sync error`, testNegName)
+			if !strings.Contains(event, want) {
+				t.Errorf("got event %q, want substring %q", event, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for event")
+		}
+	})
+
+	t.Run("NEGBinding syncer records SyncNetworkEndpointGroupFailed on NetworkEndpointGroupBinding", func(t *testing.T) {
+		recorder := record.NewFakeRecorder(10)
+		st := &syncerTester{syncError: true, ch: make(chan interface{})}
+		s := newSyncer(
+			negtypes.NegSyncerKey{
+				Namespace:      testServiceNamespace,
+				Name:           testServiceName,
+				NEGBindingName: bindingName,
+				NegName:        "",
+			},
+			nil,
+			bindingInformer.GetIndexer(),
+			recorder,
+			st,
+			klog.TODO(),
+			testContext.NegMetrics,
+		)
+		if err := s.Start(); err != nil {
+			t.Fatalf("Failed to start syncer: %v", err)
+		}
+		defer s.Stop()
+
+		select {
+		case event := <-recorder.Events:
+			want := fmt.Sprintf(`Warning SyncNetworkEndpointGroupFailed Failed to sync NEGBinding %q (will retry): sync error`, bindingName)
+			if !strings.Contains(event, want) {
+				t.Errorf("got event %q, want substring %q", event, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for event")
+		}
+	})
 }

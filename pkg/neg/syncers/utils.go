@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -118,6 +119,26 @@ func getService(serviceLister cache.Indexer, namespace, name string, logger klog
 	}
 	if err != nil {
 		logger.Error(err, "Failed to retrieve service from store", "namespace", namespace, "name", name)
+		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+	}
+	return nil
+}
+
+// getNEGBinding retrieves NetworkEndpointGroupBinding object from negBindingLister based on the input Namespace and Name
+func getNEGBinding(negBindingLister cache.Indexer, namespace, name string, logger klog.Logger, negMetrics *metrics.NegMetrics) *negbindingv1beta1.NetworkEndpointGroupBinding {
+	if negBindingLister == nil {
+		return nil
+	}
+	obj, exists, err := negBindingLister.GetByKey(utils.ServiceKeyFunc(namespace, name))
+	if exists && err == nil {
+		if binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding); ok {
+			return binding
+		}
+		logger.Error(nil, "Unexpected object type in negBindingLister", "namespace", namespace, "name", name, "type", fmt.Sprintf("%T", obj))
+		return nil
+	}
+	if err != nil {
+		logger.Error(err, "Failed to retrieve NEGBinding from store", "namespace", namespace, "name", name)
 		negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 	}
 	return nil

@@ -4537,6 +4537,7 @@ func newCustomTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, 
 		testContext.ServiceInformer.GetIndexer(),
 		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
+		nil,
 		statusReporter,
 		reflector,
 		GetEndpointsCalculator(testContext.PodInformer.GetIndexer(), testContext.NodeInformer.GetIndexer(), testContext.ServiceInformer.GetIndexer(),
@@ -6028,4 +6029,82 @@ func TestTransactionSyncerCleanOldNEGs(t *testing.T) {
 	if targetMap[locUndesiredZone].Len() == 0 {
 		t.Errorf("Original targetMap was modified in-place for %v", locUndesiredZone)
 	}
+}
+
+func TestTransactionSyncerRecordEvent(t *testing.T) {
+	testContext := negtypes.NewTestContext()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      testServiceName,
+		},
+	}
+	if err := testContext.ServiceInformer.GetIndexer().Add(svc); err != nil {
+		t.Fatalf("failed to add service to indexer: %v", err)
+	}
+
+	fakeBindingClient := fakenegbinding.NewSimpleClientset()
+	bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+	bindingName := "test-binding"
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testServiceNamespace,
+			Name:      bindingName,
+		},
+	}
+	if err := bindingInformer.GetIndexer().Add(binding); err != nil {
+		t.Fatalf("failed to add binding to indexer: %v", err)
+	}
+
+	t.Run("NEGBinding syncer records event on NetworkEndpointGroupBinding and not Service", func(t *testing.T) {
+		recorder := record.NewFakeRecorder(10)
+		s := &transactionSyncer{
+			NegSyncerKey: negtypes.NegSyncerKey{
+				Namespace:      testServiceNamespace,
+				Name:           testServiceName,
+				NEGBindingName: bindingName,
+			},
+			negBindingLister: bindingInformer.GetIndexer(),
+			recorder:         recorder,
+			logger:           klog.TODO(),
+			negMetrics:       testContext.NegMetrics,
+		}
+		s.recordEvent(corev1.EventTypeNormal, "Attach", "Attach 1 network endpoint(s)")
+
+		select {
+		case event := <-recorder.Events:
+			want := "Normal Attach Attach 1 network endpoint(s)"
+			if event != want {
+				t.Errorf("got event %q, want %q", event, want)
+			}
+		default:
+			t.Fatal("expected event to be recorded on NetworkEndpointGroupBinding, got none")
+		}
+	})
+
+	t.Run("standard syncer records event on Service", func(t *testing.T) {
+		recorder := record.NewFakeRecorder(10)
+		s := &transactionSyncer{
+			NegSyncerKey: negtypes.NegSyncerKey{
+				Namespace: testServiceNamespace,
+				Name:      testServiceName,
+				NegName:   testNegName,
+			},
+			serviceLister: testContext.ServiceInformer.GetIndexer(),
+			recorder:      recorder,
+			logger:        klog.TODO(),
+			negMetrics:    testContext.NegMetrics,
+		}
+		s.recordEvent(corev1.EventTypeNormal, "Attach", "Attach 1 network endpoint(s)")
+
+		select {
+		case event := <-recorder.Events:
+			want := "Normal Attach Attach 1 network endpoint(s)"
+			if event != want {
+				t.Errorf("got event %q, want %q", event, want)
+			}
+		default:
+			t.Fatal("expected event to be recorded on Service, got none")
+		}
+	})
 }

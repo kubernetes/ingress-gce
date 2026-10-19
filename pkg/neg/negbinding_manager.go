@@ -590,6 +590,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		m.serviceLister,
 		m.endpointSliceLister,
 		m.nodeLister,
+		m.negBindingLister,
 		statusHandler,
 		m.reflector,
 		epc,
