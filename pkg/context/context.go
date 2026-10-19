@@ -122,11 +122,15 @@ type ControllerContext struct {
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	Namespace         string
-	ResyncPeriod      time.Duration
-	NumL4Workers      int
-	NumL4NetLBWorkers int
-	ReadOnlyMode      bool
+	Namespace    string
+	ResyncPeriod time.Duration
+	// L4ResyncSpreadFactor is the fraction of ResyncPeriod over which the L4
+	// controllers spread the periodic re-enqueue of their Services. 0 disables
+	// spreading. See the --l4-resync-spread-factor flag.
+	L4ResyncSpreadFactor float64
+	NumL4Workers         int
+	NumL4NetLBWorkers    int
+	ReadOnlyMode         bool
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort                utils.ServicePort
 	HealthCheckPath                      string

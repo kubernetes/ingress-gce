@@ -81,6 +81,7 @@ var F = struct {
 	NodePortRanges                   PortRanges
 	ResyncPeriod                     time.Duration
 	ResyncPeriodJitterFactor         float64
+	L4ResyncSpreadFactor             float64
 	L4NetLBProvisionDeadline         time.Duration
 	NumL4Workers                     int
 	NumL4NetLBWorkers                int
@@ -291,6 +292,16 @@ the effective resync period is drawn once at startup, uniformly at random from
 Use it to de-synchronize the periodic resyncs of many controller instances
 (e.g. one per cluster) that would otherwise relist and confirm cloud resources
 in lockstep. Must be in [0, 1]; 0 disables jitter.`)
+	flag.Float64Var(&F.L4ResyncSpreadFactor, "l4-resync-spread-factor", 0,
+		`Fraction of the (jittered) --sync-period over which the L4 ILB and NetLB
+controllers spread the periodic re-reconciliation of their LoadBalancer
+Services. Each Service gets a stable pseudo-random offset within that window,
+so it is still re-reconciled once per resync period, but the Services of one
+controller are no longer all re-reconciled on the same tick, and the periodic
+cloud API load of many controller instances is uniform in time even when their
+resync ticks are aligned. 0 (default) keeps re-enqueueing all Services
+immediately on each resync; 1 spreads them over the whole period. Must be in
+[0, 1].`)
 	flag.DurationVar(&F.L4NetLBProvisionDeadline, "l4-netlb-provision-deadline", 20*time.Minute,
 		`Deadline latency for L4 NetLB provisioning.`)
 	flag.IntVar(&F.NumL4Workers, "num-l4-workers", 5,
@@ -437,6 +448,9 @@ func Validate() {
 
 	if f := F.ResyncPeriodJitterFactor; math.IsNaN(f) || f < 0 || f > 1 {
 		klog.Fatalf("The flag --sync-period-jitter-factor must be in the range [0, 1], got %v.", f)
+	}
+	if f := F.L4ResyncSpreadFactor; math.IsNaN(f) || f < 0 || f > 1 {
+		klog.Fatalf("The flag --l4-resync-spread-factor must be in the range [0, 1], got %v.", f)
 	}
 }
 

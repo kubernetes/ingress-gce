@@ -17,9 +17,14 @@ limitations under the License.
 package controllers
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
+	"math/rand"
 	"reflect"
 	"sort"
+	"sync"
+	"time"
 
 	"k8s.io/ingress-gce/pkg/l4/resources"
 
@@ -41,6 +46,163 @@ const (
 	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
 	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
 )
+
+// periodicEnqueuer re-enqueues L4 LB Services on informer resyncs, optionally
+// spreading them over a window instead of enqueueing all of them on the tick.
+//
+// Without spreading, every resync re-enqueues every LoadBalancer Service of the
+// cluster at once, and every controller instance whose resync tick is aligned
+// with the ticks of other instances (e.g. after all of them recovered from the
+// same cloud API outage) does so at the same moment, so the resync-driven cloud
+// API calls arrive in bursts. With spreading, each Service gets a stable
+// pseudo-random offset in [0, window): it is still re-reconciled exactly once
+// per resync period, just phase-shifted, so the load of one instance is spread
+// over the window and the aggregate load of many instances is uniform in time
+// regardless of how their ticks are aligned. The offsets are salted with a
+// per-process random value, so that equally named Services of different
+// clusters do not share a phase.
+//
+// Pending delayed enqueues are tracked per Service key so that a real Add,
+// Update, or Delete of a Service (or a subsequent resync, or controller
+// shutdown) cancels any pending timer for that Service instead of letting a
+// stale timer trigger a redundant reconciliation or short-circuit workqueue
+// exponential backoff.
+//
+// This function is used by External and Internal L4 LB controllers.
+type periodicEnqueuer struct {
+	window time.Duration
+	salt   uint64
+	// afterFunc is time.AfterFunc, replaceable in tests.
+	afterFunc func(time.Duration, func()) *time.Timer
+
+	mu      sync.Mutex
+	stopped bool
+	timers  map[string]*periodicTimer
+}
+
+type periodicTimer struct {
+	timer *time.Timer
+}
+
+// newPeriodicEnqueuer returns a periodicEnqueuer spreading periodic enqueues
+// over spreadFactor*resyncPeriod. A spreadFactor <= 0 disables spreading.
+func newPeriodicEnqueuer(resyncPeriod time.Duration, spreadFactor float64) *periodicEnqueuer {
+	var window time.Duration
+	if spreadFactor > 0 && resyncPeriod > 0 {
+		window = time.Duration(spreadFactor * float64(resyncPeriod))
+	}
+	return &periodicEnqueuer{
+		window:    window,
+		salt:      rand.Uint64(),
+		afterFunc: time.AfterFunc,
+		timers:    make(map[string]*periodicTimer),
+	}
+}
+
+// offset returns the stable offset of key within the spread window,
+// or 0 if spreading is disabled.
+func (p *periodicEnqueuer) offset(key string) time.Duration {
+	if p.window <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	var salt [8]byte
+	binary.LittleEndian.PutUint64(salt[:], p.salt)
+	h.Write(salt[:])
+	h.Write([]byte(key))
+	return time.Duration(h.Sum64() % uint64(p.window))
+}
+
+// enqueue adds svc to queue after its offset, or immediately if spreading is
+// disabled. tracker is updated when the Service is actually enqueued, not when
+// its enqueue is scheduled, so that the enqueue-to-sync health check of the
+// controllers keeps measuring the time Services spend waiting in the queue.
+func (p *periodicEnqueuer) enqueue(queue utils.TaskQueue, tracker *utils.TimeTracker, svc *v1.Service, logger klog.Logger) {
+	key := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+	delay := p.offset(key)
+	if delay <= 0 {
+		p.cancel(key)
+		logger.V(3).Info("Periodic enqueueing of service")
+		queue.Enqueue(svc)
+		tracker.Track()
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stopped {
+		return
+	}
+	p.cancelLocked(key)
+	pt := &periodicTimer{}
+	p.timers[key] = pt
+	logger.V(3).Info("Scheduling periodic enqueueing of service", "delay", delay)
+	pt.timer = p.afterFunc(delay, func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.stopped || p.timers[key] != pt {
+			return
+		}
+		delete(p.timers, key)
+		if queue.NumRequeues(svc) > 0 {
+			// The Service is already scheduled for a retry with backoff, which also
+			// reconciles it. Enqueueing it now would short-circuit the backoff.
+			logger.V(4).Info("Skipping periodic enqueueing of service currently in rate-limited retry", "delay", delay)
+			return
+		}
+		logger.V(3).Info("Periodic enqueueing of service", "delay", delay)
+		queue.Enqueue(svc)
+		tracker.Track()
+	})
+}
+
+// cancel stops and removes any pending periodic enqueue timer for key.
+func (p *periodicEnqueuer) cancel(key string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cancelLocked(key)
+}
+
+// cancelLocked stops and removes any pending periodic enqueue timer for key.
+// p.mu must be held.
+func (p *periodicEnqueuer) cancelLocked(key string) {
+	prev, ok := p.timers[key]
+	if !ok {
+		return
+	}
+	if prev.timer != nil {
+		prev.timer.Stop()
+	}
+	delete(p.timers, key)
+}
+
+// cancelObj stops and removes any pending periodic enqueue timer for obj,
+// which may be a *v1.Service or a cache.DeletedFinalStateUnknown tombstone.
+func (p *periodicEnqueuer) cancelObj(obj interface{}) {
+	if p == nil {
+		return
+	}
+	if key, err := utils.KeyFunc(obj); err == nil {
+		p.cancel(key)
+	}
+}
+
+// stop cancels all pending periodic enqueue timers and prevents any new ones
+// from being scheduled.
+func (p *periodicEnqueuer) stop() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stopped = true
+	for key := range p.timers {
+		p.cancelLocked(key)
+	}
+}
 
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
