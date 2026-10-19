@@ -420,6 +420,7 @@ func (m *negBindingManager) ensureCleanupSyncer(binding *negbindingv1beta1.Netwo
 		m.cloud,
 		statusHandler,
 		m.negBindingLister,
+		m.clusterURL,
 		m.logger,
 	)
 
