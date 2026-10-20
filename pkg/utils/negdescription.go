@@ -68,14 +68,24 @@ func (expectDesc StandardNEGDescription) MatchesString(descString, negName, zone
 			// occurs within the same cluster and namespace, NEG status should
 			// not be updated.
 			// Otherwise, NEG status should have initialized=False condition.
+			var mismatchedFields []string
 			if desc.ClusterUID != expectDesc.ClusterUID {
-				return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)
-			} else if desc.Namespace != expectDesc.Namespace {
-				return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)
+				mismatchedFields = append(mismatchedFields, "cluster-uid")
 			}
-
-			if desc.ServiceName != expectDesc.ServiceName || desc.Port != expectDesc.Port {
-				return false, fmt.Errorf("%w: expected description of NEG object %q/%q to be %+v, but got %+v", ErrNEGUsedByAnotherSyncer, zone, negName, expectDesc, desc)
+			if desc.Namespace != expectDesc.Namespace {
+				mismatchedFields = append(mismatchedFields, "namespace")
+			}
+			if desc.ServiceName != expectDesc.ServiceName {
+				mismatchedFields = append(mismatchedFields, "service-name")
+			}
+			if desc.Port != expectDesc.Port {
+				mismatchedFields = append(mismatchedFields, "port")
+			}
+			if len(mismatchedFields) > 0 {
+				if desc.ClusterUID == expectDesc.ClusterUID && desc.Namespace == expectDesc.Namespace {
+					return false, fmt.Errorf("%w: mismatch of %s fields for NEG object %q/%q, expected description %+v, but got %+v", ErrNEGUsedByAnotherSyncer, strings.Join(mismatchedFields, ", "), zone, negName, expectDesc, descString)
+				}
+				return false, fmt.Errorf("mismatch of %s fields for NEG object %q/%q, expected description %+v, but got %+v", strings.Join(mismatchedFields, ", "), zone, negName, expectDesc, descString)
 			}
 		}
 	}
@@ -148,10 +158,18 @@ func (expectDesc BoundNEGDescription) MatchesString(descString, negName, zone st
 		return false, fmt.Errorf("error unmarshalling NEG description %s err:%w", negName, err)
 	}
 
-	if !equalClusterURLs(desc.ClusterURL, expectDesc.ClusterURL) ||
-		desc.Namespace != expectDesc.Namespace ||
-		desc.BackendRef != expectDesc.BackendRef {
-		return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc, desc)
+	var mismatchedFields []string
+	if !equalClusterURLs(desc.ClusterURL, expectDesc.ClusterURL) {
+		mismatchedFields = append(mismatchedFields, "cluster-url")
+	}
+	if desc.Namespace != expectDesc.Namespace {
+		mismatchedFields = append(mismatchedFields, "namespace")
+	}
+	if desc.BackendRef != expectDesc.BackendRef {
+		mismatchedFields = append(mismatchedFields, "backend-ref")
+	}
+	if len(mismatchedFields) > 0 {
+		return false, fmt.Errorf("mismatch of %s fields for NEG object %q/%q, expected description %+v, but got %+v", strings.Join(mismatchedFields, ", "), zone, negName, expectDesc, descString)
 	}
 
 	return true, nil
