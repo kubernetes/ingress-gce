@@ -17,9 +17,7 @@ limitations under the License.
 package app
 
 import (
-	"flag"
 	"fmt"
-	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,14 +29,12 @@ import (
 
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/systemhealth"
-	"k8s.io/ingress-gce/pkg/version"
 )
 
 // RunHTTPServer starts an HTTP server. `healthChecker` returns a mapping of component/controller
 // name to the result of its healthcheck.
 func RunHTTPServer(healthChecker func() systemhealth.HealthCheckResults, logger klog.Logger) {
 	http.HandleFunc("/healthz", healthCheckHandler(healthChecker, logger))
-	http.HandleFunc("/flag", flagHandler)
 	http.Handle("/metrics", promhttp.Handler())
 
 	logger.V(0).Info("Running http server", "port", flags.F.HealthzPort)
@@ -91,64 +87,3 @@ func healthCheckHandler(checker func() systemhealth.HealthCheckResults, logger k
 		return
 	}
 }
-
-func flagHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		getFlagPage(w, r)
-		return
-	case "PUT":
-		putFlag(w, r)
-	default:
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-}
-
-func putFlag(w http.ResponseWriter, r *http.Request) {
-	for key, values := range r.URL.Query() {
-		if len(values) != 1 {
-			klog.Warningln("No query string params provided")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		v := values[0]
-		switch key {
-		case "v":
-			setVerbosity(v)
-		default:
-			klog.Warningf("Unrecognized key: %q", key)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func setVerbosity(v string) {
-	klog.V(0).Infof("Setting verbosity level to %q", v)
-	err := flag.Lookup("v").Value.Set(v)
-	if err != nil {
-		klog.Errorf("flag.Lookup(\"v\").Value.Set(%v) returned error: %v", v, err)
-	}
-}
-
-func getFlagPage(w http.ResponseWriter, r *http.Request) {
-	s := struct {
-		Version   string
-		Verbosity string
-	}{
-		Version:   version.Version,
-		Verbosity: flag.Lookup("v").Value.String(),
-	}
-	if err := flagPageTemplate.Execute(w, s); err != nil {
-		klog.Errorf("Unable to apply flag page template: %v", err)
-	}
-}
-
-var flagPageTemplate = template.Must(template.New("").Parse(`GCE Ingress Controller "GLBC"
-Version: {{.Version}}
-
-Verbosity ('v'): {{.Verbosity}}
-`))
