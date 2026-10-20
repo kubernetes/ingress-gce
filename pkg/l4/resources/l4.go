@@ -83,6 +83,8 @@ type L4 struct {
 	enableMixedProtocol              bool
 	disableNodesFirewallProvisioning bool
 	enableZonalAffinity              bool
+	enableOrchestrationInfo          bool
+	clusterName                      string
 	svcLogger                        klog.Logger
 	l4lbConfigLister                 cache.Store
 }
@@ -127,6 +129,8 @@ type L4ILBParams struct {
 	DisableNodesFirewallProvisioning bool
 	EnableMixedProtocol              bool
 	L4LBConfigLister                 cache.Store
+	EnableOrchestrationInfo          bool
+	ClusterName                      string
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -148,6 +152,8 @@ func NewL4Handler(params *L4ILBParams, logger klog.Logger) *L4 {
 		enableMixedProtocol:              params.EnableMixedProtocol,
 		disableNodesFirewallProvisioning: params.DisableNodesFirewallProvisioning,
 		enableZonalAffinity:              params.EnableZonalAffinity,
+		enableOrchestrationInfo:          params.EnableOrchestrationInfo,
+		clusterName:                      params.ClusterName,
 		svcLogger:                        logger,
 		l4lbConfigLister:                 params.L4LBConfigLister,
 	}
@@ -582,6 +588,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		LocalityLbPolicy:         localityLbPolicy,
 		LogConfig:                logConfig,
 		LogConfigControlEnabled:  logConfigControlEnabled,
+		EnableOrchestrationInfo:  l4.enableOrchestrationInfo,
+		ClusterName:              l4.clusterName,
 	}
 
 	bs, bsSyncStatus, err := l4.backendPool.EnsureL4BackendService(backendParams, l4.svcLogger)
