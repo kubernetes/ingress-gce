@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -6478,5 +6479,176 @@ func TestNEGBindingSyncStatusVerification(t *testing.T) {
 				t.Errorf("unexpected status NEG zones (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestEnsureNetworkEndpointGroupsDeterministicOrder verifies that ensureNetworkEndpointGroups
+// deterministically sorts both the ensured NEG references reported in status and the aggregated
+// error list, even though target zones are iterated over from a Go map with randomized order.
+func TestEnsureNetworkEndpointGroupsDeterministicOrder(t *testing.T) {
+	oldEnableMultiSubnet := flags.F.EnableMultiSubnetClusterPhase1
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = oldEnableMultiSubnet
+	}()
+
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := defaultTestSubnetURL
+	bindingName := "test-binding"
+	namespace := "test-ns"
+	subnetName := "default"
+	negName := "neg-default"
+	clusterURL := "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/cluster-1"
+
+	// Define 3 valid zones (which will succeed) and 3 failing zones (which will fail validation).
+	validZones := []string{"us-central1-a", "us-central1-b", "us-central1-c"}
+	failingZones := []string{"us-central1-d", "us-central1-e", "us-central1-f"}
+	allZones := append(append([]string{}, validZones...), failingZones...)
+
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	fakeBindingClient := fakenegbinding.NewSimpleClientset()
+	bindingInformer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeBindingClient, "", 0, utils.NewNamespaceIndexer())
+
+	// Step 1: Create the NEGBinding resource referencing all 6 zones and register NEG ownership.
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      bindingName,
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: "Service",
+				Name: "svc-name",
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   negName,
+					Subnet: subnetName,
+					Zones:  allZones,
+				},
+			},
+		},
+	}
+	bindingInformer.GetIndexer().Add(binding)
+	if _, err := fakeBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create NEGBinding: %v", err)
+	}
+
+	registry := &testNegBindingRegistry{
+		owners: map[string]string{
+			negName: fmt.Sprintf("%s/%s", namespace, bindingName),
+		},
+	}
+	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
+		bindingName,
+		namespace,
+		fakeBindingClient,
+		bindingInformer.GetIndexer(),
+		metrics.NewNegMetrics(),
+		registry,
+		klog.TODO(),
+	)
+
+	// Step 2: Pre-create NEGs in fake GCE:
+	// - validZones get a matching BoundNEGDescription so ensureNetworkEndpointGroup succeeds.
+	// - failingZones get a conflicting cluster URL in their description so each zone produces a distinct error.
+	negDesc := utils.BoundNEGDescription{
+		ClusterURL: clusterURL,
+		Namespace:  namespace,
+		BackendRef: "svc-name",
+	}.String()
+	invalidDesc := utils.BoundNEGDescription{
+		ClusterURL: "https://container.googleapis.com/v1/projects/mock-project/locations/us-central1/clusters/other-cluster",
+		Namespace:  namespace,
+		BackendRef: "svc-name",
+	}.String()
+
+	var wantStatusNegs []negbindingv1beta1.StatusNegRef
+	for _, zone := range validZones {
+		if err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Name:        negName,
+			Network:     testNetwork,
+			Subnetwork:  testSubnetwork,
+			Description: negDesc,
+		}, zone, klog.TODO()); err != nil {
+			t.Fatalf("Failed to create NEG in zone %s: %v", zone, err)
+		}
+		wantStatusNegs = append(wantStatusNegs, negbindingv1beta1.StatusNegRef{
+			ResourceURL: cloud.NewNetworkEndpointGroupsResourceID("mock-project", zone, negName).SelfLink(meta.VersionAlpha),
+			SubnetURL:   testSubnetwork,
+		})
+	}
+	for _, zone := range failingZones {
+		if err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Name:        negName,
+			Network:     testNetwork,
+			Subnetwork:  testSubnetwork,
+			Description: invalidDesc,
+		}, zone, klog.TODO()); err != nil {
+			t.Fatalf("Failed to create failing NEG in zone %s: %v", zone, err)
+		}
+	}
+
+	// Step 3: Initialize transactionSyncer with a topology provider returning allZones as a map-backed Set.
+	syncer := &transactionSyncer{
+		NegSyncerKey: negtypes.NegSyncerKey{
+			Namespace:      namespace,
+			Name:           "svc-name",
+			NegType:        negtypes.VmIpPortEndpointType,
+			NEGBindingName: bindingName,
+			NegName:        negName,
+			PortTuple: negtypes.SvcPortTuple{
+				Port:       80,
+				TargetPort: "8080",
+			},
+		},
+		clusterURL:    clusterURL,
+		statusHandler: statusHandler,
+		topologyProvider: &fakeTopologyProvider{
+			subnets: []nodetopologyv1.SubnetConfig{
+				{Name: subnetName, SubnetPath: testSubnetwork},
+			},
+			zones: map[string]sets.Set[string]{
+				subnetName: sets.New(allZones...),
+			},
+		},
+		cloud:                fakeCloud,
+		transactions:         NewTransactionTable(),
+		logger:               klog.TODO().WithName("TestSyncer"),
+		namer:                namer.NewNegBindingNamer(namespace, bindingName, bindingInformer.GetIndexer()),
+		manageLifecycle:      false,
+		networkInfo:          network.NetworkInfo{IsDefault: true, NetworkURL: testNetwork, SubnetworkURL: testSubnetwork},
+		syncMetricsCollector: metricscollector.FakeSyncerMetrics(),
+		negMetrics:           metrics.NewNegMetrics(),
+	}
+
+	// Step 4: Run ensureNetworkEndpointGroups repeatedly to exercise randomized map iteration order,
+	// verifying that both the aggregated error message and Status.NetworkEndpointGroups remain sorted.
+	var firstErrMsg string
+	for i := 0; i < 10; i++ {
+		_, err := syncer.ensureNetworkEndpointGroups()
+		if err == nil {
+			t.Fatalf("iteration %d: expected error for failing zones, got nil", i)
+		}
+		if i == 0 {
+			firstErrMsg = err.Error()
+			idxD := strings.Index(firstErrMsg, "us-central1-d")
+			idxE := strings.Index(firstErrMsg, "us-central1-e")
+			idxF := strings.Index(firstErrMsg, "us-central1-f")
+			if !(0 <= idxD && idxD < idxE && idxE < idxF) {
+				t.Fatalf("expected error message to have sorted zones (d < e < f), got: %s", firstErrMsg)
+			}
+		} else if err.Error() != firstErrMsg {
+			t.Fatalf("iteration %d: non-deterministic error message:\ngot:  %s\nwant: %s", i, err.Error(), firstErrMsg)
+		}
+
+		updatedBinding, err := fakeBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("iteration %d: failed to get updated binding: %v", i, err)
+		}
+		if diff := cmp.Diff(wantStatusNegs, updatedBinding.Status.NetworkEndpointGroups); diff != "" {
+			t.Fatalf("iteration %d: unexpected Status.NetworkEndpointGroups order (-want +got):\n%s", i, diff)
+		}
 	}
 }

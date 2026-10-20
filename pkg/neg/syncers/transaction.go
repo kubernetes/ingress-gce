@@ -17,9 +17,11 @@ limitations under the License.
 package syncers
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -761,6 +763,15 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	negObjs = append(negObjs, ensuredOldNegs...)
 	negObjs = append(negObjs, statusOnlyOldNegs...)
 	errList = append(errList, oldNegErrs...)
+
+	// Zones are iterated over from a map, so negObjs and errList order is non-deterministic.
+	// Sort them to avoid unnecessary status patches and duplicate event series with reordered error messages.
+	slices.SortFunc(negObjs, func(a, b *composite.NetworkEndpointGroup) int {
+		return cmp.Compare(a.SelfLink, b.SelfLink)
+	})
+	slices.SortFunc(errList, func(a, b error) int {
+		return cmp.Compare(a.Error(), b.Error())
+	})
 
 	if updateNEGStatus {
 		if err := s.statusHandler.ReportStatus(negObjs, errList); err != nil {
