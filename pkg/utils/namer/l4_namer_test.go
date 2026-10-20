@@ -249,6 +249,55 @@ func TestL4Namer(t *testing.T) {
 	}
 }
 
+func TestNonDefaultSubnetCustomNEG(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		customNEGName string
+		subnetName    string
+		wantNEGName   string
+		wantErr       bool
+	}{
+		{
+			desc:          "simple case",
+			customNEGName: "custom-neg-name",
+			subnetName:    "subnet",
+			wantNEGName:   "custom-neg-name-185075",
+			wantErr:       false,
+		},
+		{
+			desc:          "another simple case",
+			customNEGName: "another-custom-neg-name",
+			subnetName:    "another-subnet",
+			wantNEGName:   "another-custom-neg-name-9247c5",
+			wantErr:       false,
+		},
+		{
+			desc:          "max default subnet neg name too long",
+			customNEGName: "very-long-custom-neg-name-over-max-default-subnet-neg-name-length",
+			subnetName:    "subnet",
+			wantNEGName:   "",
+			wantErr:       true,
+		},
+	}
+
+	namer := NewL4Namer(kubeSystemUID, nil)
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(fmt.Sprint(tc.desc), func(t *testing.T) {
+			t.Parallel()
+
+			got, err := namer.NonDefaultSubnetCustomNEG(tc.customNEGName, tc.subnetName)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("NonDefaultSubnetCustomNEG() = %v; gotErr = %t, wantErr = %t", err, gotErr, tc.wantErr)
+			}
+
+			if diff := cmp.Diff(tc.wantNEGName, got); diff != "" {
+				t.Errorf("want != got, (-want, +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestL4NamerForwardingRulesNumbers verifies the conversion of the FR number for some edge cases
 // Other behavior is tested in TestL4Namer
 func TestL4NamerForwardingRulesNumbers(t *testing.T) {
