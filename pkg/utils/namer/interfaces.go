@@ -117,6 +117,9 @@ type L4ResourcesNamer interface {
 	L4IPv6ForwardingRule(namespace, name, protocol string) string
 	// L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
 	L4IPv6HealthCheckFirewall(namespace, name string, shared bool) string
+	// L4IPv6HealthCheckFirewallV21 returns the V2.1 schema name of the IPv6 L4 LB health
+	// check firewall rule, which always preserves the namespace/name hash.
+	L4IPv6HealthCheckFirewallV21(namespace, name string, shared bool) string
 	// IsNEG returns if the given name is a VM_IP_NEG name.
 	IsNEG(name string) bool
 }
