@@ -21,6 +21,7 @@ const (
 	firewallHcSuffix            = "-fw"
 	ipv6Suffix                  = "ipv6"
 	sharedFirewallHcSuffix      = sharedHcSuffix + firewallHcSuffix
+	firewallHcIPv6SuffixV21     = "fw-" + ipv6Suffix // V2.1 schema suffix (no leading dash), see L4FirewallV21
 	maxResourceNameLength       = 63
 	l3ProtocolWithoutUnderscore = "l3"
 	// base36 is used to encode numbers using smaller footprint than decimal
@@ -256,13 +257,33 @@ func (namer *L4Namer) L4NetLBIPv6ForwardingRule(namespace, name, protocol string
 	)
 }
 
-// L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
+// L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB Healthcheck Firewall
+// using the V2 naming schema.
+// For non-shared health checks this truncates the end of L4Backend to fit "-fw-ipv6",
+// which removes the nsNameHash for long namespace/name combinations. It is kept as the
+// default until --enable-l4-ipv6-health-check-firewall-v21-naming becomes the default.
 func (namer *L4Namer) L4IPv6HealthCheckFirewall(namespace, name string, shared bool) string {
 	if shared {
 		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix, ipv6Suffix}, "-")
 	}
 	l4Name := namer.L4Backend(namespace, name)
 	return namer.hcFirewallName(l4Name, "-"+ipv6Suffix)
+}
+
+// L4IPv6HealthCheckFirewallV21 returns the name of the IPv6 L4 LB health check firewall
+// rule using the V2.1 schema (see L4FirewallV21):
+//
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-fw-ipv6
+//
+// Output name is at most 63 characters; the "-fw-ipv6" suffix and the 8-character hash
+// are always kept and only the "{ns}-{name}" part is trimmed. For namespace+name shorter
+// than 32 characters the result is identical to L4IPv6HealthCheckFirewall.
+// For shared health checks the name is k8s2-{uid}-l4-shared-hc-fw-ipv6.
+func (namer *L4Namer) L4IPv6HealthCheckFirewallV21(namespace, name string, shared bool) string {
+	if shared {
+		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix, ipv6Suffix}, "-")
+	}
+	return namer.L4FirewallV21(namespace, name, firewallHcIPv6SuffixV21)
 }
 
 // IsNEG indicates if the given name is a NEG following the L4 naming convention.
