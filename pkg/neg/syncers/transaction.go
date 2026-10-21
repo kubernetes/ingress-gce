@@ -19,6 +19,7 @@ package syncers
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -68,8 +69,10 @@ type transactionSyncer struct {
 	// needInit indicates if the NEG resources needed to be initialized.
 	// needInit will be set to true under 3 conditions:
 	// 1. transaction syncer is newly created
-	// 2. the syncInternal function returns any error
-	// 3. the operationInternal observed any error
+	// 2. the syncInternal function returns an error other than a quota error
+	// 3. a NEG operation fails, except for quota errors and for 400 Bad
+	//    Request errors of a sync that did not start in error state (see
+	//    commitTransaction)
 	needInit bool
 	// transactions stores each transaction
 	transactions networkEndpointTransactionTable
@@ -253,11 +256,24 @@ func GetEndpointsCalculator(podLister, nodeLister, serviceLister cache.Indexer, 
 	)
 }
 
+// syncWave is the state shared by the transactions that a single
+// syncNetworkEndpoints call starts. Transactions of different waves can be in
+// flight at the same time. syncLock must be held to read or write its fields.
+type syncWave struct {
+	// startedInErrorState is whether the sync that started the wave began in
+	// error state.
+	startedInErrorState bool
+	// failed is whether any transaction of the wave has failed so far.
+	failed bool
+}
+
 func (s *transactionSyncer) sync() error {
 	err := s.syncInternal()
 	if err != nil {
 		s.syncLock.Lock()
-		s.needInit = true
+		if !utils.IsQuotaExceededError(err) && !negtypes.IsStrategyQuotaError(err) {
+			s.needInit = true
+		}
 		s.syncLock.Unlock()
 	}
 	return err
@@ -404,6 +420,11 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	targetMap = s.dropLocationsWithoutNEGs(targetMap, currentMap)
 	targetMap = s.cleanOldNEGs(targetMap)
 
+	// The error state may be reset below, so capture whether this sync started
+	// in it. commitTransaction uses it to tell a NEG operation that is rejected
+	// for the first time from one that is rejected again.
+	startedInErrorState := s.inErrorState()
+
 	// When the flags are not enabled, error state should be reset when no
 	// error occurs in the sync.
 	// notInDegraded and onlyInDegraded are not populated when the flags are
@@ -463,7 +484,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
-	if syncErr := s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone); syncErr != nil {
+	if syncErr := s.syncNetworkEndpoints(addEndpoints, removeEndpoints, endpointPodLabelMap, migrationZone, startedInErrorState); syncErr != nil {
 		return utilerrors.NewAggregate([]error{ensureErr, syncErr})
 	}
 	return ensureErr
@@ -772,8 +793,12 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 	return ensuredSubnetZones, utilerrors.NewAggregate(errList)
 }
 
-// syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.NEGLocation) error {
+// syncNetworkEndpoints spins off go routines to execute NEG operations. The
+// transactions it starts form one wave: one go routine per NEG and operation,
+// each sending its endpoints in batches one after the other.
+// startedInErrorState is whether the calling sync began in error state.
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.NEGLocation, startedInErrorState bool) error {
+	wave := &syncWave{startedInErrorState: startedInErrorState}
 	syncFunc := func(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for negLocation, endpointSet := range endpointMap {
 			zone := negLocation.Zone
@@ -783,7 +808,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
+			batches, err := makeEndpointBatches(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
 			if err != nil {
 				return err
 			}
@@ -795,20 +820,23 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			// Insert networkEndpoint into transaction table
-			for networkEndpoint := range batch {
-				s.transactions.Put(networkEndpoint, transEntry)
+			for _, batch := range batches {
+				for networkEndpoint := range batch {
+					s.transactions.Put(networkEndpoint, transEntry)
+				}
 			}
 
 			if operation == attachOp {
-				go s.attachNetworkEndpoints(negLocation, batch)
+				go s.attachNetworkEndpoints(negLocation, batches, wave)
 			}
 			if operation == detachOp {
-				if zone == migrationZone.Zone && subnet == migrationZone.Subnet {
+				isMigrationDetach := zone == migrationZone.Zone && subnet == migrationZone.Subnet
+				if isMigrationDetach {
 					// Prevent any further migration-detachments from starting while one
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
-				go s.detachNetworkEndpoints(negLocation, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
+				go s.detachNetworkEndpoints(negLocation, batches, isMigrationDetach, wave)
 			}
 		}
 		return nil
@@ -824,19 +852,21 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	return nil
 }
 
-// attachNetworkEndpoints runs operation for attaching network endpoints.
-func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
-	err := s.operationInternal(attachOp, negLocation, networkEndpointMap, s.logger)
+// attachNetworkEndpoints attaches the batches of network endpoints to the NEG
+// and then commits the transactions that are still pending.
+func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocation, batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, wave *syncWave) {
+	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", endpointCount(batches), "batchCount", len(batches), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	pendingEndpoints, err := s.applyEndpointBatches(attachOp, negLocation, batches)
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(attachOp, err, networkEndpointMap)
+	s.commitTransaction(attachOp, err, pendingEndpoints, wave)
 }
 
-// detachNetworkEndpoints runs operation for detaching network endpoints.
-func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
-	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
-	err := s.operationInternal(detachOp, negLocation, networkEndpointMap, s.logger)
+// detachNetworkEndpoints detaches the batches of network endpoints from the
+// NEG and then commits the transactions that are still pending.
+func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocation, batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool, wave *syncWave) {
+	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", endpointCount(batches), "batchCount", len(batches), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	pendingEndpoints, err := s.applyEndpointBatches(detachOp, negLocation, batches)
 
 	if hasMigrationDetachments {
 		// Unpause the migration since the ongoing migration-detachments have
@@ -845,7 +875,46 @@ func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocat
 	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(detachOp, err, networkEndpointMap)
+	s.commitTransaction(detachOp, err, pendingEndpoints, wave)
+}
+
+// applyEndpointBatches runs operation against the NEG once per batch, in
+// order, and stops at the first error. Sending the batches one after the other
+// avoids concurrent mutating calls to the same NEG within a wave.
+//
+// The transactions of a batch are cleared as soon as its operation succeeds,
+// so that the next sync can commit its pods and reconcile its endpoints
+// without waiting for the remaining batches. No sync is triggered per batch.
+// It returns the endpoints whose transactions are still pending, which are
+// those of the failed batch and of the batches that were not sent.
+func (s *transactionSyncer) applyEndpointBatches(operation transactionOp, negLocation negtypes.NEGLocation, batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+	for i, batch := range batches {
+		if err := s.operationInternal(operation, negLocation, batch, s.logger); err != nil {
+			return mergeEndpointBatches(batches[i:]), err
+		}
+		s.syncLock.Lock()
+		s.clearTransactions(operation, batch)
+		s.syncLock.Unlock()
+	}
+	return nil, nil
+}
+
+// mergeEndpointBatches returns the union of batches.
+func mergeEndpointBatches(batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
+	merged := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
+	for _, batch := range batches {
+		maps.Copy(merged, batch)
+	}
+	return merged
+}
+
+// endpointCount returns the number of endpoints in batches.
+func endpointCount(batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) int {
+	count := 0
+	for _, batch := range batches {
+		count += len(batch)
+	}
+	return count
 }
 
 // operationInternal executes NEG API call and commits the transactions
@@ -873,25 +942,29 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 
 	if err == nil {
 		s.recordEvent(v1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
+		s.syncLock.Lock()
+		inErrorState := s.inErrorState()
+		s.syncLock.Unlock()
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, inErrorState)
 	} else {
 		s.recordEvent(v1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
-		err := checkEndpointBatchErr(err, operation)
+		err = checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
 		// If the API call fails for invalid endpoint update request in any goroutine,
 		// we would set error state and retry. For successful calls, we won't update
 		// error state, so its value won't be overwritten within API call go routines.
+		s.syncLock.Lock()
 		if syncErr.IsErrorState {
 			s.logger.Error(err, "Detected unexpected error when checking endpoint update response", "operation", operation)
-			s.syncLock.Lock()
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
 				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
-			s.syncLock.Unlock()
 		}
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
+		inErrorState := s.inErrorState()
+		s.syncLock.Unlock()
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, inErrorState)
 	}
 
 	s.negMetrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
@@ -904,14 +977,14 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 func checkEndpointBatchErr(err error, operation transactionOp) error {
 	var gerr *googleapi.Error
 	if !errors.As(err, &gerr) {
-		return fmt.Errorf("%w: %v", negtypes.ErrInvalidAPIResponse, err)
+		return fmt.Errorf("%w: %w", negtypes.ErrInvalidAPIResponse, err)
 	}
 	if gerr.Code == http.StatusBadRequest {
 		if operation == attachOp {
-			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPAttach, err)
+			return fmt.Errorf("%w: %w", negtypes.ErrInvalidEPAttach, err)
 		}
 		if operation == detachOp {
-			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPDetach, err)
+			return fmt.Errorf("%w: %w", negtypes.ErrInvalidEPDetach, err)
 		}
 	}
 	return err
@@ -927,7 +1000,7 @@ func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
 // It will trigger syncer retry in the following conditions:
 // 1. Any of the transaction committed needed to be reconciled
 // 2. Input error was not nil
-func (s *transactionSyncer) commitTransaction(op transactionOp, err error, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+func (s *transactionSyncer) commitTransaction(op transactionOp, err error, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, wave *syncWave) {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 
@@ -937,13 +1010,55 @@ func (s *transactionSyncer) commitTransaction(op transactionOp, err error, netwo
 	needRetry := false
 
 	if err != nil {
-		// Trigger NEG initialization if error occurs
-		// This is to prevent if the NEG object is deleted or misconfigured by user
-		s.needInit = true
+		// Trigger NEG initialization if the error can be explained by the NEG
+		// object being deleted or misconfigured.
+		isBadRequest := utils.IsHTTPErrorCode(err, http.StatusBadRequest)
+		switch {
+		case utils.IsQuotaExceededError(err) || negtypes.IsStrategyQuotaError(err):
+			// The NEG is not at fault, and initializing it would spend more
+			// read quota.
+		case isBadRequest && op == attachOp && wave.startedInErrorState:
+			// The attach was rejected again after the previous sync had
+			// already put the syncer in error state, so the NEG itself may be
+			// misconfigured.
+			s.needInit = true
+		case isBadRequest:
+			// Most likely an invalid endpoint in the request, for example a VM
+			// that disappeared during a node drain. operationInternal has put
+			// the syncer in error state for the next sync.
+		default:
+			s.needInit = true
+		}
 		needRetry = true
+		wave.failed = true
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
 	}
 
+	s.clearTransactions(op, networkEndpointMap)
+
+	if needRetry {
+		if negtypes.IsStrategyQuotaError(err) {
+			s.syncer.Sync()
+		} else {
+			if retryErr := s.retry.Retry(); retryErr != nil {
+				s.recordEvent(v1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
+				s.negMetrics.PublishNegControllerErrorCountMetrics(retryErr, false)
+			}
+		}
+		return
+	}
+	// Keep the retry backoff if another transaction of the same wave failed.
+	if !wave.failed {
+		s.retry.Reset()
+	}
+	// always trigger Sync to commit pods
+	s.syncer.Sync()
+}
+
+// clearTransactions removes the transactions of the input endpoints for the
+// operation from the transaction table.
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) clearTransactions(op transactionOp, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	for networkEndpoint := range networkEndpointMap {
 		tr, ok := s.transactions.Get(networkEndpoint)
 		// do not remove if the operation types don't match. There is an edge case where the endpoint could be in an ongoing long detach but we allow an attach to stop detachment.
@@ -959,21 +1074,6 @@ func (s *transactionSyncer) commitTransaction(op transactionOp, err error, netwo
 		}
 		s.transactions.Delete(networkEndpoint)
 	}
-
-	if needRetry {
-		if negtypes.IsStrategyQuotaError(err) {
-			s.syncer.Sync()
-		} else {
-			if retryErr := s.retry.Retry(); retryErr != nil {
-				s.recordEvent(v1.EventTypeWarning, "RetryFailed", fmt.Sprintf("Failed to retry NEG sync for %q: %v", s.NegSyncerKey.String(), retryErr))
-				s.negMetrics.PublishNegControllerErrorCountMetrics(retryErr, false)
-			}
-		}
-		return
-	}
-	s.retry.Reset()
-	// always trigger Sync to commit pods
-	s.syncer.Sync()
 }
 
 // needCommit determines if commitPods need to be invoked.
