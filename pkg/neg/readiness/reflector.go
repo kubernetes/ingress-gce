@@ -179,7 +179,14 @@ func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Ke
 		return nil
 	}
 
-	r.logger.V(3).Info("Syncing pod", "pod", podKey, "neg", neg, "backendService", backendService)
+	var negStr, bsStr string
+	if neg != nil {
+		negStr = neg.String()
+	}
+	if backendService != nil {
+		bsStr = backendService.String()
+	}
+	r.logger.V(3).Info("Syncing pod", "pod", podKey, "neg", negStr, "backendService", bsStr)
 	expectedCondition := r.getExpectedNegCondition(pod, neg, backendService)
 	return r.ensurePodNegCondition(pod, expectedCondition)
 }
