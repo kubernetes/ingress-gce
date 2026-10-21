@@ -1630,6 +1630,78 @@ func TestEnqueueEndpoints(t *testing.T) {
 	}
 }
 
+// TestEnqueueEndpointSliceBatchPeriod verifies that EndpointSlice events are
+// queued immediately without a batch period and held back with one.
+func TestEnqueueEndpointSliceBatchPeriod(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc   string
+		period time.Duration
+		// wantQueueLen is the queue length right after the events are enqueued.
+		wantQueueLen int
+	}{
+		{
+			desc:         "no batch period",
+			period:       0,
+			wantQueueLen: 1,
+		},
+		{
+			// The period is long enough to never elapse during the test.
+			desc:         "batch period",
+			period:       time.Hour,
+			wantQueueLen: 0,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestControllerWithBatchPeriod(t, tc.period)
+			enqueueTestEndpointSlices(controller, 5)
+			if got := controller.endpointQueue.Len(); got != tc.wantQueueLen {
+				t.Errorf("endpointQueue.Len() right after enqueue with batch period %v = %d, want %d", tc.period, got, tc.wantQueueLen)
+			}
+		})
+	}
+}
+
+// TestEnqueueEndpointSliceCoalescing verifies that EndpointSlice events for
+// one Service within the batch period result in a single queue item.
+func TestEnqueueEndpointSliceCoalescing(t *testing.T) {
+	t.Parallel()
+	controller := newTestControllerWithBatchPeriod(t, 100*time.Millisecond)
+	enqueueTestEndpointSlices(controller, 5)
+
+	ensureEndpointEnqueue(t, "default/svc", controller)
+	if got := controller.endpointQueue.Len(); got != 0 {
+		t.Errorf("endpointQueue.Len() after popping coalesced item = %d, want 0", got)
+	}
+}
+
+func newTestControllerWithBatchPeriod(t *testing.T, period time.Duration) *Controller {
+	t.Helper()
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller: %v", err)
+	}
+	t.Cleanup(controller.stop)
+	controller.endpointSyncBatchPeriod = period
+	return controller
+}
+
+// enqueueTestEndpointSlices enqueues n EndpointSlices of the Service default/svc.
+func enqueueTestEndpointSlices(controller *Controller, n int) {
+	for i := range n {
+		controller.enqueueEndpointSlice(&discovery.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("svc-%d", i),
+				Namespace: "default",
+				Labels:    map[string]string{discovery.LabelServiceName: "svc"},
+			},
+		})
+	}
+}
+
 func TestServiceIPFamilies(t *testing.T) {
 	t.Parallel()
 	singleStack := apiv1.IPFamilyPolicySingleStack
