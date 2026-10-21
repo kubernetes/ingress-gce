@@ -26,6 +26,7 @@ func TestL4Namer(t *testing.T) {
 		IPv6FWDenyName    string
 		HcFwName          string
 		IPv6HcFName       string
+		IPv6HcFNameV21    string
 		HcName            string
 	}
 
@@ -58,6 +59,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
 			},
 		},
@@ -81,6 +83,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
 			},
 		},
@@ -104,6 +107,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-012345678901234-01234567890123-hwm400mg-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm40-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-01234567890123456789-0123456789012345678--fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-0123456789012345-012345678901234-hwm400mg-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-01234567890123456789-0123456789012345678-hwm400mg",
 			},
 		},
@@ -127,6 +131,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-012345678901234-01234567890123-hwm400mg-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
 			},
 		},
@@ -150,6 +155,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
 			},
 		},
@@ -173,6 +179,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-namespace-name-956p2p7x-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-namespace-name-956p2p7x-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-namespace-name-956p2p7x-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-namespace-name-956p2p7x",
 			},
 		},
@@ -196,6 +203,7 @@ func TestL4Namer(t *testing.T) {
 				IPv6FWDenyName:    "k8s2-7kpbhpki-012345678901234-01234567890123-hwm400mg-deny-ipv6",
 				HcFwName:          "k8s2-7kpbhpki-l4-shared-hc-fw",
 				IPv6HcFName:       "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
+				IPv6HcFNameV21:    "k8s2-7kpbhpki-l4-shared-hc-fw-ipv6",
 				HcName:            "k8s2-7kpbhpki-l4-shared-hc",
 			},
 		},
@@ -227,6 +235,7 @@ func TestL4Namer(t *testing.T) {
 				HcName:            namer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC),
 				HcFwName:          namer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),
 				IPv6HcFName:       namer.L4IPv6HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC),
+				IPv6HcFNameV21:    namer.L4IPv6HealthCheckFirewallV21(tc.namespace, tc.name, tc.sharedHC),
 			}
 
 			// Assert
@@ -382,19 +391,23 @@ func TestL4NamerForwardingRulesNumbers(t *testing.T) {
 	}
 }
 
-// TestIPv6HcFirewallCollisions presents the existing issue where the firewall names collide for different services.
-// This is most likely to happen when two services names/namespaces are long, have a common prefix with different endings.
-// Health check for IPv6 firewall name trims the last 8 characters, which in the normal case are the hash based on the
-// service name and namespace.
+// TestIPv6HcFirewallCollisions verifies that IPv6 health check firewall names do not collide
+// for long service names/namespaces that have a common prefix with different endings when using
+// the V2.1 naming schema.
+// The V2 schema appended "-fw-ipv6" by trimming the end of the L4Backend name, which for long
+// names erased the whole 8 character hash, so such services shared one firewall rule. The V2.1
+// schema always keeps the hash and the suffix.
 func TestIPv6HcFirewallCollisions(t *testing.T) {
 	t.Parallel()
 	type names struct {
 		Firewall     string
 		FirewallIPv6 string
 		FirewallHc   string
-		// The most problematic
+		// The most problematic: V2 schema truncates the hash for long names.
 		FirewallHcIPv6 string
-		// Without an issue, as they use V3 schema
+		// Uses V2.1 schema, never collides.
+		FirewallHcIPv6V21 string
+		// Without an issue, as they use V2.1 schema
 		FirewallDeny     string
 		FirewallDenyIPv6 string
 	}
@@ -409,36 +422,39 @@ func TestIPv6HcFirewallCollisions(t *testing.T) {
 		{
 			name: "extremely-long-name-that-has-a-different-ending-that-gets-truncated",
 			want: names{
-				Firewall:         commonPrefixedName + "rhlqlhck",
-				FirewallIPv6:     commonPrefixedName + "rhl-ipv6",
-				FirewallHc:       commonPrefixedName + "rhlql-fw",
-				FirewallHcIPv6:   collidedFirewallIPv6HcName, // the name is shared between services
-				FirewallDeny:     "k8s2-7kpbhpki-defa-extremely-long-name-that-has-a-rhlqlhck-deny",
-				FirewallDenyIPv6: "k8s2-7kpbhpki-def-extremely-long-name-that-h-rhlqlhck-deny-ipv6",
+				Firewall:          commonPrefixedName + "rhlqlhck",
+				FirewallIPv6:      commonPrefixedName + "rhl-ipv6",
+				FirewallHc:        commonPrefixedName + "rhlql-fw",
+				FirewallHcIPv6:    collidedFirewallIPv6HcName, // the V2 name is shared between services
+				FirewallHcIPv6V21: "k8s2-7kpbhpki-def-extremely-long-name-that-has-rhlqlhck-fw-ipv6",
+				FirewallDeny:      "k8s2-7kpbhpki-defa-extremely-long-name-that-has-a-rhlqlhck-deny",
+				FirewallDenyIPv6:  "k8s2-7kpbhpki-def-extremely-long-name-that-h-rhlqlhck-deny-ipv6",
 			},
 		},
 		{
 			name: "extremely-long-name-that-has-a-different-ending-that-gets-shortened",
 			want: names{
 				// hash is different from above
-				Firewall:         commonPrefixedName + "eq7vnxfg",
-				FirewallIPv6:     commonPrefixedName + "eq7-ipv6",
-				FirewallHc:       commonPrefixedName + "eq7vn-fw",
-				FirewallHcIPv6:   collidedFirewallIPv6HcName, // the name is shared between services
-				FirewallDeny:     "k8s2-7kpbhpki-defa-extremely-long-name-that-has-a-eq7vnxfg-deny",
-				FirewallDenyIPv6: "k8s2-7kpbhpki-def-extremely-long-name-that-h-eq7vnxfg-deny-ipv6",
+				Firewall:          commonPrefixedName + "eq7vnxfg",
+				FirewallIPv6:      commonPrefixedName + "eq7-ipv6",
+				FirewallHc:        commonPrefixedName + "eq7vn-fw",
+				FirewallHcIPv6:    collidedFirewallIPv6HcName, // the V2 name is shared between services
+				FirewallHcIPv6V21: "k8s2-7kpbhpki-def-extremely-long-name-that-has-eq7vnxfg-fw-ipv6",
+				FirewallDeny:      "k8s2-7kpbhpki-defa-extremely-long-name-that-has-a-eq7vnxfg-deny",
+				FirewallDenyIPv6:  "k8s2-7kpbhpki-def-extremely-long-name-that-h-eq7vnxfg-deny-ipv6",
 			},
 		},
 		{
 			name: "extremely-long-name-that-has-a-different-ending-that-gets-shortened-but-given-the-length-difference-it-doesnt-collide",
 			want: names{
 				// Compared to above, the namespace is cut to be shorter, so instead of "defa" we have "def"
-				Firewall:         "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4pfl8",
-				FirewallIPv6:     "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u-ipv6",
-				FirewallHc:       "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4p-fw",
-				FirewallHcIPv6:   "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe--fw-ipv6",
-				FirewallDeny:     "k8s2-7kpbhpki-de-extremely-long-name-that-has-a-d-l0u4pfl8-deny",
-				FirewallDenyIPv6: "k8s2-7kpbhpki-de-extremely-long-name-that-ha-l0u4pfl8-deny-ipv6",
+				Firewall:          "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4pfl8",
+				FirewallIPv6:      "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u-ipv6",
+				FirewallHc:        "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe-l0u4p-fw",
+				FirewallHcIPv6:    "k8s2-7kpbhpki-def-extremely-long-name-that-has-a-diffe--fw-ipv6",
+				FirewallHcIPv6V21: "k8s2-7kpbhpki-de-extremely-long-name-that-has--l0u4pfl8-fw-ipv6",
+				FirewallDeny:      "k8s2-7kpbhpki-de-extremely-long-name-that-has-a-d-l0u4pfl8-deny",
+				FirewallDenyIPv6:  "k8s2-7kpbhpki-de-extremely-long-name-that-ha-l0u4pfl8-deny-ipv6",
 			},
 		},
 	}
@@ -450,16 +466,46 @@ func TestIPv6HcFirewallCollisions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := names{
-				Firewall:         namer.L4Firewall(namespace, tc.name),
-				FirewallIPv6:     namer.L4IPv6Firewall(namespace, tc.name),
-				FirewallHc:       namer.L4HealthCheckFirewall(namespace, tc.name, false),
-				FirewallHcIPv6:   namer.L4IPv6HealthCheckFirewall(namespace, tc.name, false),
-				FirewallDeny:     namer.L4FirewallDeny(namespace, tc.name),
-				FirewallDenyIPv6: namer.L4IPv6FirewallDeny(namespace, tc.name),
+				Firewall:          namer.L4Firewall(namespace, tc.name),
+				FirewallIPv6:      namer.L4IPv6Firewall(namespace, tc.name),
+				FirewallHc:        namer.L4HealthCheckFirewall(namespace, tc.name, false),
+				FirewallHcIPv6:    namer.L4IPv6HealthCheckFirewall(namespace, tc.name, false),
+				FirewallHcIPv6V21: namer.L4IPv6HealthCheckFirewallV21(namespace, tc.name, false),
+				FirewallDeny:      namer.L4FirewallDeny(namespace, tc.name),
+				FirewallDenyIPv6:  namer.L4IPv6FirewallDeny(namespace, tc.name),
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("want != got, (-want, +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestIPv6HcFirewallV21MatchesV2ForShortNames verifies that services with short
+// names keep the same IPv6 health check firewall name under the V2.1 schema as under
+// the V2 schema, so no migration is needed for them.
+func TestIPv6HcFirewallV21MatchesV2ForShortNames(t *testing.T) {
+	t.Parallel()
+	namer := NewL4Namer(kubeSystemUID, nil)
+
+	for _, tc := range []struct {
+		namespace, name string
+	}{
+		{"default", "svc"},
+		{"namespace", "name"},
+		{"kube-system", "a-twenty-char-name-x"}, // 11 + 20 = 31 characters, the longest that stays identical
+		{"0123456789", "012345678901234567890"}, // 10 + 21 = 31 characters
+	} {
+		got := namer.L4IPv6HealthCheckFirewallV21(tc.namespace, tc.name, false)
+		want := namer.L4IPv6HealthCheckFirewall(tc.namespace, tc.name, false)
+		if got != want {
+			t.Errorf("L4IPv6HealthCheckFirewallV21(%q, %q) = %q, want V2 name %q", tc.namespace, tc.name, got, want)
+		}
+	}
+	// One character more and the V2 name starts losing the hash.
+	got := namer.L4IPv6HealthCheckFirewallV21("kube-system", "a-twenty-one-char-name", false)
+	v2 := namer.L4IPv6HealthCheckFirewall("kube-system", "a-twenty-one-char-name", false)
+	if got == v2 {
+		t.Errorf("L4IPv6HealthCheckFirewallV21() = %q, want a name different from the V2 name once the hash gets truncated", got)
 	}
 }

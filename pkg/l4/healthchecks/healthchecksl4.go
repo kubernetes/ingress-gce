@@ -67,16 +67,20 @@ type l4HealthChecks struct {
 	cloud               *gce.Cloud
 	recorder            record.EventRecorder
 	useDenyFirewalls    bool
+	// useIPv6HCFirewallV21Naming selects the V2.1 naming schema for non-shared
+	// IPv6 health check firewall rules (see namer.L4IPv6HealthCheckFirewallV21).
+	useIPv6HCFirewallV21Naming bool
 }
 
-func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, logger klog.Logger, useDenyFirewalls bool) *l4HealthChecks {
+func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder, logger klog.Logger, useDenyFirewalls, useIPv6HCFirewallV21Naming bool) *l4HealthChecks {
 	logger = logger.WithName("L4HealthChecks")
 	return &l4HealthChecks{
-		sharedResourcesLock: sharedLock,
-		cloud:               cloud,
-		recorder:            recorder,
-		hcProvider:          NewHealthChecks(cloud, meta.VersionGA, logger),
-		useDenyFirewalls:    useDenyFirewalls,
+		sharedResourcesLock:        sharedLock,
+		cloud:                      cloud,
+		recorder:                   recorder,
+		hcProvider:                 NewHealthChecks(cloud, meta.VersionGA, logger),
+		useDenyFirewalls:           useDenyFirewalls,
+		useIPv6HCFirewallV21Naming: useIPv6HCFirewallV21Naming,
 	}
 }
 
@@ -230,7 +234,7 @@ func (l4hc *l4HealthChecks) ensureFirewall(l4Type utils.L4LBType, ipVersion addr
 
 	if ipVersion == address.IPv6Version {
 		ipFamily = "IPv6"
-		hcFwName = namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
+		hcFwName = l4hc.ipv6HealthCheckFirewallName(namer, svc, isSharedHC)
 		gceResourceInError = annotations.FirewallForHealthcheckIPv6Resource
 	} else {
 		hcFwName = namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
@@ -272,10 +276,97 @@ func (l4hc *l4HealthChecks) ensureFirewall(l4Type utils.L4LBType, ipVersion addr
 	}
 
 	if ipVersion == address.IPv6Version {
+		if err := l4hc.cleanupOtherSchemaIPv6HealthCheckFirewall(svc, namer, isSharedHC, hcFwName, fwLogger); err != nil {
+			fwLogger.Error(err, "Error deleting IPv6 firewall for health check with the other naming schema")
+			hcResult.GceResourceInError = gceResourceInError
+			hcResult.Err = err
+			return
+		}
 		hcResult.HCFirewallRuleIPv6Name = hcFwName
 	} else {
 		hcResult.HCFirewallRuleName = hcFwName
 	}
+}
+
+// ipv6HealthCheckFirewallName returns the name of the IPv6 health check firewall rule
+// for the Service in the naming schema currently in use.
+func (l4hc *l4HealthChecks) ipv6HealthCheckFirewallName(namer namer.L4ResourcesNamer, svc *corev1.Service, isSharedHC bool) string {
+	if !isSharedHC && l4hc.useIPv6HCFirewallV21Naming {
+		return namer.L4IPv6HealthCheckFirewallV21(svc.Namespace, svc.Name, isSharedHC)
+	}
+	return namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
+}
+
+// otherSchemaIPv6HealthCheckFirewallName returns the name of the non-shared IPv6 health
+// check firewall rule in the naming schema that is not in use (V2 when V2.1 is in use and
+// vice versa). It returns "" for shared health checks, and when both schemas produce the
+// same name, which is the case when len(namespace)+len(name) < 32.
+func (l4hc *l4HealthChecks) otherSchemaIPv6HealthCheckFirewallName(namer namer.L4ResourcesNamer, svc *corev1.Service, isSharedHC bool) string {
+	if isSharedHC {
+		return ""
+	}
+	current := l4hc.ipv6HealthCheckFirewallName(namer, svc, isSharedHC)
+	other := namer.L4IPv6HealthCheckFirewallV21(svc.Namespace, svc.Name, false)
+	if l4hc.useIPv6HCFirewallV21Naming {
+		other = namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	}
+	if other == current {
+		return ""
+	}
+	return other
+}
+
+// cleanupOtherSchemaIPv6HealthCheckFirewall deletes the non-shared IPv6 health check
+// firewall rule named with the naming schema that is not in use, which is left behind
+// when migrating from V2 to V2.1 naming or when rolling back. It runs after the rule
+// `hcFwName` has been ensured.
+//
+// The other rule is deleted only if:
+//   - it exists, checked with a GET so that the steady state does not issue DELETE
+//     calls that fail with 404 and pollute audit logs, and
+//   - the rule `hcFwName` exists. On Shared VPC clusters without firewall permissions,
+//     ensuring `hcFwName` only raises an event for the security admin, so the other
+//     rule must keep allowing health checks until the new rule is created.
+//
+// In steady state this costs one GET per sync, and only for Services whose names differ
+// between the schemas (len(namespace)+len(name) >= 32).
+//
+// In V2 naming, the other name of a long-named Service may collide with the rule of
+// another Service with the same trimmed namespace/name prefix. Deleting it is safe: that
+// Service is migrated by its own sync and the colliding rule is already broken.
+func (l4hc *l4HealthChecks) cleanupOtherSchemaIPv6HealthCheckFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, isSharedHC bool, hcFwName string, fwLogger klog.Logger) error {
+	otherFwName := l4hc.otherSchemaIPv6HealthCheckFirewallName(namer, svc, isSharedHC)
+	if otherFwName == "" {
+		return nil
+	}
+	logger := fwLogger.WithValues("otherSchemaHealthcheckFirewallName", otherFwName)
+
+	exists, err := l4hc.firewallExists(otherFwName)
+	if err != nil || !exists {
+		return err
+	}
+	exists, err = l4hc.firewallExists(hcFwName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		logger.V(2).Info("Keeping IPv6 firewall for health check with the other naming schema until the current rule exists")
+		return nil
+	}
+	logger.V(2).Info("Deleting IPv6 firewall for health check with the other naming schema")
+	return l4hc.deleteFirewall(otherFwName, svc, logger)
+}
+
+// firewallExists returns whether the firewall rule `name` exists.
+func (l4hc *l4HealthChecks) firewallExists(name string) (bool, error) {
+	_, err := firewalls.NewFirewallAdapter(l4hc.cloud).GetFirewall(name)
+	if err == nil {
+		return true, nil
+	}
+	if utils.IsNotFoundError(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (l4hc *l4HealthChecks) firewallPriority() *int {
@@ -368,7 +459,7 @@ func (l4hc *l4HealthChecks) deleteIPv6HealthCheckFirewall(svc *corev1.Service, n
 	start := time.Now()
 
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, isSharedHC)
-	ipv6hcFwName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
+	ipv6hcFwName := l4hc.ipv6HealthCheckFirewallName(namer, svc, isSharedHC)
 
 	fwLogger := svcLogger.WithValues("healthcheckFirewallName", ipv6hcFwName)
 	fwLogger.V(3).Info("Deleting IPv6 Firewall for a healthcheck")
@@ -376,7 +467,30 @@ func (l4hc *l4HealthChecks) deleteIPv6HealthCheckFirewall(svc *corev1.Service, n
 		fwLogger.V(3).Info("Finished deleting IPv6 Firewall for a healthcheck", "timeTaken", time.Since(start))
 	}()
 
-	return l4hc.deleteHealthCheckFirewall(svc, hcName, ipv6hcFwName, isSharedHC, l4type, fwLogger)
+	resourceInError, err := l4hc.deleteHealthCheckFirewall(svc, hcName, ipv6hcFwName, isSharedHC, l4type, fwLogger)
+	if err != nil {
+		return resourceInError, err
+	}
+
+	// Also delete the rule named with the other naming schema, which exists if the Service
+	// is deleted after the naming flag was flipped and before it was resynced, or after its
+	// IP family was switched to IPv4 (IPv6 health check firewall rules are only deleted
+	// when the Service is deleted).
+	otherFwName := l4hc.otherSchemaIPv6HealthCheckFirewallName(namer, svc, isSharedHC)
+	if otherFwName == "" {
+		return "", nil
+	}
+	otherFwLogger := svcLogger.WithValues("healthcheckFirewallName", otherFwName)
+	exists, err := l4hc.firewallExists(otherFwName)
+	if err == nil && exists {
+		otherFwLogger.V(3).Info("Deleting IPv6 Firewall for a healthcheck with the other naming schema")
+		err = l4hc.deleteFirewall(otherFwName, svc, otherFwLogger)
+	}
+	if err != nil {
+		otherFwLogger.Error(err, "Failed to delete IPv6 firewall rule with the other naming schema for loadbalancer service")
+		return annotations.FirewallForHealthcheckIPv6Resource, err
+	}
+	return "", nil
 }
 
 func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, hcName, hcFwName string, sharedHC bool, l4Type utils.L4LBType, fwLogger klog.Logger) (string, error) {

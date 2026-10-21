@@ -190,7 +190,7 @@ func NewL4NetLB(params *L4NetLBParams, logger klog.Logger) *L4NetLB {
 		Service:                            params.Service,
 		NamespacedName:                     types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:                        backends.NewPoolWithConnectionTrackingPolicy(params.Cloud, params.Namer, params.StrongSessionAffinityEnabled),
-		healthChecks:                       healthchecks.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls),
+		healthChecks:                       healthchecks.NewL4HealthChecks(params.Cloud, params.Recorder, logger, params.UseDenyFirewalls, flags.F.EnableL4IPv6HealthCheckFirewallV21Naming),
 		forwardingRules:                    forwardingRulesProvider,
 		mixedManager:                       mixedManager,
 		enableDualStack:                    params.DualStackEnabled,
