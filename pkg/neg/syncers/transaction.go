@@ -73,6 +73,12 @@ type transactionSyncer struct {
 	needInit bool
 	// transactions stores each transaction
 	transactions networkEndpointTransactionTable
+	// hasTransactionError tracks whether any transaction in the current wave
+	// failed so concurrent succeeding transactions do not reset retry backoff.
+	hasTransactionError bool
+	// syncInErrorState records whether the current transaction wave started
+	// while the syncer was already in errorState (degraded mode).
+	syncInErrorState bool
 
 	podLister           cache.Indexer
 	serviceLister       cache.Indexer
@@ -257,7 +263,9 @@ func (s *transactionSyncer) sync() error {
 	err := s.syncInternal()
 	if err != nil {
 		s.syncLock.Lock()
-		s.needInit = true
+		if !utils.IsQuotaExceededError(err) && !negtypes.IsStrategyQuotaError(err) {
+			s.needInit = true
+		}
 		s.syncLock.Unlock()
 	}
 	return err
@@ -557,6 +565,7 @@ func (s *transactionSyncer) setErrorState() {
 // syncLock must already be acquired before execution
 func (s *transactionSyncer) resetErrorState() {
 	s.errorState = false
+	s.syncInErrorState = false
 }
 
 // candidateNodeFilter returns the zone filter appropriate for this syncer's
@@ -774,6 +783,8 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
 func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, endpointPodLabelMap labels.EndpointPodLabelMap, migrationZone negtypes.NEGLocation) error {
+	s.hasTransactionError = false
+	s.syncInErrorState = s.inErrorState()
 	syncFunc := func(endpointMap map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for negLocation, endpointSet := range endpointMap {
 			zone := negLocation.Zone
@@ -783,9 +794,17 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
-			if err != nil {
-				return err
+			var batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint
+			allEndpoints := make(map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, endpointSet.Len())
+			for endpointSet.Len() > 0 {
+				batch, err := makeEndpointBatch(endpointSet, s.NegType, endpointPodLabelMap, s.logger)
+				if err != nil {
+					return err
+				}
+				batches = append(batches, batch)
+				for networkEndpoint, compositeEndpoint := range batch {
+					allEndpoints[networkEndpoint] = compositeEndpoint
+				}
 			}
 
 			transEntry := transactionEntry{
@@ -795,20 +814,21 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			// Insert networkEndpoint into transaction table
-			for networkEndpoint := range batch {
+			for networkEndpoint := range allEndpoints {
 				s.transactions.Put(networkEndpoint, transEntry)
 			}
 
 			if operation == attachOp {
-				go s.attachNetworkEndpoints(negLocation, batch)
+				go s.attachNetworkEndpoints(negLocation, batches, allEndpoints)
 			}
 			if operation == detachOp {
-				if zone == migrationZone.Zone && subnet == migrationZone.Subnet {
+				isMigrationDetach := zone == migrationZone.Zone && subnet == migrationZone.Subnet
+				if isMigrationDetach {
 					// Prevent any further migration-detachments from starting while one
 					// is already in progress.
 					s.dsMigrator.Pause()
 				}
-				go s.detachNetworkEndpoints(negLocation, batch, zone == migrationZone.Zone && subnet == migrationZone.Subnet)
+				go s.detachNetworkEndpoints(negLocation, batches, allEndpoints, isMigrationDetach)
 			}
 		}
 		return nil
@@ -825,18 +845,28 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints runs operation for attaching network endpoints.
-func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
-	err := s.operationInternal(attachOp, negLocation, networkEndpointMap, s.logger)
+func (s *transactionSyncer) attachNetworkEndpoints(negLocation negtypes.NEGLocation, batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, allEndpoints map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(allEndpoints), "batchCount", len(batches), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	var err error
+	for _, batch := range batches {
+		if err = s.operationInternal(attachOp, negLocation, batch, s.logger); err != nil {
+			break
+		}
+	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(attachOp, err, networkEndpointMap)
+	s.commitTransaction(attachOp, err, allEndpoints)
 }
 
 // detachNetworkEndpoints runs operation for detaching network endpoints.
-func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocation, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
-	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
-	err := s.operationInternal(detachOp, negLocation, networkEndpointMap, s.logger)
+func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocation, batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, allEndpoints map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, hasMigrationDetachments bool) {
+	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(allEndpoints), "batchCount", len(batches), "negSyncerKey", s.NegSyncerKey.String(), "zone", negLocation.Zone, "subnet", negLocation.Subnet)
+	var err error
+	for _, batch := range batches {
+		if err = s.operationInternal(detachOp, negLocation, batch, s.logger); err != nil {
+			break
+		}
+	}
 
 	if hasMigrationDetachments {
 		// Unpause the migration since the ongoing migration-detachments have
@@ -845,7 +875,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(negLocation negtypes.NEGLocat
 	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
-	s.commitTransaction(detachOp, err, networkEndpointMap)
+	s.commitTransaction(detachOp, err, allEndpoints)
 }
 
 // operationInternal executes NEG API call and commits the transactions
@@ -873,25 +903,29 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 
 	if err == nil {
 		s.recordEvent(v1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), negName, zone))
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, s.inErrorState())
+		s.syncLock.Lock()
+		inErrorState := s.inErrorState()
+		s.syncLock.Unlock()
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, nil, inErrorState)
 	} else {
 		s.recordEvent(v1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), negName, zone, err))
-		err := checkEndpointBatchErr(err, operation)
+		err = checkEndpointBatchErr(err, operation)
 		syncErr := negtypes.ClassifyError(err)
 		// If the API call fails for invalid endpoint update request in any goroutine,
 		// we would set error state and retry. For successful calls, we won't update
 		// error state, so its value won't be overwritten within API call go routines.
+		s.syncLock.Lock()
 		if syncErr.IsErrorState {
 			s.logger.Error(err, "Detected unexpected error when checking endpoint update response", "operation", operation)
-			s.syncLock.Lock()
 			s.logger.Info("Enter degraded mode", "reason", syncErr.Reason)
 			if s.enableDegradedMode {
 				s.recordEvent(v1.EventTypeWarning, "EnterDegradedMode", fmt.Sprintf("Entering degraded mode for NEG %s due to sync err: %v", s.NegSyncerKey.String(), syncErr))
 			}
 			s.setErrorState()
-			s.syncLock.Unlock()
 		}
-		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, s.inErrorState())
+		inErrorState := s.inErrorState()
+		s.syncLock.Unlock()
+		s.syncMetricsCollector.UpdateSyncerStatusInMetrics(s.NegSyncerKey, syncErr, inErrorState)
 	}
 
 	s.negMetrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
@@ -904,14 +938,14 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, negLocati
 func checkEndpointBatchErr(err error, operation transactionOp) error {
 	var gerr *googleapi.Error
 	if !errors.As(err, &gerr) {
-		return fmt.Errorf("%w: %v", negtypes.ErrInvalidAPIResponse, err)
+		return fmt.Errorf("%w: %w", negtypes.ErrInvalidAPIResponse, err)
 	}
 	if gerr.Code == http.StatusBadRequest {
 		if operation == attachOp {
-			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPAttach, err)
+			return fmt.Errorf("%w: %w", negtypes.ErrInvalidEPAttach, err)
 		}
 		if operation == detachOp {
-			return fmt.Errorf("%w: %v", negtypes.ErrInvalidEPDetach, err)
+			return fmt.Errorf("%w: %w", negtypes.ErrInvalidEPDetach, err)
 		}
 	}
 	return err
@@ -937,10 +971,23 @@ func (s *transactionSyncer) commitTransaction(op transactionOp, err error, netwo
 	needRetry := false
 
 	if err != nil {
-		// Trigger NEG initialization if error occurs
-		// This is to prevent if the NEG object is deleted or misconfigured by user
-		s.needInit = true
+		// Trigger NEG initialization if error occurs, unless the error is due to
+		// quota exhaustion or an invalid endpoint batch request (400 Bad Request).
+		// For attachOp, if the current sync wave was already calculated in
+		// degraded mode (syncInErrorState) and still receives a 400 Bad Request,
+		// trigger initialization in case the NEG itself is misconfigured in GCE.
+		isQuotaErr := utils.IsQuotaExceededError(err) || negtypes.IsStrategyQuotaError(err)
+		isInvalidEPBatch := utils.IsHTTPErrorCode(err, http.StatusBadRequest) ||
+			errors.Is(err, negtypes.ErrInvalidEPAttach) ||
+			errors.Is(err, negtypes.ErrInvalidEPDetach)
+		if !isQuotaErr && (!isInvalidEPBatch || (op == attachOp && s.syncInErrorState)) {
+			s.needInit = true
+		}
+		if isInvalidEPBatch || negtypes.ClassifyError(err).IsErrorState {
+			s.setErrorState()
+		}
 		needRetry = true
+		s.hasTransactionError = true
 		s.negMetrics.PublishNegControllerErrorCountMetrics(err, false)
 	}
 
@@ -960,6 +1007,10 @@ func (s *transactionSyncer) commitTransaction(op transactionOp, err error, netwo
 		s.transactions.Delete(networkEndpoint)
 	}
 
+	if len(s.transactions.Keys()) == 0 {
+		s.syncInErrorState = s.inErrorState()
+	}
+
 	if needRetry {
 		if negtypes.IsStrategyQuotaError(err) {
 			s.syncer.Sync()
@@ -971,7 +1022,11 @@ func (s *transactionSyncer) commitTransaction(op transactionOp, err error, netwo
 		}
 		return
 	}
-	s.retry.Reset()
+	if !s.hasTransactionError {
+		s.retry.Reset()
+	} else if len(s.transactions.Keys()) == 0 {
+		s.hasTransactionError = false
+	}
 	// always trigger Sync to commit pods
 	s.syncer.Sync()
 }

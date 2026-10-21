@@ -252,6 +252,28 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
+			{
+				desc: "add more than MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints in a single sync",
+				addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("10.0.0.1"), 1200, testInstance1, targetPort)),
+				},
+				removeEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)).Union(generateEndpointSet(net.ParseIP("10.0.0.1"), 1200, testInstance1, targetPort)),
+					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				},
+			},
+			{
+				desc:         "remove more than MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints in a single sync",
+				addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("10.0.0.1"), 1200, testInstance1, targetPort)),
+				},
+				expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -1008,6 +1030,61 @@ func TestCommitTransaction(t *testing.T) {
 			false,
 			detachOp,
 		},
+		{
+			"bad request error retries without triggering NEG re-initialization when not in degraded mode",
+			&googleapi.Error{Code: http.StatusBadRequest, Message: "invalid endpoint"},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			9,
+			3,
+			false,
+			detachOp,
+		},
+		{
+			"bad request error on attach in degraded mode triggers NEG re-initialization",
+			&googleapi.Error{Code: http.StatusBadRequest, Message: "invalid endpoint in degraded mode"},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			10,
+			4,
+			true,
+			attachOp,
+		},
+		{
+			"bad request error on detach in degraded mode does not trigger NEG re-initialization",
+			&googleapi.Error{Code: http.StatusBadRequest, Message: "invalid detach endpoint in degraded mode"},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			11,
+			5,
+			false,
+			detachOp,
+		},
+		{
+			"quota exceeded error retries without triggering NEG re-initialization",
+			&googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			12,
+			6,
+			false,
+			attachOp,
+		},
+		{
+			"not found error retries and triggers NEG re-initialization",
+			&googleapi.Error{Code: http.StatusNotFound, Message: "NEG not found"},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			13,
+			7,
+			true,
+			attachOp,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1033,6 +1110,109 @@ func TestCommitTransaction(t *testing.T) {
 		}
 
 	}
+}
+
+func TestCommitTransactionPreservesRetryBackoffOnPartialWaveFailure(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals), negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	ts := &testSyncer{s.(*syncer), 0}
+	retryer := &countingRetryHandler{ts: ts}
+	transactionSyncer.syncer = ts
+	transactionSyncer.retry = retryer
+
+	zone1Batch := generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080"), labels.EndpointPodLabelMap{})
+	zone2Batch := generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080"), labels.EndpointPodLabelMap{})
+
+	table := NewTransactionTable()
+	generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+	generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+	transactionSyncer.transactions = table
+
+	// Zone 1 fails first and schedules a retry.
+	transactionSyncer.commitTransaction(attachOp, &googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"}, zone1Batch)
+	if retryer.RetryCount != 1 || retryer.ResetCount != 0 {
+		t.Fatalf("after Zone 1 failure: RetryCount=%d ResetCount=%d, want RetryCount=1 ResetCount=0", retryer.RetryCount, retryer.ResetCount)
+	}
+
+	// Zone 2 succeeds in the same wave; retry backoff must not be reset.
+	transactionSyncer.commitTransaction(attachOp, nil, zone2Batch)
+	if retryer.ResetCount != 0 {
+		t.Fatalf("after Zone 2 success in failed wave: ResetCount=%d, want 0", retryer.ResetCount)
+	}
+
+	// Next wave succeeds cleanly; retry backoff should now be reset.
+	generateTransaction(transactionSyncer.transactions, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+	transactionSyncer.commitTransaction(attachOp, nil, zone1Batch)
+	if retryer.ResetCount != 1 {
+		t.Fatalf("after clean wave success: ResetCount=%d, want 1", retryer.ResetCount)
+	}
+}
+
+func TestCommitTransactionMultiZoneBadRequestInSameWave(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals), negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	ts := &testSyncer{s.(*syncer), 0}
+	retryer := &countingRetryHandler{ts: ts}
+	transactionSyncer.syncer = ts
+	transactionSyncer.retry = retryer
+	transactionSyncer.needInit = false
+	transactionSyncer.resetErrorState()
+
+	zone1Batch := generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080"), labels.EndpointPodLabelMap{})
+	zone2Batch := generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080"), labels.EndpointPodLabelMap{})
+
+	table := NewTransactionTable()
+	generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+	generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+	transactionSyncer.transactions = table
+
+	badReqErr := &googleapi.Error{Code: http.StatusBadRequest, Message: "invalid endpoint"}
+
+	// Zone 1 fails with 400 Bad Request in normal mode; needInit must remain false.
+	transactionSyncer.commitTransaction(attachOp, badReqErr, zone1Batch)
+	if transactionSyncer.needInit {
+		t.Fatalf("after Zone 1 400 Bad Request in normal-mode wave: needInit = true, want false")
+	}
+
+	// Zone 2 fails with 400 Bad Request in the SAME wave; needInit must still remain false.
+	transactionSyncer.commitTransaction(attachOp, badReqErr, zone2Batch)
+	if transactionSyncer.needInit {
+		t.Fatalf("after Zone 2 400 Bad Request in same normal-mode wave: needInit = true, want false")
+	}
+
+	// Now that the wave has completed and the syncer is in degraded mode, a subsequent
+	// attachOp 400 Bad Request in the degraded-mode wave should set needInit = true.
+	generateTransaction(transactionSyncer.transactions, transactionEntry{Zone: testZone1, Operation: attachOp}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+	transactionSyncer.commitTransaction(attachOp, badReqErr, zone1Batch)
+	if !transactionSyncer.needInit {
+		t.Fatalf("after attachOp 400 Bad Request in subsequent degraded-mode wave: needInit = false, want true")
+	}
+}
+
+type countingRetryHandler struct {
+	ts         *testSyncer
+	RetryCount int
+	ResetCount int
+}
+
+func (r *countingRetryHandler) Retry() error {
+	r.RetryCount++
+	r.ts.Sync()
+	return nil
+}
+
+func (r *countingRetryHandler) Reset() {
+	r.ResetCount++
 }
 
 func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
