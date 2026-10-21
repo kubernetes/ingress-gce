@@ -21,6 +21,7 @@ const (
 	firewallHcSuffix            = "-fw"
 	ipv6Suffix                  = "ipv6"
 	sharedFirewallHcSuffix      = sharedHcSuffix + firewallHcSuffix
+	firewallHcIPv6SuffixHashed  = "fw-" + ipv6Suffix // suffix without leading dash, see L4FirewallV21
 	maxResourceNameLength       = 63
 	l3ProtocolWithoutUnderscore = "l3"
 	// base36 is used to encode numbers using smaller footprint than decimal
@@ -257,12 +258,31 @@ func (namer *L4Namer) L4NetLBIPv6ForwardingRule(namespace, name, protocol string
 }
 
 // L4IPv6HealthCheckFirewall returns the name of the IPv6 L4 LB health check firewall rule.
+// For non-shared health checks the end of L4Backend is truncated to fit "-fw-ipv6", which
+// removes the namespace/name hash when len(namespace)+len(name) >= 39, so long names can
+// collide (see L4IPv6HealthCheckFirewallWithHash).
 func (namer *L4Namer) L4IPv6HealthCheckFirewall(namespace, name string, shared bool) string {
 	if shared {
 		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix, ipv6Suffix}, "-")
 	}
 	l4Name := namer.L4Backend(namespace, name)
 	return namer.hcFirewallName(l4Name, "-"+ipv6Suffix)
+}
+
+// L4IPv6HealthCheckFirewallWithHash returns the name of the IPv6 L4 LB health check firewall
+// rule that always keeps the namespace/name hash (see L4FirewallV21):
+//
+//	k8s2-{uid}-{ns}-{name}-{nsNameHash}-fw-ipv6
+//
+// Output name is at most 63 characters; the "-fw-ipv6" suffix and the 8-character hash
+// are always kept and only the "{ns}-{name}" part is trimmed. For namespace+name shorter
+// than 32 characters the result is identical to L4IPv6HealthCheckFirewall.
+// For shared health checks the name is k8s2-{uid}-l4-shared-hc-fw-ipv6.
+func (namer *L4Namer) L4IPv6HealthCheckFirewallWithHash(namespace, name string, shared bool) string {
+	if shared {
+		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix, ipv6Suffix}, "-")
+	}
+	return namer.L4FirewallV21(namespace, name, firewallHcIPv6SuffixHashed)
 }
 
 // IsNEG indicates if the given name is a NEG following the L4 naming convention.
