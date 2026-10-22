@@ -291,6 +291,7 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 					pcClient,
 					gceCreator,
 					rootNamer,
+					flags.F.ResyncPeriod,
 					stopCh,
 				)
 			}()
@@ -438,7 +439,7 @@ func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
 	go Start(
 		logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopoClient,
 		kubeSystemUID, kubeClient, pcClient,
-		gceCreator, rootNamer, globalStop,
+		gceCreator, rootNamer, flags.F.ResyncPeriod, globalStop,
 	)
 
 	// Without the time.Sleep: the main test goroutine would create resources
@@ -1123,6 +1124,7 @@ func TestProviderConfigErrorCases(t *testing.T) {
 					pcClient,
 					gceCreator,
 					rootNamer,
+					flags.F.ResyncPeriod,
 					stopCh,
 				)
 			}()

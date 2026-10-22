@@ -44,6 +44,9 @@ type InformerSet struct {
 	GkeNetworkParams cache.SharedIndexInformer // GKENetworkParamSets CRD
 	NodeTopology     cache.SharedIndexInformer // NodeTopology CRD
 
+	// ResyncPeriod is the resync period configured for all informers in the set.
+	ResyncPeriod metav1.Duration
+
 	// State tracking
 	started bool
 }
@@ -59,7 +62,9 @@ func NewInformerSet(
 	nodeTopologyClient nodetopologyclient.Interface,
 	resyncPeriod metav1.Duration,
 ) *InformerSet {
-	infSet := &InformerSet{}
+	infSet := &InformerSet{
+		ResyncPeriod: resyncPeriod,
+	}
 
 	infSet.kubeFactory = informers.NewSharedInformerFactory(kubeClient, resyncPeriod.Duration)
 	if svcNegClient != nil {

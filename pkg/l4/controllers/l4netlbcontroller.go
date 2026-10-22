@@ -78,6 +78,8 @@ type L4NetLBController struct {
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
+	// periodicEnqueuer re-enqueues services on informer resyncs.
+	periodicEnqueuer *periodicEnqueuer
 
 	backendPool                 *backends.Pool
 	instancePool                instancegroups.Manager
@@ -123,9 +125,13 @@ func NewL4NetLBController(
 		enableNEGSupport:            ctx.EnableL4NetLBNEGs,
 		enableNEGAsDefault:          ctx.EnableL4NetLBNEGsDefault,
 		serviceVersions:             NewServiceVersionsTracker(),
+		periodicEnqueuer:            newPeriodicEnqueuer(ctx.ResyncPeriod, ctx.L4ResyncSpreadFactor),
 		logger:                      logger,
 		hasSynced:                   ctx.HasSynced,
 		enableRBSDefault:            ctx.EnableL4NetLBRBSByDefault,
+	}
+	if window := l4netLBc.periodicEnqueuer.window; window > 0 {
+		logger.Info("Spreading periodic re-enqueues of services", "window", window, "resyncPeriod", ctx.ResyncPeriod)
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -157,6 +163,7 @@ func NewL4NetLBController(
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
+			l4netLBc.periodicEnqueuer.cancel(svcKey)
 			if shouldProcess, _ := l4netLBc.shouldProcessService(addSvc, nil, svcLogger); shouldProcess {
 				svcLogger.V(3).Info("L4 External LoadBalancer Service added, enqueuing")
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Event(addSvc, v1.EventTypeNormal, "ADD", svcKey)
@@ -174,14 +181,26 @@ func NewL4NetLBController(
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			if shouldProcess, isResync := l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger); shouldProcess {
-				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
-				if !isResync {
-					l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
+				if isResync {
+					// Informer resync of an unchanged object (same ResourceVersion): there is
+					// no change to react to, so the re-enqueue can be spread over the resync
+					// period. Anything else keeps being enqueued immediately.
+					l4netLBc.periodicEnqueuer.enqueue(l4netLBc.svcQueue, &l4netLBc.enqueueTracker, curSvc, svcLogger)
+					return
 				}
+				l4netLBc.periodicEnqueuer.cancel(svcKey)
+				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
+				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return
 			}
+			if wantsNetLB, _ := annotations.WantsL4NetLB(curSvc); !wantsNetLB {
+				l4netLBc.periodicEnqueuer.cancel(svcKey)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			l4netLBc.periodicEnqueuer.cancelObj(obj)
 		},
 	})
 
@@ -228,6 +247,7 @@ func (lc *L4NetLBController) enqueueServicesReferencingL4LBConfig(l4LBConfigObje
 		svcKey := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
 		svcLogger := lc.logger.WithValues("serviceKey", svcKey)
 		if shouldProcess, _ := lc.shouldProcessService(svc, nil, svcLogger); shouldProcess {
+			lc.periodicEnqueuer.cancel(svcKey)
 			lc.serviceVersions.SetLastUpdateSeen(svcKey, svc.ResourceVersion, svcLogger)
 			lc.svcQueue.Enqueue(svc)
 		}
@@ -616,6 +636,7 @@ func (lc *L4NetLBController) Run() {
 
 func (lc *L4NetLBController) shutdown() {
 	lc.logger.Info("Shutting down l4NetLBController")
+	lc.periodicEnqueuer.stop()
 	lc.svcQueue.Shutdown()
 }
 
