@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -410,6 +411,94 @@ func TestSyncPod(t *testing.T) {
 						t.Errorf("For test case %q with markNonDefaultSubnetPodsReady = %v, expect pod to be %v, but got %v", tc.desc, markNonDefaultSubnetPodsReady, tc.expectPod, pod)
 					}
 				}
+			}
+		})
+	}
+}
+
+// TestSyncPodEnqueue verifies that SyncPod only enqueues pods that need to be
+// processed by the readiness reflector.
+func TestSyncPodEnqueue(t *testing.T) {
+	t.Parallel()
+
+	negReadinessGate := []v1.PodReadinessGate{{ConditionType: shared.NegReadinessGate}}
+
+	testCases := []struct {
+		desc          string
+		pod           *v1.Pod
+		expectEnqueue bool
+	}{
+		{
+			desc: "pod without neg readiness gate",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: "no-readiness-gate"},
+			},
+			expectEnqueue: false,
+		},
+		{
+			desc: "pod with neg readiness gate and no neg condition",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: "no-condition"},
+				Spec:       v1.PodSpec{ReadinessGates: negReadinessGate},
+			},
+			expectEnqueue: true,
+		},
+		{
+			desc: "pod with neg readiness gate and false neg condition",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: "false-condition"},
+				Spec:       v1.PodSpec{ReadinessGates: negReadinessGate},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{{Type: shared.NegReadinessGate, Status: v1.ConditionFalse}},
+				},
+			},
+			expectEnqueue: true,
+		},
+		{
+			desc: "pod with neg readiness gate and true neg condition",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: "true-condition"},
+				Spec:       v1.PodSpec{ReadinessGates: negReadinessGate},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{{Type: shared.NegReadinessGate, Status: v1.ConditionTrue}},
+				},
+			},
+			expectEnqueue: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeContext := negtypes.NewTestContext()
+			testReadinessReflector, err := newTestReadinessReflector(fakeContext, false)
+			if err != nil {
+				t.Fatalf("failed to initialize readiness reflector: %v", err)
+			}
+			defer testReadinessReflector.queue.ShutDown()
+
+			testReadinessReflector.SyncPod(tc.pod)
+
+			expectLen := 0
+			if tc.expectEnqueue {
+				expectLen = 1
+			}
+			if gotLen := testReadinessReflector.queue.Len(); gotLen != expectLen {
+				t.Fatalf("SyncPod(%s/%s): queue length = %d, want %d", tc.pod.Namespace, tc.pod.Name, gotLen, expectLen)
+			}
+			if !tc.expectEnqueue {
+				return
+			}
+
+			wantKey, err := cache.MetaNamespaceKeyFunc(tc.pod)
+			if err != nil {
+				t.Fatalf("MetaNamespaceKeyFunc(%v) = %v, want nil", tc.pod, err)
+			}
+			gotKey, quit := testReadinessReflector.queue.Get()
+			if quit {
+				t.Fatalf("queue.Get() returned quit = true, want false")
+			}
+			if gotKey != wantKey {
+				t.Errorf("queue.Get() = %v, want %v", gotKey, wantKey)
 			}
 		})
 	}
