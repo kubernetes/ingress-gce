@@ -742,11 +742,11 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 
 	negMetrics, err := metrics.NewNegMetrics()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize NEG metrics: %w", err)
+		logger.Error(err, "Failed to initialize NEG metrics")
 	}
 	syncerMetrics, err := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize syncer metrics: %w", err)
+		logger.Error(err, "Failed to initialize syncer metrics")
 	}
 	go syncerMetrics.Run(stopCh)
 
