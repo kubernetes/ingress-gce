@@ -18,7 +18,7 @@
 #   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.neg-controller .
 
 # Overridden by the Makefile with the Go version from go.mod.
-ARG GOLANG_IMAGE=golang:1.26.9
+ARG GOLANG_IMAGE=golang:1.26.10
 # TODO: pin by digest, e.g. gcr.io/distroless/static-debian12:nonroot@sha256:...
 ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
 

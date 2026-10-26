@@ -1,6 +1,6 @@
 module k8s.io/ingress-gce
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/GoogleCloudPlatform/gke-enterprise-mt v1.0.2
