@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4/address"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/network"
@@ -356,6 +357,194 @@ func TestL4CreateExternalForwardingRuleUpdate(t *testing.T) {
 	}
 }
 
+// TestL4NetLBEnsureIPv4ForwardingRuleAddressReservation verifies that the IP is reserved
+// only when the forwarding rule is going to be created, updated or deleted.
+func TestL4NetLBEnsureIPv4ForwardingRuleAddressReservation(t *testing.T) {
+	t.Parallel()
+	const (
+		serviceNamespace = "testNs"
+		serviceName      = "testSvc"
+		existingIP       = "1.2.3.4"
+		bsLink           = "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
+	)
+	newService := func(ports []int32, loadBalancerIP string, annotations map[string]string) *corev1.Service {
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: serviceNamespace, UID: types.UID("1"), Annotations: annotations},
+			Spec: corev1.ServiceSpec{
+				Type:           "LoadBalancer",
+				LoadBalancerIP: loadBalancerIP,
+			},
+		}
+		for _, port := range ports {
+			svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{Port: port, Protocol: corev1.ProtocolTCP})
+		}
+		return svc
+	}
+	existingRule := func(svc *corev1.Service) *composite.ForwardingRule {
+		return &composite.ForwardingRule{
+			Name:                utils.LegacyForwardingRuleName(svc),
+			IPAddress:           existingIP,
+			PortRange:           "8080-8080",
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeExternal),
+			NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
+			Version:             meta.VersionGA,
+			BackendService:      bsLink,
+			Description:         l4ServiceDescription(t, serviceName, serviceNamespace, existingIP, utils.XLB),
+		}
+	}
+
+	testCases := []struct {
+		desc string
+		svc  *corev1.Service
+		// userAddress is reserved in the cloud before the sync.
+		userAddress *compute.Address
+		// leftoverMixedRule is created with the mixed protocol TCP name before the sync.
+		leftoverMixedRule bool
+		bsLink            string
+		wantReserved      bool
+		wantUpdate        l4utils.ResourceSyncStatus
+		wantManaged       address.IPAddressType
+		// wantErr is the check for the error returned by the sync, nil when no error is expected.
+		wantErr func(error) bool
+		// wantRuleDeleted is set when the sync is expected to delete the existing rule without re-creating it.
+		wantRuleDeleted bool
+	}{
+		{
+			desc:         "unchanged rule with ephemeral IP",
+			svc:          newService([]int32{8080}, "", nil),
+			bsLink:       bsLink,
+			wantReserved: false,
+			wantUpdate:   l4utils.ResourceResync,
+			wantManaged:  address.IPAddrManaged,
+		},
+		{
+			desc:         "unchanged rule with user static IP",
+			svc:          newService([]int32{8080}, existingIP, nil),
+			userAddress:  &compute.Address{Name: "user-addr", Address: existingIP, AddressType: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierPremium.ToGCEValue()},
+			bsLink:       bsLink,
+			wantReserved: false,
+			wantUpdate:   l4utils.ResourceResync,
+			wantManaged:  address.IPAddrUnmanaged,
+		},
+		{
+			desc:         "unchanged rule with network tier annotation matching the rule",
+			svc:          newService([]int32{8080}, "", map[string]string{annotations.NetworkTierAnnotationKey: string(cloud.NetworkTierPremium)}),
+			bsLink:       bsLink,
+			wantReserved: false,
+			wantUpdate:   l4utils.ResourceResync,
+			wantManaged:  address.IPAddrManaged,
+		},
+		{
+			desc:              "unchanged rule with leftover mixed protocol rule",
+			svc:               newService([]int32{8080}, "", nil),
+			leftoverMixedRule: true,
+			bsLink:            bsLink,
+			wantReserved:      true,
+			wantUpdate:        l4utils.ResourceResync,
+			wantManaged:       address.IPAddrManaged,
+		},
+		{
+			desc:         "changed ports",
+			svc:          newService([]int32{8080, 8081}, "", nil),
+			bsLink:       bsLink,
+			wantReserved: true,
+			wantUpdate:   l4utils.ResourceUpdate,
+			wantManaged:  address.IPAddrManaged,
+		},
+		{
+			desc:         "changed backend service",
+			svc:          newService([]int32{8080}, "", nil),
+			bsLink:       "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs2",
+			wantReserved: true,
+			wantUpdate:   l4utils.ResourceUpdate,
+			wantManaged:  address.IPAddrManaged,
+		},
+		{
+			// The rule with the wrong tier is torn down while the IP is reserved, and the sync
+			// reports the mismatch; the rule is re-created with the new tier by the next sync.
+			desc:            "changed network tier",
+			svc:             newService([]int32{8080}, "", map[string]string{annotations.NetworkTierAnnotationKey: string(cloud.NetworkTierStandard)}),
+			bsLink:          bsLink,
+			wantReserved:    true,
+			wantUpdate:      l4utils.ResourceUpdate,
+			wantManaged:     address.IPAddrUndefined,
+			wantErr:         l4utils.IsNetworkTierError,
+			wantRuleDeleted: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
+			l4namer := namer.NewL4Namer(kubeSystemUID, nil)
+			l4 := NewL4NetLB(&L4NetLBParams{
+				Cloud:    fakeGCE,
+				Service:  tc.svc,
+				Recorder: &record.FakeRecorder{},
+				Namer:    l4namer,
+			}, klog.TODO())
+			existing := existingRule(tc.svc)
+			if err := l4.forwardingRules.Create(existing); err != nil {
+				t.Fatalf("forwardingRules.Create(%v) returned error %v, want nil", existing, err)
+			}
+			if tc.leftoverMixedRule {
+				mixedRule := existingRule(tc.svc)
+				mixedRule.Name = l4namer.L4ForwardingRule(serviceNamespace, serviceName, "tcp")
+				if err := l4.forwardingRules.Create(mixedRule); err != nil {
+					t.Fatalf("forwardingRules.Create(%v) returned error %v, want nil", mixedRule, err)
+				}
+			}
+			if tc.userAddress != nil {
+				if err := fakeGCE.ReserveRegionAddress(tc.userAddress, fakeGCE.Region()); err != nil {
+					t.Fatalf("ReserveRegionAddress(%v) returned error %v, want nil", tc.userAddress, err)
+				}
+			}
+			am := trackAddressMutations(fakeGCE)
+
+			fr, managed, updated, err := l4.ensureIPv4ForwardingRule(tc.bsLink)
+			if tc.wantErr == nil && err != nil {
+				t.Fatalf("ensureIPv4ForwardingRule() returned error %v, want nil", err)
+			}
+			if tc.wantErr != nil && !tc.wantErr(err) {
+				t.Fatalf("ensureIPv4ForwardingRule() returned error %v, want an error accepted by wantErr", err)
+			}
+
+			inserts, _ := am.counts()
+			if reserved := inserts > 0; reserved != tc.wantReserved {
+				t.Errorf("ensureIPv4ForwardingRule() reserved the address = %v, want %v (%d address inserts)", reserved, tc.wantReserved, inserts)
+			}
+			if updated != tc.wantUpdate {
+				t.Errorf("ensureIPv4ForwardingRule() returned sync status %v, want %v", updated, tc.wantUpdate)
+			}
+			if managed != tc.wantManaged {
+				t.Errorf("ensureIPv4ForwardingRule() returned IP management type %v, want %v", managed, tc.wantManaged)
+			}
+			if err == nil && fr.IPAddress != existingIP {
+				t.Errorf("ensureIPv4ForwardingRule() returned rule with IP %q, want %q", fr.IPAddress, existingIP)
+			}
+			if tc.leftoverMixedRule {
+				mixedRule, err := l4.forwardingRules.Get(l4namer.L4ForwardingRule(serviceNamespace, serviceName, "tcp"))
+				if err != nil || mixedRule != nil {
+					t.Errorf("leftover mixed protocol forwarding rule = %v, err = %v, want it deleted", mixedRule, err)
+				}
+			}
+			if tc.wantRuleDeleted {
+				rule, err := l4.forwardingRules.Get(existing.Name)
+				if err != nil || rule != nil {
+					t.Errorf("forwarding rule %q = %v, err = %v, want it deleted", existing.Name, rule, err)
+				}
+			}
+			// The address is only reserved for the duration of the sync.
+			if addr, err := fakeGCE.GetRegionAddress(existing.Name, fakeGCE.Region()); utils.IgnoreHTTPNotFound(err) != nil || addr != nil {
+				t.Errorf("controller managed address %q = %v, err = %v, want it released after the sync", existing.Name, addr, err)
+			}
+		})
+	}
+}
+
 func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 	testCases := []struct {
 		desc                  string
@@ -399,7 +588,7 @@ func TestL4EnsureIPv4ForwardingRuleAddressAlreadyInUse(t *testing.T) {
 			addr := &compute.Address{Name: "my-important-address", Address: targetIP, AddressType: string(cloud.SchemeInternal)}
 			fakeGCE.ReserveRegionAddress(addr, fakeGCE.Region())
 			fakeGCE.Compute().(*cloud.MockGCE).MockForwardingRules.InsertHook = test.InsertForwardingRuleErrorHook(tc.insertError)
-			_, _, err := l4.ensureIPv4ForwardingRule("link", gce.ILBOptions{}, nil, "subnetworkX", "1.1.1.1")
+			_, _, err := l4.ensureIPv4ForwardingRule("link", gce.ILBOptions{}, nil, "subnetworkX", "1.1.1.1", true)
 
 			require.Error(t, err)
 			assert.True(t, tc.expectedUserErrorFunc(err))
@@ -443,7 +632,7 @@ func TestL4EnsureIPv4ForwardingRule(t *testing.T) {
 	ipToUse := "1.1.1.1"
 	bsLink := "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
 
-	forwardingRule, syncStatus, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, nil, subnetworkURL, ipToUse)
+	forwardingRule, syncStatus, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, nil, subnetworkURL, ipToUse, true)
 	require.NoError(t, err)
 	require.Equal(t, l4utils.ResourceUpdate, syncStatus)
 
@@ -595,7 +784,7 @@ func TestL4EnsureInternalForwardingRuleUpdate(t *testing.T) {
 			if tc.namedAddress != nil {
 				fakeGCE.ReserveRegionAddress(tc.namedAddress, fakeGCE.Region())
 			}
-			fr, updated, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, tc.existingRule, subnetworkURL, "")
+			fr, updated, err := l4.ensureIPv4ForwardingRule(bsLink, gce.ILBOptions{}, tc.existingRule, subnetworkURL, "", true)
 
 			if err != nil && tc.wantErrMsg == "" {
 				t.Errorf("ensureIPv4ForwardingRule() err=%v", err)

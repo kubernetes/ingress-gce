@@ -467,10 +467,24 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		l4.svcLogger.Error(err, "Failed to lookup existing backend service, ignoring err")
 	}
 
-	// Reserve existing IP address before making any changes
+	servicePorts := l4.Service.Spec.Ports
+	backendProtocol := string(utils.GetProtocol(servicePorts))
+	if l4.enableMixedProtocol {
+		backendProtocol = backends.GetProtocol(servicePorts)
+	}
+
+	// Reserve existing IP address before making any changes.
+	// Reserving the address only protects the IP while the forwarding rule is deleted and
+	// re-created. When the existing rule already matches the Service nothing is deleted, so
+	// the reservation (and its release) is skipped to avoid two address mutations on every resync.
+	//
+	// ipv4Reserved and ipv6Reserved report whether the addresses are held by a reservation.
+	// Forwarding rules using them may only be deleted while they are, see
+	// forwardingrules.CheckRecreateAllowed.
 	var existingIPv4FR *composite.ForwardingRule
 	var ipv4AddressToUse string
 	var ipv4AddressName string
+	ipv4Reserved := false
 	if !l4.enableDualStack || l4utils.NeedsIPv4(l4.Service) {
 		existingIPv4FR, err = l4.getOldIPv4ForwardingRule(existingBS)
 		ipv4AddressToUse, ipv4AddressName, err = address.IPv4ToUse(l4.cloud, l4.recorder, l4.Service, existingIPv4FR, subnetworkURL)
@@ -479,7 +493,13 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 			return result
 		}
 
-		if !l4.cloud.IsLegacyNetwork() {
+		// Addresses can't be reserved in legacy networks.
+		reserveIPv4 := !l4.cloud.IsLegacyNetwork()
+		if reserveIPv4 && l4.isIPv4ForwardingRuleUpToDate(existingBS, backendProtocol, existingIPv4FR, options, subnetworkURL, ipv4AddressToUse) {
+			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer: IPv4 forwarding rule is up to date, skipping IPv4 address reservation", "ipv4AddressToUse", ipv4AddressToUse)
+			reserveIPv4 = false
+		}
+		if reserveIPv4 {
 			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv4 address before making any changes")
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
@@ -489,6 +509,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
 				return result
 			}
+			ipv4Reserved = true
 			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer: reserved IPv4 address", "ipv4AddressToUse", ipv4AddressToUse)
 			defer func() {
 				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
@@ -504,6 +525,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	var existingIPv6FR *composite.ForwardingRule
 	var ipv6AddrToUse string
 	var ipv6AddressName string
+	ipv6Reserved := false
 	if l4.enableDualStack && l4utils.NeedsIPv6(l4.Service) {
 		existingIPv6FR, err = l4.getOldIPv6ForwardingRule(existingBS)
 
@@ -515,7 +537,13 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 		l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer, reserve existing IPv6 address before making any changes", "ipAddress", ipv6AddrToUse)
 
-		if !l4.cloud.IsLegacyNetwork() {
+		// Addresses can't be reserved in legacy networks.
+		reserveIPv6 := !l4.cloud.IsLegacyNetwork()
+		if reserveIPv6 && l4.isIPv6ForwardingRuleUpToDate(existingBS, backendProtocol, existingIPv6FR, options, ipv6AddrToUse) {
+			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer: IPv6 forwarding rule is up to date, skipping IPv6 address reservation", "ipv6AddressToUse", ipv6AddrToUse)
+			reserveIPv6 = false
+		}
+		if reserveIPv6 {
 			nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 			// ILB can be created only in Premium Tier
 			ipv6AddrMgr := address.NewManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, l4.getIPv6FRName(), ipv6AddressName, ipv6AddrToUse, cloud.SchemeInternal, cloud.NetworkTierPremium, address.IPv6Version, l4.svcLogger)
@@ -524,6 +552,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 				result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: ipv6AddrMgr.HoldAddress() returned error %w", err)
 				return result
 			}
+			ipv6Reserved = true
 			l4.svcLogger.V(2).Info("EnsureInternalLoadBalancer: reserved IPv6 address", "ipv6AddressToUse", ipv6AddrToUse)
 			defer func() {
 				// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
@@ -535,17 +564,16 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 	}
 
-	servicePorts := l4.Service.Spec.Ports
-	backendProtocol := string(utils.GetProtocol(servicePorts))
-	if l4.enableMixedProtocol {
-		backendProtocol = backends.GetProtocol(servicePorts)
-	}
-
 	// if Service protocol changed, we must delete forwarding rule before changing backend service,
 	// otherwise, on updating backend service, google cloud api will return error
 	if existingBS != nil && existingBS.Protocol != backendProtocol {
 		l4.svcLogger.Info("Protocol changed for service", "existingProtocol", existingBS.Protocol, "newProtocol", backendProtocol)
 		if existingIPv4FR != nil {
+			if err := forwardingrules.CheckRecreateAllowed(l4.cloud, existingIPv4FR, ipv4Reserved); err != nil {
+				result.GCEResourceInError = annotations.ForwardingRuleResource
+				result.Error = err
+				return result
+			}
 			// Delete ipv4 forwarding rule if it exists
 			err = l4.forwardingRules.Delete(existingIPv4FR.Name)
 			if err != nil {
@@ -554,6 +582,11 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		}
 
 		if l4.enableDualStack && existingIPv6FR != nil {
+			if err := forwardingrules.CheckRecreateAllowed(l4.cloud, existingIPv6FR, ipv6Reserved); err != nil {
+				result.GCEResourceInError = annotations.ForwardingRuleResource
+				result.Error = err
+				return result
+			}
 			// Delete ipv6 forwarding rule if it exists
 			err = l4.forwardingRules.Delete(existingIPv6FR.Name)
 			if err != nil {
@@ -621,9 +654,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	if l4.enableDualStack {
-		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4AddressToUse, ipv6AddrToUse)
+		l4.ensureDualStackResources(result, nodeNames, options, bs, existingIPv4FR, existingIPv6FR, subnetworkURL, ipv4AddressToUse, ipv6AddrToUse, ipv4Reserved, ipv6Reserved)
 	} else {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4AddressToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FR, subnetworkURL, ipv4AddressToUse, ipv4Reserved)
 	}
 
 	if result.Error != nil {
@@ -699,14 +732,17 @@ func (l4 *L4) provideIPv4HealthChecks(nodeNames []string, result *L4ILBSyncResul
 	return hcResult.HCLink
 }
 
-func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4AddressToUse, ipv6AddressToUse string) {
+// ensureDualStackResources ensures the IPv4 and IPv6 specific resources of the Service.
+// ipv4Reserved and ipv6Reserved report whether the IPs are held by an address reservation,
+// which is required to delete and re-create the forwarding rules using them.
+func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingIPv4FwdRule, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv4AddressToUse, ipv6AddressToUse string, ipv4Reserved, ipv6Reserved bool) {
 	if l4utils.NeedsIPv4(l4.Service) {
-		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4AddressToUse)
+		l4.ensureIPv4Resources(result, nodeNames, options, bs, existingIPv4FwdRule, subnetworkURL, ipv4AddressToUse, ipv4Reserved)
 	} else {
 		l4.deleteIPv4ResourcesOnSync(result)
 	}
 	if l4utils.NeedsIPv6(l4.Service) {
-		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse)
+		l4.ensureIPv6Resources(result, nodeNames, options, bs.SelfLink, existingIPv6FwdRule, ipv6AddressToUse, ipv6Reserved)
 	} else {
 		l4.deleteIPv6ResourcesOnSync(result)
 	}
@@ -715,8 +751,11 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 // ensureIPv4Resources creates resources specific to IPv4 L4 Load Balancers:
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
-func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
-	fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+//
+// ipReserved reports whether ipToUse is held by an address reservation, which is
+// required to delete and re-create the forwarding rule.
+func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string, ipReserved bool) {
+	fr, fwdRuleSyncStatus, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse, ipReserved)
 	result.ResourceUpdates.SetForwardingRule(fwdRuleSyncStatus)
 	if err != nil {
 		l4.svcLogger.Error(err, "ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service")
