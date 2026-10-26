@@ -94,3 +94,13 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 func ipv6AddressWithoutRange(ipv6Address string) string {
 	return strings.Split(ipv6Address, "/")[0]
 }
+
+// IsSameIPv6 reports whether ipv6, as returned by IPv6ToUse, is the address used by
+// a forwarding rule. Google Cloud stores the address of IPv6 forwarding rules in CIDR
+// form (with a /96 prefix), so the prefix is ignored on both sides of the comparison.
+func IsSameIPv6(ipv6, forwardingRuleIP string) bool {
+	if ipv6 == "" || forwardingRuleIP == "" {
+		return false
+	}
+	return IsSameIP(ipv6AddressWithoutRange(ipv6), ipv6AddressWithoutRange(forwardingRuleIP))
+}
