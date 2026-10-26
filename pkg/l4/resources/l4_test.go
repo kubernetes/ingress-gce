@@ -18,15 +18,18 @@ limitations under the License.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/backends"
+	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/l4/healthchecks"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -43,6 +47,7 @@ import (
 	"k8s.io/utils/strings/slices"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	v1 "k8s.io/api/core/v1"
@@ -2771,6 +2776,266 @@ func TestDisableILBIngressFirewall(t *testing.T) {
 	if err != nil {
 		t.Errorf("verifyFirewallNotExists(_, %s) for IPv6 ILB firewall returned error %v, want nil", ipv6firewallName, err)
 	}
+}
+
+// TestEnsureInternalLoadBalancerReservesAddressOnlyWhenRulesChange verifies that syncing
+// an unchanged ILB Service doesn't reserve (and release) its addresses, while creating
+// the load balancer and re-creating a forwarding rule still do.
+func TestEnsureInternalLoadBalancerReservesAddressOnlyWhenRulesChange(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{desc: "ipv4", ipFamilies: []v1.IPFamily{v1.IPv4Protocol}},
+		{desc: "ipv6", ipFamilies: []v1.IPFamily{v1.IPv6Protocol}},
+		{desc: "ipv4 ipv6", ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+			l4 := mustSetupILBTestHandler(t, svc, nodeNames)
+			am := trackAddressMutations(l4.cloud)
+			l4.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertForwardingRuleIPReservedOnDeleteHook(t, l4.cloud)
+
+			// Creating the load balancer reserves the address(es) to pick the IP.
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("EnsureInternalLoadBalancer() on create returned error %v, want nil", result.Error)
+			}
+			if inserts, _ := am.counts(); inserts == 0 {
+				t.Errorf("EnsureInternalLoadBalancer() on create reserved %d addresses, want at least 1", inserts)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+			ipsAfterCreate := result.Status.Ingress
+
+			// Syncing the unchanged Service must not touch addresses at all.
+			am.reset()
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("EnsureInternalLoadBalancer() on resync returned error %v, want nil", result.Error)
+			}
+			if result.ResourceUpdates.WereAnyResourcesModified() {
+				t.Errorf("EnsureInternalLoadBalancer() on resync modified resources: %v, want none", result.ResourceUpdates.String())
+			}
+			if inserts, deletes := am.counts(); inserts != 0 || deletes != 0 {
+				t.Errorf("EnsureInternalLoadBalancer() on resync made %d address inserts and %d address deletes, want 0 and 0", inserts, deletes)
+			}
+			if !sameIngressIPs(ipsAfterCreate, result.Status.Ingress) {
+				t.Errorf("EnsureInternalLoadBalancer() on resync changed the LoadBalancer IPs from %v to %v", ipsAfterCreate, result.Status.Ingress)
+			}
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			// Changing the ports re-creates the forwarding rule(s), the IP must be reserved meanwhile.
+			am.reset()
+			svc.Spec.Ports[0].Port = 8081
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Fatalf("EnsureInternalLoadBalancer() on update returned error %v, want nil", result.Error)
+			}
+			if inserts, _ := am.counts(); inserts == 0 {
+				t.Errorf("EnsureInternalLoadBalancer() on update reserved %d addresses, want at least 1", inserts)
+			}
+			if !sameIngressIPs(ipsAfterCreate, result.Status.Ingress) {
+				t.Errorf("EnsureInternalLoadBalancer() on update changed the LoadBalancer IPs from %v to %v", ipsAfterCreate, result.Status.Ingress)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+		})
+	}
+}
+
+// createILBForwardingRulesForProtocolChange creates an IPv4 and an IPv6 forwarding rule
+// for the Service of l4, as left by a sync before the protocol of the Service changed.
+func createILBForwardingRulesForProtocolChange(t *testing.T, l4 *L4) (ipv4FR, ipv6FR *composite.ForwardingRule) {
+	t.Helper()
+	const bsLink = "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
+	ipv4FR = &composite.ForwardingRule{
+		Name: l4.GetFRName(), IPAddress: "10.0.0.5", IPProtocol: "TCP", Ports: []string{"8080"},
+		LoadBalancingScheme: string(cloud.SchemeInternal), BackendService: bsLink,
+	}
+	ipv6FR = &composite.ForwardingRule{
+		Name: l4.getIPv6FRName(), IPAddress: "2001:db8::5/96", IPProtocol: "TCP", Ports: []string{"8080"},
+		LoadBalancingScheme: string(cloud.SchemeInternal), BackendService: bsLink, IpVersion: IPVersionIPv6,
+	}
+	for _, fr := range []*composite.ForwardingRule{ipv4FR, ipv6FR} {
+		if err := l4.forwardingRules.Create(fr); err != nil {
+			t.Fatalf("forwardingRules.Create(%v) returned error %v, want nil", fr, err)
+		}
+	}
+	return ipv4FR, ipv6FR
+}
+
+// TestDeleteForwardingRulesForProtocolChange verifies that both forwarding rules are
+// deleted when their IPs are reserved.
+func TestDeleteForwardingRulesForProtocolChange(t *testing.T) {
+	t.Parallel()
+	l4 := mustSetupILBTestHandler(t, test.NewL4ILBService(false, 8080), []string{"test-node-1"})
+	ipv4FR, ipv6FR := createILBForwardingRulesForProtocolChange(t, l4)
+
+	if err := l4.deleteForwardingRulesForProtocolChange(ipv4FR, ipv6FR, true, true); err != nil {
+		t.Fatalf("deleteForwardingRulesForProtocolChange() returned error %v, want nil", err)
+	}
+	for _, fr := range []*composite.ForwardingRule{ipv4FR, ipv6FR} {
+		if got, err := l4.forwardingRules.Get(fr.Name); err != nil || got != nil {
+			t.Errorf("forwardingRules.Get(%q) = %v, %v, want the rule deleted", fr.Name, got, err)
+		}
+	}
+}
+
+// TestDeleteForwardingRulesForProtocolChangeRequiresReservedIPs verifies that neither
+// forwarding rule is deleted while the IP of either of them is not reserved.
+func TestDeleteForwardingRulesForProtocolChangeRequiresReservedIPs(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc         string
+		ipv4Reserved bool
+		ipv6Reserved bool
+	}{
+		{desc: "IPv4 not reserved", ipv4Reserved: false, ipv6Reserved: true},
+		{desc: "IPv6 not reserved", ipv4Reserved: true, ipv6Reserved: false},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			l4 := mustSetupILBTestHandler(t, test.NewL4ILBService(false, 8080), []string{"test-node-1"})
+			ipv4FR, ipv6FR := createILBForwardingRulesForProtocolChange(t, l4)
+
+			err := l4.deleteForwardingRulesForProtocolChange(ipv4FR, ipv6FR, tc.ipv4Reserved, tc.ipv6Reserved)
+			if !errors.Is(err, forwardingrules.ErrIPNotReserved) {
+				t.Fatalf("deleteForwardingRulesForProtocolChange() returned error %v, want an error wrapping ErrIPNotReserved", err)
+			}
+			for _, fr := range []*composite.ForwardingRule{ipv4FR, ipv6FR} {
+				if got, err := l4.forwardingRules.Get(fr.Name); err != nil || got == nil {
+					t.Errorf("forwardingRules.Get(%q) = %v, %v, want the rule left in place", fr.Name, got, err)
+				}
+			}
+		})
+	}
+}
+
+// addressMutations counts the calls that change addresses in a fake cloud:
+// inserts, and deletes of addresses that exist. Deletes of addresses that
+// don't exist (e.g. the cleanup of IPv4 resources of an IPv6 only Service)
+// don't change anything and are not counted.
+type addressMutations struct {
+	mu      sync.Mutex
+	inserts int
+	deletes int
+}
+
+// trackAddressMutations installs hooks on the fake cloud that count address mutations.
+// Inserts keep assigning IPs the same way getFakeGCECloud does.
+func trackAddressMutations(fakeGCE *gce.Cloud) *addressMutations {
+	am := &addressMutations{}
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockAddresses.InsertHook = func(ctx context.Context, key *meta.Key, obj *ga.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+		am.mu.Lock()
+		am.inserts++
+		am.mu.Unlock()
+		return mock.InsertAddressHook(ctx, key, obj, m, options...)
+	}
+	mockGCE.MockAddresses.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+		m.Lock.Lock()
+		_, exists := m.Objects[*key]
+		m.Lock.Unlock()
+		if exists {
+			am.mu.Lock()
+			am.deletes++
+			am.mu.Unlock()
+		}
+		return false, nil
+	}
+	return am
+}
+
+func (am *addressMutations) reset() {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.inserts, am.deletes = 0, 0
+}
+
+func (am *addressMutations) counts() (inserts, deletes int) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	return am.inserts, am.deletes
+}
+
+// assertForwardingRuleIPReservedOnDeleteHook returns a forwarding rules DeleteHook that
+// fails the test when a forwarding rule is deleted while its IP is not reserved by an
+// address, for both IPv4 and IPv6 rules.
+func assertForwardingRuleIPReservedOnDeleteHook(t *testing.T, fakeGCE *gce.Cloud) func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules, options ...cloud.Option) (bool, error) {
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	return func(ctx context.Context, key *meta.Key, _ *cloud.MockForwardingRules, _ ...cloud.Option) (bool, error) {
+		fr, err := mockGCE.MockForwardingRules.Get(ctx, key)
+		if utils.IsNotFoundError(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		// IPv6 forwarding rules store the address in CIDR form.
+		frIP := net.ParseIP(strings.Split(fr.IPAddress, "/")[0])
+		addrs, err := mockGCE.MockAddresses.List(ctx, fakeGCE.Region(), filter.None)
+		if err != nil {
+			return false, err
+		}
+		for _, addr := range addrs {
+			if net.ParseIP(addr.Address).Equal(frIP) {
+				return false, nil
+			}
+		}
+		t.Errorf("forwarding rule %s is deleted while its IP %s is not reserved", fr.Name, fr.IPAddress)
+		return false, nil
+	}
+}
+
+// assertRecreateRequiresReservedIP creates existing and verifies that recreate, which runs
+// a code path that deletes existing to re-create it, leaves the rule in place and returns
+// an error wrapping ErrIPNotReserved while the IP is not reserved, and succeeds once it is.
+func assertRecreateRequiresReservedIP(t *testing.T, provider ForwardingRulesProvider, existing *composite.ForwardingRule, recreate func(ipReserved bool) error) {
+	t.Helper()
+	if err := provider.Create(existing); err != nil {
+		t.Fatalf("Create(%v) returned error %v, want nil", existing, err)
+	}
+
+	err := recreate(false)
+	if !errors.Is(err, forwardingrules.ErrIPNotReserved) {
+		t.Fatalf("re-creating the rule with an unreserved IP returned error %v, want an error wrapping ErrIPNotReserved", err)
+	}
+	got, err := provider.Get(existing.Name)
+	if err != nil || got == nil {
+		t.Fatalf("Get(%q) = %v, %v, want the existing rule to be left in place", existing.Name, got, err)
+	}
+	if diff := cmp.Diff(existing, got, cmpopts.IgnoreFields(composite.ForwardingRule{}, "SelfLink", "Region", "Scope", "Version")); diff != "" {
+		t.Errorf("Get(%q) changed the existing rule, diff -want +got\n%s", existing.Name, diff)
+	}
+
+	if err := recreate(true); err != nil {
+		t.Errorf("re-creating the rule with a reserved IP returned error %v, want nil", err)
+	}
+}
+
+// sameIngressIPs reports whether the two LoadBalancer statuses list the same IPs,
+// regardless of the notation used for IPv6 addresses.
+func sameIngressIPs(want, got []v1.LoadBalancerIngress) bool {
+	if len(want) != len(got) {
+		return false
+	}
+	for i := range want {
+		if !net.ParseIP(want[i].IP).Equal(net.ParseIP(got[i].IP)) {
+			return false
+		}
+	}
+	return true
 }
 
 func mustSetupILBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4 {
