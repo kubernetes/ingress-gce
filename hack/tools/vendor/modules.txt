@@ -137,16 +137,9 @@ github.com/daixiang0/gci/pkg/parse
 github.com/daixiang0/gci/pkg/section
 github.com/daixiang0/gci/pkg/specificity
 github.com/daixiang0/gci/pkg/utils
-# github.com/davecgh/go-spew v1.1.1
-## explicit
-github.com/davecgh/go-spew/spew
 # github.com/denis-tingaikin/go-header v0.5.0
 ## explicit; go 1.21
 github.com/denis-tingaikin/go-header
-# github.com/emicklei/go-restful/v3 v3.13.0
-## explicit; go 1.13
-github.com/emicklei/go-restful/v3
-github.com/emicklei/go-restful/v3/log
 # github.com/ettle/strcase v0.2.0
 ## explicit; go 1.12
 github.com/ettle/strcase
@@ -186,45 +179,21 @@ github.com/go-openapi/jsonpointer/jsonname
 ## explicit; go 1.25.0
 github.com/go-openapi/jsonreference
 github.com/go-openapi/jsonreference/internal
-# github.com/go-openapi/swag v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag
-# github.com/go-openapi/swag/cmdutils v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/cmdutils
 # github.com/go-openapi/swag/conv v0.27.1
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/conv
-# github.com/go-openapi/swag/fileutils v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/fileutils
 # github.com/go-openapi/swag/jsonutils v0.27.1
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/jsonutils
 github.com/go-openapi/swag/jsonutils/adapters
 github.com/go-openapi/swag/jsonutils/adapters/ifaces
 github.com/go-openapi/swag/jsonutils/adapters/stdlib/json
-# github.com/go-openapi/swag/loading v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/loading
-# github.com/go-openapi/swag/mangling v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/mangling
-# github.com/go-openapi/swag/netutils v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/netutils
 # github.com/go-openapi/swag/pools v0.27.1
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/pools
-# github.com/go-openapi/swag/stringutils v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/stringutils
 # github.com/go-openapi/swag/typeutils v0.27.1
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/typeutils
-# github.com/go-openapi/swag/yamlutils v0.27.1
-## explicit; go 1.25.0
-github.com/go-openapi/swag/yamlutils
 # github.com/go-toolsmith/astcast v1.1.0
 ## explicit; go 1.16
 github.com/go-toolsmith/astcast
@@ -653,9 +622,6 @@ github.com/pelletier/go-toml/v2/internal/characters
 github.com/pelletier/go-toml/v2/internal/danger
 github.com/pelletier/go-toml/v2/internal/tracker
 github.com/pelletier/go-toml/v2/unstable
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
 # github.com/polyfloyd/go-errorlint v1.7.1
 ## explicit; go 1.22.0
 github.com/polyfloyd/go-errorlint/errorlint
@@ -800,13 +766,15 @@ github.com/ssgreg/nlreturn/v2/pkg/nlreturn
 # github.com/stbenjam/no-sprintf-host-port v0.2.0
 ## explicit; go 1.18
 github.com/stbenjam/no-sprintf-host-port/pkg/analyzer
-# github.com/stretchr/objx v0.5.2
+# github.com/stretchr/objx v0.5.3
 ## explicit; go 1.20
 github.com/stretchr/objx
-# github.com/stretchr/testify v1.11.1
+# github.com/stretchr/testify v1.12.1
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/mock
 # github.com/subosito/gotenv v1.4.1
 ## explicit; go 1.18
@@ -894,7 +862,7 @@ go.uber.org/zap/internal/bufferpool
 go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
-# go.yaml.in/yaml/v3 v3.0.4
+# go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
 # golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac
@@ -1262,20 +1230,14 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
-## explicit; go 1.25.0
+# k8s.io/kube-openapi v0.0.0-20261014044854-ca3452a79603
+## explicit; go 1.27.0
 k8s.io/kube-openapi/cmd/openapi-gen
 k8s.io/kube-openapi/cmd/openapi-gen/args
 k8s.io/kube-openapi/pkg/common
 k8s.io/kube-openapi/pkg/generators
 k8s.io/kube-openapi/pkg/generators/rules
 k8s.io/kube-openapi/pkg/internal
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json/internal
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json/internal/jsonflags
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json/internal/jsonopts
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json/internal/jsonwire
-k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json/jsontext
 k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/sets
 k8s.io/kube-openapi/pkg/validation/spec
