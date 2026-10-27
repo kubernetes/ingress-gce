@@ -2997,3 +2997,124 @@ func TestBuildClusterURL(t *testing.T) {
 		})
 	}
 }
+
+func TestNEGBindingUpdateRequiresSync(t *testing.T) {
+	baseBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "binding1"},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: "svc1",
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{Name: "neg-1", Subnet: "default", Zones: []string{"us-central1-a"}},
+			},
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
+				{ResourceURL: "zones/us-central1-a/networkEndpointGroups/neg-1"},
+			},
+		},
+	}
+
+	now := metav1.Now()
+	later := metav1.NewTime(now.Add(10 * time.Second))
+
+	finalizerAdded := baseBinding.DeepCopy()
+	finalizerAdded.Finalizers = []string{NEGBindingFinalizer}
+
+	statusOnlyUpdated := baseBinding.DeepCopy()
+	statusOnlyUpdated.Status.LastSyncTime = later
+	statusOnlyUpdated.Status.Conditions = []negbindingv1beta1.Condition{
+		{Type: "NegSynced", Status: metav1.ConditionFalse, Reason: "NegSyncFailed"},
+	}
+
+	emptyStatusBinding := baseBinding.DeepCopy()
+	emptyStatusBinding.Status.NetworkEndpointGroups = nil
+
+	specUpdated := baseBinding.DeepCopy()
+	specUpdated.Spec.NetworkEndpointGroups[0].Zones = []string{"us-central1-a", "us-central1-b"}
+
+	deletingWithNEGs := baseBinding.DeepCopy()
+	deletingWithNEGs.DeletionTimestamp = &now
+
+	deletingWithEmptyStatus := emptyStatusBinding.DeepCopy()
+	deletingWithEmptyStatus.DeletionTimestamp = &now
+
+	deletingStatusUpdatedStillWithNEGs := deletingWithNEGs.DeepCopy()
+	deletingStatusUpdatedStillWithNEGs.Status.LastSyncTime = later
+
+	deletingDrained := deletingWithNEGs.DeepCopy()
+	deletingDrained.Status.NetworkEndpointGroups = nil
+
+	testCases := []struct {
+		desc string
+		old  *negbindingv1beta1.NetworkEndpointGroupBinding
+		cur  *negbindingv1beta1.NetworkEndpointGroupBinding
+		want bool
+	}{
+		{
+			desc: "periodic resync (identical object) does not require sync",
+			old:  baseBinding,
+			cur:  baseBinding,
+			want: false,
+		},
+		{
+			desc: "metadata-only change (ensureFinalizer adds finalizer) does not require sync",
+			old:  baseBinding,
+			cur:  finalizerAdded,
+			want: false,
+		},
+		{
+			desc: "status-only update (e.g. LastSyncTime or Conditions) does not require sync",
+			old:  baseBinding,
+			cur:  statusOnlyUpdated,
+			want: false,
+		},
+		{
+			desc: "status NEGs dropping to 0 while not deleting does not require sync",
+			old:  baseBinding,
+			cur:  emptyStatusBinding,
+			want: false,
+		},
+		{
+			desc: "spec change requires sync",
+			old:  baseBinding,
+			cur:  specUpdated,
+			want: true,
+		},
+		{
+			desc: "deletion started (DeletionTimestamp set) requires sync",
+			old:  baseBinding,
+			cur:  deletingWithNEGs,
+			want: true,
+		},
+		{
+			desc: "deletion started with empty Status.NetworkEndpointGroups requires sync",
+			old:  emptyStatusBinding,
+			cur:  deletingWithEmptyStatus,
+			want: true,
+		},
+		{
+			desc: "status update during deletion while NEGs still present does not require sync",
+			old:  deletingWithNEGs,
+			cur:  deletingStatusUpdatedStillWithNEGs,
+			want: false,
+		},
+		{
+			desc: "draining completed during deletion (Status.NetworkEndpointGroups cleared) requires sync",
+			old:  deletingWithNEGs,
+			cur:  deletingDrained,
+			want: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := negBindingUpdateRequiresSync(tc.old, tc.cur); got != tc.want {
+				t.Errorf("negBindingUpdateRequiresSync() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
