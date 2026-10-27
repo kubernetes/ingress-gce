@@ -181,6 +181,16 @@ func (l4 *L4) ensureIPv6NodesFirewall(ipAddress string, nodeNames []string, resu
 		return
 	}
 
+	if len(ipv6SourceRanges) == 0 {
+		fwSyncStatus, err := ensureNoAllowFirewall(l4.cloud, l4.Service, l4.recorder, firewallName, corev1.IPv6Protocol, fwLogger)
+		result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+			result.Error = err
+		}
+		return
+	}
+
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		Allowed:           allowed,
 		SourceRanges:      ipv6SourceRanges,

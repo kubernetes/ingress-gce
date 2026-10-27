@@ -23,9 +23,9 @@ func TestIPv4ServiceSourceRanges(t *testing.T) {
 			expectedIPv4SourceRanges: []string{"0.0.0.0/0"},
 		},
 		{
-			desc:                     "Should return allow all if only IPv6 CIDRs in Spec",
+			desc:                     "Should return no ranges if only IPv6 CIDRs in Spec",
 			specRanges:               []string{" 0::0/0 ", "2001:db8:3333:4444:5555:6666:7777:8888/32"},
-			expectedIPv4SourceRanges: []string{"0.0.0.0/0"},
+			expectedIPv4SourceRanges: nil,
 		},
 		{
 			desc:                     "Should get IPv4 addresses only, if mixed with IPv6",
@@ -107,14 +107,25 @@ func TestIPv6ServiceSourceRanges(t *testing.T) {
 			expectedIPv6SourceRanges: []string{"0::0/0"},
 		},
 		{
-			desc:                     "Should return allow all if only IPv4 CIDRs in Spec",
+			desc:                     "Should return no ranges if only IPv4 CIDRs in Spec",
 			specRanges:               []string{" 1.2.3.4/5 ", " 192.168.0.1/10 "},
-			expectedIPv6SourceRanges: []string{"0::0/0"},
+			expectedIPv6SourceRanges: nil,
 		},
 		{
 			desc:                     "Should get IPv6 addresses only, if mixed with IPv4",
 			specRanges:               []string{" 2001:db8:4444:4444:5555:6666:7777:8888/10 ", " 192.168.0.1/10 ", "2001:db8:3333:4444:5555:6666:7777:8888/32", " 132.8.0.1/8"},
 			expectedIPv6SourceRanges: []string{"2000::/10", "2001:db8::/32"}, // only significant bits are left, space are trimmed
+		},
+		{
+			desc: "Should canonicalize long-form IPv6 CIDRs to shortened form",
+			specRanges: []string{
+				"fe80:0000:0000:0000:0000:0000:0000:0000/64",
+				"2001:0db8:0000:0000:0000:0000:0000:0001/128",
+			},
+			expectedIPv6SourceRanges: []string{
+				"fe80::/64",
+				"2001:db8::1/128",
+			},
 		},
 		{
 			desc: "Should get IPv6 addresses from annotation, if mixed with IPv4 and no spec ranges",

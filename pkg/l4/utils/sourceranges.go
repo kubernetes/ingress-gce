@@ -19,15 +19,15 @@ func IPv4ServiceSourceRanges(service *v1.Service) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(allRanges) == 0 {
+		return []string{allowAllIPv4Range}, nil
+	}
 
 	var ipv4Ranges []string
 	for _, ip := range allRanges {
 		if net.IsIPv4CIDR(ip) {
 			ipv4Ranges = append(ipv4Ranges, ip.String())
 		}
-	}
-	if len(ipv4Ranges) == 0 {
-		return []string{allowAllIPv4Range}, nil
 	}
 	return ipv4Ranges, nil
 }
@@ -37,15 +37,15 @@ func IPv6ServiceSourceRanges(service *v1.Service) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(allRanges) == 0 {
+		return []string{allowAllIPv6Range}, nil
+	}
 
 	var ipv6Ranges []string
 	for _, ip := range allRanges {
 		if net.IsIPv6CIDR(ip) {
 			ipv6Ranges = append(ipv6Ranges, ip.String())
 		}
-	}
-	if len(ipv6Ranges) == 0 {
-		return []string{allowAllIPv6Range}, nil
 	}
 	return ipv6Ranges, nil
 }

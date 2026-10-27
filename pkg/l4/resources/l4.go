@@ -783,6 +783,17 @@ func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, resu
 		result.Error = err
 		return
 	}
+
+	if len(ipv4SourceRanges) == 0 {
+		fwSyncStatus, err := ensureNoAllowFirewall(l4.cloud, l4.Service, l4.recorder, firewallName, corev1.IPv4Protocol, fwLogger)
+		result.ResourceUpdates.SetFirewallForNodes(fwSyncStatus)
+		if err != nil {
+			result.GCEResourceInError = annotations.FirewallRuleResource
+			result.Error = err
+		}
+		return
+	}
+
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		Allowed:           allowed,
