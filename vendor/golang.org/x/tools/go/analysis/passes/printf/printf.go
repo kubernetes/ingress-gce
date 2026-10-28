@@ -416,7 +416,7 @@ func match(info *types.Info, arg ast.Expr, param *types.Var) bool {
 }
 
 // propagate propagates changes in wrapper (non-None) kind information backwards
-// through through the wrapper.callers graph of well-formed forwarding calls.
+// through the wrapper.callers graph of well-formed forwarding calls.
 func propagate(pass *analysis.Pass, w *wrapper, call *ast.CallExpr, kind Kind, res *Result) {
 	// Check correct call forwarding.
 	//
@@ -850,7 +850,7 @@ var printVerbs = []printVerb{
 	{'%', noFlag, 0},
 	{'b', sharpNumFlag, argInt | argFloat | argComplex | argPointer},
 	{'c', "-", argRune | argInt},
-	{'d', numFlag, argInt | argPointer},
+	{'d', numFlag, argInt | argPointer}, // note: when analyzing go1.27+ code, argPointer is disallowed
 	{'e', sharpNumFlag, argFloat | argComplex},
 	{'E', sharpNumFlag, argFloat | argComplex},
 	{'f', sharpNumFlag, argFloat | argComplex},
@@ -891,6 +891,13 @@ func okPrintfArg(pass *analysis.Pass, fileVersion string, call *ast.CallExpr, rn
 		fileVersion != "" && // fail open
 		versions.AtLeast(fileVersion, versions.Go1_26) {
 		v.typ = argRune | argByte | argString
+	}
+
+	// When analyzing go1.27 code, %d does not work on pointers (#62595).
+	if verb == 'd' &&
+		fileVersion != "" && // fail open
+		versions.AtLeast(fileVersion, versions.Go1_27) {
+		v.typ = argInt
 	}
 
 	// Could verb's arg implement fmt.Formatter?
@@ -1061,7 +1068,10 @@ func recursiveStringer(pass *analysis.Pass, e ast.Expr) (string, bool) {
 		e = u.X // strip off & from &r
 	}
 	if id, ok := e.(*ast.Ident); ok {
-		if pass.TypesInfo.Uses[id] == sig.Recv() {
+		// Uses refers to the receiver Var for the declared method, but looking up the String
+		// method on the instantiated receiver type may return an instantiated Signature with
+		// distinct parameter variables. Therefore we must compare against the Origin.
+		if pass.TypesInfo.Uses[id] == sig.Recv().Origin() {
 			return method.FullName(), true
 		}
 	}
@@ -1178,15 +1188,6 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 				}
 				pass.ReportRangef(call, "%s call has possible Printf formatting directive %s", name, m)
 				break // report only the first one
-			}
-		}
-	}
-	if strings.HasSuffix(name, "ln") {
-		// The last item, if a string, should not have a newline.
-		arg = args[len(args)-1]
-		if s, ok := stringConstantExpr(pass, arg); ok {
-			if strings.HasSuffix(s, "\n") {
-				pass.ReportRangef(call, "%s arg list ends with redundant newline", name)
 			}
 		}
 	}

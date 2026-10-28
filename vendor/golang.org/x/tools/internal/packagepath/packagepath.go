@@ -7,7 +7,10 @@
 package packagepath
 
 // (This package should not depend on go/ast.)
-import "strings"
+import (
+	pathpkg "path"
+	"strings"
+)
 
 // CanImport reports whether one package is allowed to import another.
 //
@@ -36,9 +39,19 @@ func CanImport(from, to string) bool {
 	return true
 }
 
-// IsStdPackage reports whether the specified package path belongs to a
-// package in the standard library (including internal dependencies).
-func IsStdPackage(path string) bool {
+// MaybeStdPackage reports whether the specified package path might
+// belong to a package in the standard library (including internal
+// dependencies), based only on its form.
+//
+// It may spuriously return true, but a result of false is definitive:
+//
+//	MaybeStdPackage("fmt")             = true
+//	MaybeStdPackage("maybe/tomorrow")  = true  // false positive
+//	MaybeStdPackage("example.com/foo") = false
+//
+// For a definitive answer, use [stdlib.HasPackage], which consults a
+// huge table.
+func MaybeStdPackage(path string) bool {
 	// A standard package has no dot in its first segment.
 	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
 	slash := strings.IndexByte(path, '/')
@@ -46,4 +59,25 @@ func IsStdPackage(path string) bool {
 		slash = len(path)
 	}
 	return !strings.Contains(path[:slash], ".") && path != "testdata"
+}
+
+// TrimVersionSuffix removes a possible trailing "/v2" (etc) suffix from a
+// package or module path.
+//
+// This is only a heuristic as to the package's declared name, and
+// should only be used for stylistic decisions, such as whether it
+// would be clearer to use an explicit local name in the import
+// because the declared name differs from the result of this function.
+//
+// TODO(hxjiang): consider trim ".v3" when using gopkg.in/foo.v2/path/to/package.v3.
+func TrimVersionSuffix(path string) string {
+	dir, base := pathpkg.Split(path)
+	if dir == "" {
+		return path
+	}
+
+	if len(base) > 1 && base[0] == 'v' && strings.Trim(base[1:], "0123456789") == "" {
+		return strings.TrimSuffix(dir, "/") // sans "/v2"
+	}
+	return path
 }

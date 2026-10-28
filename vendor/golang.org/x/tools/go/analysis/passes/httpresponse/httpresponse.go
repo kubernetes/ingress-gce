@@ -9,6 +9,7 @@ package httpresponse
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -107,8 +108,8 @@ func run(pass *analysis.Pass) (any, error) {
 // returns (*http.Response, error).
 func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 	fun, _ := expr.Fun.(*ast.SelectorExpr)
-	sig, _ := info.Types[fun].Type.(*types.Signature)
-	if sig == nil {
+	sig, ok := info.Types[fun].Type.(*types.Signature)
+	if !ok {
 		return false // the call is not of the form x.f()
 	}
 
@@ -116,8 +117,7 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 	if res.Len() != 2 {
 		return false // the function called does not return two values.
 	}
-	isPtr, named := typesinternal.ReceiverNamed(res.At(0))
-	if !isPtr || named == nil || !typesinternal.IsTypeNamed(named, "net/http", "Response") {
+	if !typesinternal.IsPointerToNamed(res.At(0).Type(), "net/http", "Response") {
 		return false // the first return type is not *http.Response.
 	}
 
@@ -144,8 +144,8 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 // node, along with the number of call expressions encountered.
 func restOfBlock(stack []ast.Node) ([]ast.Stmt, int) {
 	var ncalls int
-	for i := len(stack) - 1; i >= 0; i-- {
-		if b, ok := stack[i].(*ast.BlockStmt); ok {
+	for i, n := range slices.Backward(stack) {
+		if b, ok := n.(*ast.BlockStmt); ok {
 			for j, v := range b.List {
 				if v == stack[i+1] {
 					return b.List[j:], ncalls
@@ -154,7 +154,7 @@ func restOfBlock(stack []ast.Node) ([]ast.Stmt, int) {
 			break
 		}
 
-		if _, ok := stack[i].(*ast.CallExpr); ok {
+		if _, ok := n.(*ast.CallExpr); ok {
 			ncalls++
 		}
 	}

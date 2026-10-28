@@ -439,7 +439,7 @@ Big:
 		inStmtList = true
 	case *ast.ForStmt:
 		use(parent.For, parent.Body.Lbrace)
-		// special handling, as init;cond;post BlockStmt is not a statment list
+		// special handling, as init;cond;post BlockStmt is not a statement list
 		if parent.Init != nil && parent.Cond != nil && stmt == parent.Init && lineOf(parent.Cond.Pos()) == lineOf(stmt.End()) {
 			rightStmt = parent.Cond.Pos()
 		} else if parent.Post != nil && parent.Cond != nil && stmt == parent.Post && lineOf(parent.Cond.End()) == lineOf(stmt.Pos()) {
@@ -531,8 +531,7 @@ func DeleteUnusedVars(index *typeindex.Index, info *types.Info, tokFile *token.F
 	delcount := make(map[*types.Var]int)
 	for curId := range curDelend.Preorder((*ast.Ident)(nil)) {
 		id := curId.Node().(*ast.Ident)
-		if v, ok := info.Uses[id].(*types.Var); ok &&
-			typesinternal.GetVarKind(v) == typesinternal.LocalVar { // always false before go1.25
+		if v, ok := info.Uses[id].(*types.Var); ok && v.Kind() == types.LocalVar {
 			delcount[v]++
 		}
 	}
