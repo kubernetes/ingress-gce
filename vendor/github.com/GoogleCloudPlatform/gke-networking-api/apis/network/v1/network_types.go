@@ -246,6 +246,10 @@ const (
 
 // NetworkStatus contains the status information related to the network.
 type NetworkStatus struct {
+	// PodCIDRs defines the IP ranges assigned to the pods in the network.
+	// +optional
+	PodCIDRs []string `json:"podCIDRs,omitempty"`
+
 	// Conditions is a field representing the current conditions of the Network.
 	//
 	// Known condition types are:
