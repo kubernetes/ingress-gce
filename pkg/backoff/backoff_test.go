@@ -91,10 +91,7 @@ func TestExponentialBackoffHandlerDecreaseDelay(t *testing.T) {
 	handler := NewExponentialBackoffHandler(testRetry, testMinRetryDelay, testMaxRetryDelay)
 	expectedDelay := verifyMaxRetries(t, testMinRetryDelay, handler)
 
-	delay := handler.DecreaseDelay()
-	verifyIntervalDelay(t, delay, expectedDelay/2, expectedDelay)
-	verifyMaxRetries(t, delay, handler)
-
+	var delay time.Duration
 	for expectedDelay != testMinRetryDelay {
 		delay = handler.DecreaseDelay()
 		expectedMinDelay := expectedDelay / 2
