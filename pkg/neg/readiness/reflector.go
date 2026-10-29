@@ -272,6 +272,7 @@ func (r *readinessReflector) SyncPod(pod *v1.Pod) {
 
 	if !needToProcess(pod) {
 		r.logger.V(3).Info("Skip processing pod", "pod", key)
+		return
 	}
 	r.queue.Add(key)
 }
