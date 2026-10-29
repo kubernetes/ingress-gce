@@ -1,6 +1,7 @@
 package address_test
 
 import (
+	"strings"
 	"testing"
 
 	"google.golang.org/api/compute/v1"
@@ -9,6 +10,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/address"
+	"k8s.io/ingress-gce/pkg/l4/resources"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -27,11 +30,13 @@ func TestIPv4ToUse(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		desc string
-		svc  *apiv1.Service
-		fwd  *composite.ForwardingRule
-		want string
-		name string
+		desc        string
+		svc         *apiv1.Service
+		fwd         *composite.ForwardingRule
+		want        string
+		name        string
+		wantUserErr bool
+		wantErrMsg  string
 	}{
 		{
 			desc: "nothing exists",
@@ -117,6 +122,16 @@ func TestIPv4ToUse(t *testing.T) {
 			want: "",
 			name: "",
 		},
+		{
+			desc: "ipv6 address in spec.loadBalancerIP returns user error",
+			svc: &apiv1.Service{
+				Spec: apiv1.ServiceSpec{
+					LoadBalancerIP: reservedIPv6,
+				},
+			},
+			wantUserErr: true,
+			wantErrMsg:  "spec.loadBalancerIP does not support IPv6 addresses",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -126,6 +141,21 @@ func TestIPv4ToUse(t *testing.T) {
 			cloud, recorder := arrangeIPv4(t)
 
 			got, name, err := address.IPv4ToUse(cloud, recorder, tc.svc, tc.fwd, "")
+			if tc.wantUserErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !resources.IsUserError(err) {
+					t.Errorf("resources.IsUserError(%v) = false, want true", err)
+				}
+				if !l4utils.IsIPConfigurationError(err) {
+					t.Errorf("l4utils.IsIPConfigurationError(%v) = false, want true", err)
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
@@ -161,11 +191,13 @@ func TestIPv6ToUse(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		desc string
-		svc  *apiv1.Service
-		fwd  *composite.ForwardingRule
-		want string
-		name string
+		desc        string
+		svc         *apiv1.Service
+		fwd         *composite.ForwardingRule
+		want        string
+		name        string
+		wantUserErr bool
+		wantErrMsg  string
 	}{
 		{
 			desc: "nothing exists",
@@ -230,6 +262,50 @@ func TestIPv6ToUse(t *testing.T) {
 			want: "",
 			name: "",
 		},
+		{
+			desc: "ipv6 spec.loadBalancerIP on single-stack IPv6 service returns user error",
+			svc: &apiv1.Service{
+				Spec: apiv1.ServiceSpec{
+					IPFamilies:     []apiv1.IPFamily{apiv1.IPv6Protocol},
+					LoadBalancerIP: reservedIPv6,
+				},
+			},
+			wantUserErr: true,
+			wantErrMsg:  "spec.loadBalancerIP does not support IPv6 addresses",
+		},
+		{
+			desc: "ipv4 spec.loadBalancerIP on single-stack IPv6 service returns user error",
+			svc: &apiv1.Service{
+				Spec: apiv1.ServiceSpec{
+					IPFamilies:     []apiv1.IPFamily{apiv1.IPv6Protocol},
+					LoadBalancerIP: reservedIPv4,
+				},
+			},
+			wantUserErr: true,
+			wantErrMsg:  "spec.loadBalancerIP is not supported on IPv6-only Services",
+		},
+		{
+			desc: "ipv6 spec.loadBalancerIP on dual-stack service returns user error",
+			svc: &apiv1.Service{
+				Spec: apiv1.ServiceSpec{
+					IPFamilies:     []apiv1.IPFamily{apiv1.IPv4Protocol, apiv1.IPv6Protocol},
+					LoadBalancerIP: reservedIPv6,
+				},
+			},
+			wantUserErr: true,
+			wantErrMsg:  "spec.loadBalancerIP does not support IPv6 addresses",
+		},
+		{
+			desc: "ipv4 spec.loadBalancerIP on dual-stack service is ignored for IPv6 forwarding rule",
+			svc: &apiv1.Service{
+				Spec: apiv1.ServiceSpec{
+					IPFamilies:     []apiv1.IPFamily{apiv1.IPv4Protocol, apiv1.IPv6Protocol},
+					LoadBalancerIP: reservedIPv4,
+				},
+			},
+			want: "",
+			name: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -239,15 +315,30 @@ func TestIPv6ToUse(t *testing.T) {
 			cloud := arrangeIPv6(t)
 
 			got, name, err := address.IPv6ToUse(cloud, tc.svc, tc.fwd, "", klog.TODO())
+			if tc.wantUserErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !resources.IsUserError(err) {
+					t.Errorf("resources.IsUserError(%v) = false, want true", err)
+				}
+				if !l4utils.IsIPConfigurationError(err) {
+					t.Errorf("l4utils.IsIPConfigurationError(%v) = false, want true", err)
+				}
+				if !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrMsg)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
 
 			if got != tc.want {
-				t.Errorf("address.IPv4ToUse(_) = %q, want %q", got, tc.want)
+				t.Errorf("address.IPv6ToUse(_) = %q, want %q", got, tc.want)
 			}
 			if name != tc.name {
-				t.Errorf("address.IPv4ToUse(_) = %q, want %q", name, tc.name)
+				t.Errorf("address.IPv6ToUse(_) = %q, want %q", name, tc.name)
 			}
 		})
 	}
