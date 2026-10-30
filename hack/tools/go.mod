@@ -1,6 +1,6 @@
 module k8s.io/ingress-gce/hack/tools
 
-go 1.26.10
+go 1.27.3
 
 require (
 	github.com/ashanbrown/forbidigo v1.6.0
