@@ -97,6 +97,16 @@ func main() {
 
 	rootLogger.V(2).Info(fmt.Sprintf("Flags = %+v", flags.F))
 	defer klog.Flush()
+
+	// Draw the (optionally jittered) resync period once, so that all informers
+	// of this process share it and resync together. It is used by both the
+	// regular and the multi-project mode.
+	resyncPeriod := flags.JitteredResyncPeriod(flags.F.ResyncPeriod, flags.F.ResyncPeriodJitterFactor)
+	rootLogger.Info("Informer resync period",
+		"syncPeriod", flags.F.ResyncPeriod,
+		"syncPeriodJitterFactor", flags.F.ResyncPeriodJitterFactor,
+		"effectiveResyncPeriod", resyncPeriod)
+
 	// Create kube-config that uses protobufs to communicate with API server.
 	kubeConfigForProtobuf, err := app.NewKubeConfigForProtobuf(rootLogger)
 	if err != nil {
@@ -299,6 +309,7 @@ func main() {
 					providerConfigClient,
 					gceCreator,
 					namer,
+					resyncPeriod,
 					stopCh,
 				)
 				if err != nil {
@@ -318,6 +329,7 @@ func main() {
 					providerConfigClient,
 					gceCreator,
 					namer,
+					resyncPeriod,
 					stopCh,
 				)
 			}
@@ -343,9 +355,11 @@ func main() {
 	}
 
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient, rootLogger)
+
 	ctxConfig := ingctx.ControllerContextConfig{
 		Namespace:                            flags.F.WatchNamespace,
-		ResyncPeriod:                         flags.F.ResyncPeriod,
+		ResyncPeriod:                         resyncPeriod,
+		L4ResyncSpreadFactor:                 flags.F.L4ResyncSpreadFactor,
 		NumL4Workers:                         flags.F.NumL4Workers,
 		NumL4NetLBWorkers:                    flags.F.NumL4NetLBWorkers,
 		DefaultBackendSvcPort:                defaultBackendServicePort,
@@ -773,7 +787,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		negtypes.NewAdapterWithRateLimitSpecs(ctx.Cloud, flags.F.GCERateLimit.Values(), adapter, negMetrics),
 		zoneGetter,
 		ctx.ClusterNamer,
-		flags.F.ResyncPeriod,
+		ctx.ResyncPeriod,
 		flags.F.NegGCPeriod,
 		flags.F.NumNegGCWorkers,
 		flags.F.EnableReadinessReflector,
