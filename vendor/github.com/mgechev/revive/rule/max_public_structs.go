@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"strings"
 
 	"github.com/mgechev/revive/lint"
 )
@@ -16,6 +15,8 @@ type MaxPublicStructsRule struct {
 
 const defaultMaxPublicStructs = 5
 
+var _ lint.ConfigurableRule = (*MaxPublicStructsRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
@@ -23,11 +24,6 @@ func (r *MaxPublicStructsRule) Configure(arguments lint.Arguments) error {
 	if len(arguments) < 1 {
 		r.max = defaultMaxPublicStructs
 		return nil
-	}
-
-	err := checkNumberOfArguments(1, arguments, r.Name())
-	if err != nil {
-		return err
 	}
 
 	maxStructs, ok := arguments[0].(int64) // Alt. non panicking version
@@ -81,11 +77,8 @@ type lintMaxPublicStructs struct {
 }
 
 func (w *lintMaxPublicStructs) Visit(n ast.Node) ast.Visitor {
-	switch v := n.(type) {
-	case *ast.TypeSpec:
-		name := v.Name.Name
-		first := string(name[0])
-		if strings.ToUpper(first) == first {
+	if v, ok := n.(*ast.TypeSpec); ok && ast.IsExported(v.Name.Name) {
+		if _, ok := v.Type.(*ast.StructType); ok {
 			w.current++
 		}
 	}

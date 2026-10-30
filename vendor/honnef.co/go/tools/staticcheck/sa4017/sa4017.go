@@ -9,7 +9,6 @@ import (
 	"honnef.co/go/tools/analysis/lint"
 	"honnef.co/go/tools/analysis/report"
 	"honnef.co/go/tools/go/ir"
-	"honnef.co/go/tools/go/ir/irutil"
 	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/internal/passes/buildir"
 
@@ -32,15 +31,14 @@ var SCAnalyzer = lint.InitializeAnalyzer(&lint.Analyzer{
 
 var Analyzer = SCAnalyzer.Analyzer
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	pure := pass.ResultOf[purity.Analyzer].(purity.Result)
 
 fnLoop:
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
 		if code.IsInTest(pass, fn) {
 			params := fn.Signature.Params()
-			for i := 0; i < params.Len(); i++ {
-				param := params.At(i)
+			for param := range params.Variables() {
 				if typeutil.IsPointerToTypeWithName(param.Type(), "testing.B") {
 					// Ignore discarded pure functions in code related
 					// to benchmarks. Instead of matching BenchmarkFoo
@@ -61,7 +59,7 @@ fnLoop:
 					continue
 				}
 				refs := ins.Referrers()
-				if refs == nil || len(irutil.FilterDebug(*refs)) > 0 {
+				if refs == nil || len(*refs) > 0 {
 					continue
 				}
 

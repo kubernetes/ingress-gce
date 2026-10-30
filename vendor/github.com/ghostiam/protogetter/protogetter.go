@@ -96,6 +96,9 @@ func Run(pass *analysis.Pass, cfg *Config) error {
 		(*ast.StarExpr)(nil),
 		(*ast.IncDecStmt)(nil),
 		(*ast.UnaryExpr)(nil),
+		(*ast.KeyValueExpr)(nil),
+		(*ast.DeclStmt)(nil),
+		(*ast.ReturnStmt)(nil),
 	}
 
 	// Skip filtered files.

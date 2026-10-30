@@ -14,7 +14,7 @@ type RangeValInClosureRule struct{}
 func (*RangeValInClosureRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 	var failures []lint.Failure
 
-	if file.Pkg.IsAtLeastGo122() {
+	if file.Pkg.IsAtLeastGoVersion(lint.Go122) {
 		return failures
 	}
 
@@ -112,6 +112,7 @@ func (w rangeValInClosure) Visit(node ast.Node) ast.Visitor {
 		for _, v := range vars {
 			if v.Obj == id.Obj {
 				w.onFailure(lint.Failure{
+					Category:   lint.FailureCategoryLogic,
 					Confidence: 1,
 					Failure:    fmt.Sprintf("loop variable %v captured by func literal", id.Name),
 					Node:       n,

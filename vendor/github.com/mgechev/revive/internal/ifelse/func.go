@@ -23,7 +23,7 @@ var DeviatingFuncs = map[Call]BranchKind{
 	{"log", "Panicln"}: Panic,
 }
 
-// ExprCall gets the Call of an ExprStmt, if any.
+// ExprCall gets the [Call] of an [ast.ExprStmt], if any.
 func ExprCall(expr *ast.ExprStmt) (Call, bool) {
 	call, ok := expr.X.(*ast.CallExpr)
 	if !ok {
@@ -40,7 +40,7 @@ func ExprCall(expr *ast.ExprStmt) (Call, bool) {
 	return Call{}, false
 }
 
-// String returns the function name with package qualifier (if any)
+// String returns the function name with package qualifier (if any).
 func (f Call) String() string {
 	if f.Pkg != "" {
 		return fmt.Sprintf("%s.%s", f.Pkg, f.Name)

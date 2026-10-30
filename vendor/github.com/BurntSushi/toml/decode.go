@@ -196,6 +196,26 @@ func (md *MetaData) PrimitiveDecode(primValue Primitive, v any) error {
 	return md.unify(primValue.undecoded, rvalue(v))
 }
 
+// markDecodedRecursive is a helper to mark any key under the given tmap as
+// decoded, recursing as needed
+func markDecodedRecursive(md *MetaData, tmap map[string]any) {
+	for key := range tmap {
+		md.decoded[md.context.add(key).String()] = struct{}{}
+		if tmap, ok := tmap[key].(map[string]any); ok {
+			md.context = append(md.context, key)
+			markDecodedRecursive(md, tmap)
+			md.context = md.context[0 : len(md.context)-1]
+		}
+		if tarr, ok := tmap[key].([]map[string]any); ok {
+			for _, elm := range tarr {
+				md.context = append(md.context, key)
+				markDecodedRecursive(md, elm)
+				md.context = md.context[0 : len(md.context)-1]
+			}
+		}
+	}
+}
+
 // unify performs a sort of type unification based on the structure of `rv`,
 // which is the client representation.
 //
@@ -221,6 +241,16 @@ func (md *MetaData) unify(data any, rv reflect.Value) error {
 		err := v.UnmarshalTOML(data)
 		if err != nil {
 			return md.parseErr(err)
+		}
+		// Assume the Unmarshaler decoded everything, so mark all keys under
+		// this table as decoded.
+		if tmap, ok := data.(map[string]any); ok {
+			markDecodedRecursive(md, tmap)
+		}
+		if aot, ok := data.([]map[string]any); ok {
+			for _, tmap := range aot {
+				markDecodedRecursive(md, tmap)
+			}
 		}
 		return nil
 	}
@@ -400,7 +430,7 @@ func (md *MetaData) unifyString(data any, rv reflect.Value) error {
 		if i, ok := data.(int64); ok {
 			rv.SetString(strconv.FormatInt(i, 10))
 		} else if f, ok := data.(float64); ok {
-			rv.SetString(strconv.FormatFloat(f, 'f', -1, 64))
+			rv.SetString(strconv.FormatFloat(f, 'g', -1, 64))
 		} else {
 			return md.badtype("string", data)
 		}

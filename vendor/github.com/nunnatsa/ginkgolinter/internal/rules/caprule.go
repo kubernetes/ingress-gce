@@ -3,21 +3,28 @@ package rules
 import (
 	"go/token"
 
+	"github.com/nunnatsa/ginkgolinter/config"
 	"github.com/nunnatsa/ginkgolinter/internal/expression"
 	"github.com/nunnatsa/ginkgolinter/internal/expression/actual"
 	"github.com/nunnatsa/ginkgolinter/internal/expression/matcher"
 	"github.com/nunnatsa/ginkgolinter/internal/reports"
-	"github.com/nunnatsa/ginkgolinter/types"
 )
 
 const wrongCapWarningTemplate = "wrong cap assertion"
 
 // CapRule does not allow using the cap() function in actual with numeric comparison.
 // it suggests to use the HaveLen matcher, instead.
+//
+// Example:
+//
+//	// Bad:
+//	Expect(cap(x)).To(Equal(5))
+//
+//	// Good:
+//	Expect(x).To(HaveCap(5))
 type CapRule struct{}
 
-func (r *CapRule) Apply(gexp *expression.GomegaExpression, config types.Config, reportBuilder *reports.Builder) bool {
-
+func (r *CapRule) Apply(gexp *expression.GomegaExpression, config config.Config, reportBuilder *reports.Builder) bool {
 	if !r.isApplied(gexp, config) {
 		return false
 	}
@@ -29,7 +36,7 @@ func (r *CapRule) Apply(gexp *expression.GomegaExpression, config types.Config, 
 	return false
 }
 
-func (r *CapRule) isApplied(gexp *expression.GomegaExpression, config types.Config) bool {
+func (r *CapRule) isApplied(gexp *expression.GomegaExpression, config config.Config) bool {
 	if config.SuppressLen {
 		return false
 	}
@@ -106,20 +113,17 @@ func (r *CapRule) fixComparison(gexp *expression.GomegaExpression) bool {
 	return true
 }
 
-func (r *CapRule) handleBeNumerically(gexp *expression.GomegaExpression, matcher *matcher.BeNumericallyMatcher) bool {
-	op := matcher.GetOp()
-	val := matcher.GetValue()
-	isValZero := val.String() == "0"
-	isValOne := val.String() == "1"
+func (r *CapRule) handleBeNumerically(gexp *expression.GomegaExpression, mtchr *matcher.BeNumericallyMatcher) bool {
+	op := mtchr.GetOp()
 
-	if (op == token.GTR && isValZero) || (op == token.GEQ && isValOne) {
-		gexp.ReverseAssertionFuncLogic()
-		gexp.SetMatcherCapZero()
-	} else if op == token.EQL {
-		gexp.SetMatcherCap(matcher.GetValueExpr())
+	if op == token.EQL {
+		gexp.SetMatcherCap(mtchr.GetValueExpr())
 	} else if op == token.NEQ {
 		gexp.ReverseAssertionFuncLogic()
-		gexp.SetMatcherCap(matcher.GetValueExpr())
+		gexp.SetMatcherCap(mtchr.GetValueExpr())
+	} else if gexp.MatcherTypeIs(matcher.GreaterThanZero) {
+		gexp.ReverseAssertionFuncLogic()
+		gexp.SetMatcherCapZero()
 	} else {
 		return false
 	}

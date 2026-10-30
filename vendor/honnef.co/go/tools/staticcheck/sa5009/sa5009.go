@@ -127,8 +127,8 @@ func checkImpl(carg *callcheck.Argument, f ir.Value, args []ir.Value) {
 			return []types.Type{key, val}, true
 		case *types.Struct:
 			out := make([]types.Type, 0, T.NumFields())
-			for i := 0; i < T.NumFields(); i++ {
-				out = append(out, T.Field(i).Type())
+			for field := range T.Fields() {
+				out = append(out, field.Type())
 			}
 			return out, true
 		case *types.Array:
@@ -252,7 +252,7 @@ func checkImpl(carg *callcheck.Argument, f ir.Value, args []ir.Value) {
 			}
 		}
 
-		if flags&isPointer != 0 && typeutil.IsPointerLike(T) {
+		if flags&isPointer != 0 && typeutil.MaybePointerLike(T) {
 			return true
 		}
 		if flags&isPseudoPointer != 0 {

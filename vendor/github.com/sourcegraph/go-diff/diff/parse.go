@@ -1,7 +1,6 @@
 package diff
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -17,13 +16,24 @@ import (
 // case of per-file errors. If it cannot detect when the diff of the next file
 // begins, the hunks are added to the FileDiff of the previous file.
 func ParseMultiFileDiff(diff []byte) ([]*FileDiff, error) {
-	return NewMultiFileDiffReader(bytes.NewReader(diff)).ReadAllFiles()
+	return ParseMultiFileDiffOptions(diff, ParseOptions{})
+}
+
+// ParseMultiFileDiffOptions parses a multi-file unified diff with the given options.
+func ParseMultiFileDiffOptions(diff []byte, opts ParseOptions) ([]*FileDiff, error) {
+	return NewMultiFileDiffReaderOptions(bytes.NewReader(diff), opts).ReadAllFiles()
 }
 
 // NewMultiFileDiffReader returns a new MultiFileDiffReader that reads
 // a multi-file unified diff from r.
 func NewMultiFileDiffReader(r io.Reader) *MultiFileDiffReader {
-	return &MultiFileDiffReader{reader: newLineReader(r)}
+	return NewMultiFileDiffReaderOptions(r, ParseOptions{})
+}
+
+// NewMultiFileDiffReaderOptions returns a new MultiFileDiffReader that reads
+// a multi-file unified diff from r with the given options.
+func NewMultiFileDiffReaderOptions(r io.Reader, opts ParseOptions) *MultiFileDiffReader {
+	return &MultiFileDiffReader{reader: newLineReaderOptions(r, opts)}
 }
 
 // MultiFileDiffReader reads a multi-file unified diff.
@@ -153,13 +163,24 @@ func (r *MultiFileDiffReader) ReadAllFiles() ([]*FileDiff, error) {
 
 // ParseFileDiff parses a file unified diff.
 func ParseFileDiff(diff []byte) (*FileDiff, error) {
-	return NewFileDiffReader(bytes.NewReader(diff)).Read()
+	return ParseFileDiffOptions(diff, ParseOptions{})
+}
+
+// ParseFileDiffOptions parses a file unified diff with the given options.
+func ParseFileDiffOptions(diff []byte, opts ParseOptions) (*FileDiff, error) {
+	return NewFileDiffReaderOptions(bytes.NewReader(diff), opts).Read()
 }
 
 // NewFileDiffReader returns a new FileDiffReader that reads a file
 // unified diff.
 func NewFileDiffReader(r io.Reader) *FileDiffReader {
-	return &FileDiffReader{reader: &lineReader{reader: bufio.NewReader(r)}}
+	return NewFileDiffReaderOptions(r, ParseOptions{})
+}
+
+// NewFileDiffReaderOptions returns a new FileDiffReader that reads a file
+// unified diff with the given options.
+func NewFileDiffReaderOptions(r io.Reader, opts ParseOptions) *FileDiffReader {
+	return &FileDiffReader{reader: newLineReaderOptions(r, opts)}
 }
 
 // FileDiffReader reads a unified file diff.
@@ -352,7 +373,7 @@ func (r *FileDiffReader) ReadExtendedHeaders() ([]string, error) {
 			r.fileHeaderLine = nil
 		}
 
-		if bytes.HasPrefix(line, []byte("diff --git ")) {
+		if bytes.HasPrefix(line, []byte(gitExtendedHeaderDiff)) {
 			if firstLine {
 				firstLine = false
 			} else {
@@ -405,6 +426,7 @@ func readQuotedFilename(text string) (value string, remainder string, err error)
 // valid syntax, it may be impossible to extract filenames; if so, the
 // function returns ("", "", true).
 func parseDiffGitArgs(diffArgs string) (string, string, bool) {
+	diffArgs = strings.TrimSuffix(diffArgs, "\r")
 	length := len(diffArgs)
 	if length < 3 {
 		return "", "", false
@@ -444,7 +466,7 @@ func parseDiffGitArgs(diffArgs string) (string, string, bool) {
 				return first, second, true
 			}
 			// If the names don't have the a/ and b/ prefixes and they're equal, proceed.
-			if !(first[:2] == "a/" && second[:2] == "b/") && first == second {
+			if !(strings.HasPrefix(first, "a/") && strings.HasPrefix(second, "b/")) && first == second {
 				return first, second, true
 			}
 		}
@@ -486,43 +508,36 @@ func parseDiffGitArgs(diffArgs string) (string, string, bool) {
 // that follow. It updates fd fields from the parsed extended headers.
 func handleEmpty(fd *FileDiff) (wasEmpty bool) {
 	lineCount := len(fd.Extended)
-	if lineCount > 0 && !strings.HasPrefix(fd.Extended[0], "diff --git ") {
+	headers, ok := parseGitExtendedHeaders(fd.Extended)
+	if !ok {
 		return false
 	}
 
-	lineHasPrefix := func(idx int, prefix string) bool {
-		return strings.HasPrefix(fd.Extended[idx], prefix)
-	}
+	isCopy := (lineCount == 4 && headers.hasPairAt(2, gitCopyHeaderPair)) ||
+		(lineCount == 6 && headers.hasPairAt(2, gitCopyHeaderPair) && headers.hasKind(5, gitExtendedHeaderBinaryFiles)) ||
+		(lineCount == 6 && headers.hasPairAt(1, gitModeHeaderPair) && headers.hasPairAt(4, gitCopyHeaderPair))
 
-	linesHavePrefixes := func(idx1 int, prefix1 string, idx2 int, prefix2 string) bool {
-		return lineHasPrefix(idx1, prefix1) && lineHasPrefix(idx2, prefix2)
-	}
+	isRename := (lineCount == 4 && headers.hasPairAt(2, gitRenameHeaderPair)) ||
+		(lineCount == 5 && headers.hasPairAt(2, gitRenameHeaderPair) && headers.hasKind(4, gitExtendedHeaderBinaryFiles)) ||
+		(lineCount == 6 && headers.hasPairAt(2, gitRenameHeaderPair) && headers.hasKind(5, gitExtendedHeaderBinaryFiles)) ||
+		(lineCount == 6 && headers.hasPairAt(1, gitModeHeaderPair) && headers.hasPairAt(4, gitRenameHeaderPair))
 
-	isCopy := (lineCount == 4 && linesHavePrefixes(2, "copy from ", 3, "copy to ")) ||
-		(lineCount == 6 && linesHavePrefixes(2, "copy from ", 3, "copy to ") && lineHasPrefix(5, "Binary files ")) ||
-		(lineCount == 6 && linesHavePrefixes(1, "old mode ", 2, "new mode ") && linesHavePrefixes(4, "copy from ", 5, "copy to "))
+	isDeletedFile := (lineCount == 3 || lineCount == 4 && headers.hasKind(3, gitExtendedHeaderBinaryFiles) || lineCount > 4 && headers.hasKind(3, gitExtendedHeaderBinaryPatch)) &&
+		headers.hasKind(1, gitExtendedHeaderDeletedFileMode)
 
-	isRename := (lineCount == 4 && linesHavePrefixes(2, "rename from ", 3, "rename to ")) ||
-		(lineCount == 5 && linesHavePrefixes(2, "rename from ", 3, "rename to ") && lineHasPrefix(4, "Binary files ")) ||
-		(lineCount == 6 && linesHavePrefixes(2, "rename from ", 3, "rename to ") && lineHasPrefix(5, "Binary files ")) ||
-		(lineCount == 6 && linesHavePrefixes(1, "old mode ", 2, "new mode ") && linesHavePrefixes(4, "rename from ", 5, "rename to "))
+	isNewFile := (lineCount == 3 || lineCount == 4 && headers.hasKind(3, gitExtendedHeaderBinaryFiles) || lineCount > 4 && headers.hasKind(3, gitExtendedHeaderBinaryPatch)) &&
+		headers.hasKind(1, gitExtendedHeaderNewFileMode)
 
-	isDeletedFile := (lineCount == 3 || lineCount == 4 && lineHasPrefix(3, "Binary files ") || lineCount > 4 && lineHasPrefix(3, "GIT binary patch")) &&
-		lineHasPrefix(1, "deleted file mode ")
+	isModeChange := lineCount == 3 && headers.hasPairAt(1, gitModeHeaderPair)
 
-	isNewFile := (lineCount == 3 || lineCount == 4 && lineHasPrefix(3, "Binary files ") || lineCount > 4 && lineHasPrefix(3, "GIT binary patch")) &&
-		lineHasPrefix(1, "new file mode ")
-
-	isModeChange := lineCount == 3 && linesHavePrefixes(1, "old mode ", 2, "new mode ")
-
-	isBinaryPatch := lineCount == 3 && lineHasPrefix(2, "Binary files ") || lineCount > 3 && lineHasPrefix(2, "GIT binary patch")
+	isBinaryPatch := lineCount == 3 && headers.hasKind(2, gitExtendedHeaderBinaryFiles) || lineCount > 3 && headers.hasKind(2, gitExtendedHeaderBinaryPatch)
 
 	if !isModeChange && !isCopy && !isRename && !isBinaryPatch && !isNewFile && !isDeletedFile {
 		return false
 	}
 
 	var success bool
-	fd.OrigName, fd.NewName, success = parseDiffGitArgs(fd.Extended[0][len("diff --git "):])
+	fd.OrigName, fd.NewName, success = parseDiffGitArgs(headers[0].value())
 	if isNewFile {
 		fd.OrigName = "/dev/null"
 	}
@@ -533,13 +548,11 @@ func handleEmpty(fd *FileDiff) (wasEmpty bool) {
 
 	// For ambiguous 'diff --git' lines, try to reconstruct filenames using extended headers.
 	if success && (isCopy || isRename) && fd.OrigName == "" && fd.NewName == "" {
-		diffArgs := fd.Extended[0][len("diff --git "):]
+		diffArgs := headers[0].value()
 
-		tryReconstruct := func(header string, prefix string, whichFile int, result *string) {
-			if !strings.HasPrefix(header, prefix) {
-				return
-			}
-			rawFilename := header[len(prefix):]
+		tryReconstruct := func(header gitExtendedHeader, whichFile int, result *string) {
+			rawFilename := header.value()
+			rawFilename = strings.TrimSuffix(rawFilename, "\r")
 
 			// extract the filename prefix (e.g. "a/") from the 'diff --git' line.
 			var prefixLetterIndex int
@@ -555,11 +568,13 @@ func handleEmpty(fd *FileDiff) (wasEmpty bool) {
 			*result = diffArgs[prefixLetterIndex:prefixLetterIndex+2] + rawFilename
 		}
 
-		for _, header := range fd.Extended {
-			tryReconstruct(header, "copy from ", 1, &fd.OrigName)
-			tryReconstruct(header, "copy to ", 2, &fd.NewName)
-			tryReconstruct(header, "rename from ", 1, &fd.OrigName)
-			tryReconstruct(header, "rename to ", 2, &fd.NewName)
+		for _, header := range headers {
+			switch header.kind {
+			case gitExtendedHeaderCopyFrom, gitExtendedHeaderRenameFrom:
+				tryReconstruct(header, 1, &fd.OrigName)
+			case gitExtendedHeaderCopyTo, gitExtendedHeaderRenameTo:
+				tryReconstruct(header, 2, &fd.NewName)
+			}
 		}
 	}
 	return success
@@ -586,7 +601,12 @@ var (
 // only of hunks and not include a file header; if it has a file
 // header, use ParseFileDiff.
 func ParseHunks(diff []byte) ([]*Hunk, error) {
-	r := NewHunksReader(bytes.NewReader(diff))
+	return ParseHunksOptions(diff, ParseOptions{})
+}
+
+// ParseHunksOptions parses hunks from a unified diff with the given options.
+func ParseHunksOptions(diff []byte, opts ParseOptions) ([]*Hunk, error) {
+	r := NewHunksReaderOptions(bytes.NewReader(diff), opts)
 	hunks, err := r.ReadAllHunks()
 	if err != nil {
 		return nil, err
@@ -597,7 +617,13 @@ func ParseHunks(diff []byte) ([]*Hunk, error) {
 // NewHunksReader returns a new HunksReader that reads unified diff hunks
 // from r.
 func NewHunksReader(r io.Reader) *HunksReader {
-	return &HunksReader{reader: &lineReader{reader: bufio.NewReader(r)}}
+	return NewHunksReaderOptions(r, ParseOptions{})
+}
+
+// NewHunksReaderOptions returns a new HunksReader that reads unified diff hunks
+// from r with the given options.
+func NewHunksReaderOptions(r io.Reader, opts ParseOptions) *HunksReader {
+	return &HunksReader{reader: newLineReaderOptions(r, opts)}
 }
 
 // A HunksReader reads hunks from a unified diff.
@@ -701,7 +727,7 @@ func (r *HunksReader) ReadHunk() (*Hunk, error) {
 				// handle that case.
 				return r.hunk, &ParseError{r.line, r.offset, &ErrBadHunkLine{Line: line}}
 			}
-			if bytes.Equal(line, []byte(noNewlineMessage)) {
+			if bytes.Equal(bytes.TrimSuffix(line, []byte("\r")), []byte(noNewlineMessage)) {
 				if lastLineFromOrig {
 					// Retain the newline in the body (otherwise the
 					// diff line would be like "-a+b", where "+b" is
@@ -755,6 +781,7 @@ func linePrefix(c byte) bool {
 // if its value is 1. normalizeHeader returns an error if the header
 // is not in the correct format.
 func normalizeHeader(header string) (string, string, error) {
+	header = strings.TrimSuffix(header, "\r")
 	// Split the header into five parts: the first '@@', the two
 	// ranges, the last '@@', and the optional section.
 	pieces := strings.SplitN(header, " ", 5)
@@ -815,7 +842,8 @@ func parseOnlyInMessage(line []byte) (bool, []byte, []byte) {
 	if idx < 0 {
 		return false, nil, nil
 	}
-	return true, line[:idx], line[idx+2:]
+	filename := bytes.TrimSuffix(line[idx+2:], []byte("\r"))
+	return true, line[:idx], filename
 }
 
 // A ParseError is a description of a unified diff syntax error.

@@ -5,8 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/mgechev/revive/lint"
 	"golang.org/x/tools/go/ast/astutil"
+
+	"github.com/mgechev/revive/lint"
 )
 
 // CognitiveComplexityRule sets restriction for maximum cognitive complexity.
@@ -15,6 +16,8 @@ type CognitiveComplexityRule struct {
 }
 
 const defaultMaxCognitiveComplexity = 7
+
+var _ lint.ConfigurableRule = (*CognitiveComplexityRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
@@ -94,12 +97,11 @@ func (v *cognitiveComplexityVisitor) subTreeComplexity(n ast.Node) int {
 	return v.complexity
 }
 
-// Visit implements the ast.Visitor interface.
+// Visit implements the [ast.Visitor] interface.
 func (v *cognitiveComplexityVisitor) Visit(n ast.Node) ast.Visitor {
 	switch n := n.(type) {
 	case *ast.IfStmt:
-		targets := []ast.Node{n.Cond, n.Body, n.Else}
-		v.walk(1, targets...)
+		v.walkIfElse(n)
 		return nil
 	case *ast.ForStmt:
 		targets := []ast.Node{n.Cond, n.Body}
@@ -154,6 +156,29 @@ func (v *cognitiveComplexityVisitor) walk(complexityIncrement int, targets ...as
 	}
 
 	v.nestingLevel = nesting
+}
+
+func (v *cognitiveComplexityVisitor) walkIfElse(n *ast.IfStmt) {
+	var w func(n *ast.IfStmt)
+	w = func(n *ast.IfStmt) {
+		ast.Walk(v, n.Cond)
+		ast.Walk(v, n.Body)
+		if n.Else != nil {
+			if elif, ok := n.Else.(*ast.IfStmt); ok {
+				v.complexity++
+				w(elif)
+			} else {
+				ast.Walk(v, n.Else)
+			}
+		}
+	}
+
+	// Nesting level is incremented in 'if' and 'else' blocks, but only the first 'if' in an 'if-else-if' chain sees its
+	// complexity increased by the nesting level.
+	v.complexity += 1 + v.nestingLevel
+	v.nestingLevel++
+	w(n)
+	v.nestingLevel--
 }
 
 func (*cognitiveComplexityVisitor) binExpComplexity(n *ast.BinaryExpr) int {

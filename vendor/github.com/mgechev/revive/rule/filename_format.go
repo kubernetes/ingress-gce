@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"unicode"
 
 	"github.com/mgechev/revive/lint"
 )
 
-// FilenameFormatRule lints source filenames according to a set of regular expressions given as arguments
+// FilenameFormatRule lints source filenames according to a set of regular expressions given as arguments.
 type FilenameFormatRule struct {
 	format *regexp.Regexp
 }
@@ -23,6 +24,7 @@ func (r *FilenameFormatRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fai
 
 	failureMsg := fmt.Sprintf("Filename %s is not of the format %s.%s", filename, r.format.String(), r.getMsgForNonASCIIChars(filename))
 	return []lint.Failure{{
+		Category:   lint.FailureCategoryNaming,
 		Confidence: 1,
 		Failure:    failureMsg,
 		RuleName:   r.Name(),
@@ -31,16 +33,16 @@ func (r *FilenameFormatRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fai
 }
 
 func (*FilenameFormatRule) getMsgForNonASCIIChars(str string) string {
-	result := ""
+	var result strings.Builder
 	for _, c := range str {
 		if c <= unicode.MaxASCII {
 			continue
 		}
 
-		result += fmt.Sprintf(" Non ASCII character %c (%U) found.", c, c)
+		fmt.Fprintf(&result, " Non ASCII character %c (%U) found.", c, c)
 	}
 
-	return result
+	return result.String()
 }
 
 // Name returns the rule name.
@@ -49,6 +51,8 @@ func (*FilenameFormatRule) Name() string {
 }
 
 var defaultFormat = regexp.MustCompile(`^[_A-Za-z0-9][_A-Za-z0-9-]*\.go$`)
+
+var _ lint.ConfigurableRule = (*FilenameFormatRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //

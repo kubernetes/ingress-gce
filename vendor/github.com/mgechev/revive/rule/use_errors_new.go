@@ -3,14 +3,20 @@ package rule
 import (
 	"go/ast"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
-// UseErrorsNewRule spots calls to fmt.Errorf that can be replaced by errors.New.
+// UseErrorsNewRule spots calls to [fmt.Errorf] that can be replaced by [errors.New].
 type UseErrorsNewRule struct{}
 
 // Apply applies the rule to given file.
 func (*UseErrorsNewRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
+	if file.Pkg.IsAtLeastGoVersion(lint.Go126) {
+		// For unformatted strings in Go 1.26, fmt.Errorf matches the behavior of errors.New, so we can skip the analysis.
+		return nil
+	}
+
 	var failures []lint.Failure
 
 	walker := lintFmtErrorf{
@@ -39,7 +45,7 @@ func (w lintFmtErrorf) Visit(n ast.Node) ast.Visitor {
 		return w // not a function call
 	}
 
-	isFmtErrorf := isPkgDot(funcCall.Fun, "fmt", "Errorf")
+	isFmtErrorf := astutils.IsPkgDotName(funcCall.Fun, "fmt", "Errorf")
 	if !isFmtErrorf {
 		return w // not a call to fmt.Errorf
 	}

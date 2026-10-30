@@ -10,12 +10,12 @@ import (
 // CheckFunc evaluates a rule against the given if-else chain and returns a message
 // describing the proposed refactor, along with a indicator of whether such a refactor
 // could be found.
-type CheckFunc func(Chain, Args) (string, bool)
+type CheckFunc func(Chain) (string, bool)
 
 // Apply evaluates the given Rule on if-else chains found within the given AST,
 // and returns the failures.
 //
-// Note that in if-else chain with multiple "if" blocks, only the *last* one is checked,
+// Note that in if-else chain with multiple "if" blocks, only the "last" one is checked,
 // that is to say, given:
 //
 //	if foo {
@@ -28,16 +28,9 @@ type CheckFunc func(Chain, Args) (string, bool)
 //
 // Only the block following "bar" is linted. This is because the rules that use this function
 // do not presently have anything to say about earlier blocks in the chain.
-func Apply(check CheckFunc, node ast.Node, target Target, args lint.Arguments) []lint.Failure {
+func Apply(check CheckFunc, node ast.Node, target Target, args Args) []lint.Failure {
 	v := &visitor{check: check, target: target}
-	for _, arg := range args {
-		switch arg {
-		case PreserveScope:
-			v.args.PreserveScope = true
-		case AllowJump:
-			v.args.AllowJump = true
-		}
-	}
+	v.args = args
 	ast.Walk(v, node)
 	return v.failures
 }
@@ -126,7 +119,7 @@ func (v *visitor) visitIf(ifStmt *ast.IfStmt, chain Chain) {
 }
 
 func (v *visitor) checkRule(ifStmt *ast.IfStmt, chain Chain) {
-	msg, found := v.check(chain, v.args)
+	msg, found := v.check(chain)
 	if !found {
 		return // passed the check
 	}
@@ -136,6 +129,7 @@ func (v *visitor) checkRule(ifStmt *ast.IfStmt, chain Chain) {
 		msg += " (move short variable declaration to its own line if necessary)"
 	}
 	v.failures = append(v.failures, lint.Failure{
+		Category:   lint.FailureCategoryStyle,
 		Confidence: 1,
 		Node:       v.target.node(ifStmt),
 		Failure:    msg,

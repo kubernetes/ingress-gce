@@ -45,9 +45,9 @@ const (
 )
 
 type commentInfo struct {
-	cindex         int               // current comment index
-	comment        *ast.CommentGroup // = printer.comments[cindex]; or nil
-	commentOffset  int               // = printer.posFor(printer.comments[cindex].List[0].Pos()).Offset; or infinity
+	cindex         int               // index of the next comment
+	comment        *ast.CommentGroup // = printer.comments[cindex-1]; or nil
+	commentOffset  int               // = printer.posFor(printer.comments[cindex-1].List[0].Pos()).Offset; or infinity
 	commentNewline bool              // true if the comment group contains newlines
 }
 
@@ -738,7 +738,9 @@ func (p *printer) intersperseComments(next token.Position, tok token.Token) (wro
 	for p.commentBefore(next) {
 		list := p.comment.List
 		changed := false
-		if p.lastTok != token.IMPORT && // do not rewrite cgo's import "C" comments
+
+		if tok != token.IDENT &&
+			p.lastTok != token.IMPORT && // do not rewrite cgo's import "C" comments
 			p.posFor(p.comment.Pos()).Column == 1 &&
 			p.posFor(p.comment.End()+1) == next {
 			// Unindented comment abutting next token position:

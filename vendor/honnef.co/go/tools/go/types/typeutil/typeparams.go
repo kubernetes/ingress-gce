@@ -3,6 +3,7 @@ package typeutil
 import (
 	"errors"
 	"go/types"
+	"slices"
 
 	"golang.org/x/exp/typeparams"
 )
@@ -48,6 +49,9 @@ func (ts TypeSet) CoreType() types.Type {
 		if !ok {
 			return nil
 		}
+		if !types.Identical(ch1.Elem(), ch2.Elem()) {
+			return nil
+		}
 		if ch1.Dir() == types.SendRecv {
 			// typ is currently a bidirectional channel. The term's type is either also bidirectional, or
 			// unidirectional. Use the term's type.
@@ -86,12 +90,7 @@ func (ts TypeSet) All(fn func(*types.Term) bool) bool {
 // Any calls fn for each term in the type set and reports whether any invocation returned true.
 // It stops after the first call that returned true.
 func (ts TypeSet) Any(fn func(*types.Term) bool) bool {
-	for _, term := range ts.Terms {
-		if fn(term) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ts.Terms, fn)
 }
 
 // All is a wrapper for NewTypeSet(typ).All(fn).
@@ -104,7 +103,12 @@ func Any(typ types.Type, fn func(*types.Term) bool) bool {
 	return NewTypeSet(typ).Any(fn)
 }
 
-func IsSlice(term *types.Term) bool {
-	_, ok := term.Type().Underlying().(*types.Slice)
+func IsType[T types.Type](term *types.Term) bool {
+	_, ok := term.Type().Underlying().(T)
 	return ok
+}
+
+//go:fix inline
+func IsSlice(term *types.Term) bool {
+	return IsType[*types.Slice](term)
 }

@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -14,11 +15,12 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 
 	"github.com/timonwong/loggercheck/internal/checkers"
+	"github.com/timonwong/loggercheck/internal/nilness"
 	"github.com/timonwong/loggercheck/internal/rules"
 	"github.com/timonwong/loggercheck/internal/sets"
 )
 
-const Doc = `Checks key value pairs for common logger libraries (kitlog,klog,logr,zap).`
+const Doc = `Checks key value pairs for common logger libraries (kitlog,klog,logr,slog,zap).`
 
 func NewAnalyzer(opts ...Option) *analysis.Analyzer {
 	l := newLoggerCheck(opts...)
@@ -40,9 +42,11 @@ type loggercheck struct {
 	requireStringKey bool           // flag -requirestringkey
 	noPrintfLike     bool           // flag -noprintflike
 
-	rules                  []string         // used for external integration, for example golangci-lint
-	rulesetList            []rules.Ruleset  // populate at runtime
-	rulesetIndicesByImport map[string][]int // ruleset index, populate at runtime
+	rules       []string        // used for external integration, for example golangci-lint
+	rulesetList []rules.Ruleset // populate at runtime
+
+	rulesetIndicesByImportMu sync.Mutex
+	rulesetIndicesByImport   map[string][]int // ruleset index, populate at runtime
 }
 
 func newLoggerCheck(opts ...Option) *loggercheck {
@@ -54,7 +58,7 @@ func newLoggerCheck(opts ...Option) *loggercheck {
 	}
 
 	fs.StringVar(&l.ruleFile, "rulefile", "", "path to a file contains a list of rules")
-	fs.Var(&l.disable, "disable", "comma-separated list of disabled logger checker (kitlog,klog,logr,zap,slog)")
+	fs.Var(&l.disable, "disable", "comma-separated list of disabled logger checker (kitlog,klog,logr,slog,zap)")
 	fs.BoolVar(&l.requireStringKey, "requirestringkey", false, "require all logging keys to be inlined constant strings")
 	fs.BoolVar(&l.noPrintfLike, "noprintflike", false, "require printf-like format specifier not present in args")
 
@@ -78,14 +82,17 @@ func vendorLessPath(ipath string) string {
 	return ipath
 }
 
-func (l *loggercheck) getCheckerForFunc(fn *types.Func) checkers.Checker {
+func (l *loggercheck) getCheckerForFunc(fn *types.Func) (checker checkers.Checker, rulesetName string) {
 	pkg := fn.Pkg()
 	if pkg == nil {
-		return nil
+		return nil, ""
 	}
 
 	pkgPath := vendorLessPath(pkg.Path())
+
+	l.rulesetIndicesByImportMu.Lock()
 	indices := l.rulesetIndicesByImport[pkgPath]
+	l.rulesetIndicesByImportMu.Unlock()
 
 	for _, idx := range indices {
 		rs := &l.rulesetList[idx]
@@ -98,17 +105,17 @@ func (l *loggercheck) getCheckerForFunc(fn *types.Func) checkers.Checker {
 			continue
 		}
 
-		checker := checkerByRulesetName[rs.Name]
+		checker = checkerByRulesetName[rs.Name]
 		if checker == nil {
-			return checkers.General{}
+			return checkers.General{}, rs.Name
 		}
-		return checker
+		return checker, rs.Name
 	}
 
-	return nil
+	return nil, ""
 }
 
-func (l *loggercheck) checkLoggerArguments(pass *analysis.Pass, call *ast.CallExpr) {
+func (l *loggercheck) checkLoggerArguments(pass *analysis.Pass, call *ast.CallExpr, nl *nilness.Index) {
 	fn, _ := typeutil.Callee(pass.TypesInfo, call).(*types.Func)
 	if fn == nil {
 		return // function pointer is not supported
@@ -124,7 +131,7 @@ func (l *loggercheck) checkLoggerArguments(pass *analysis.Pass, call *ast.CallEx
 		return
 	}
 
-	checker := l.getCheckerForFunc(fn)
+	checker, rulesetName := l.getCheckerForFunc(fn)
 	if checker == nil {
 		return
 	}
@@ -133,9 +140,11 @@ func (l *loggercheck) checkLoggerArguments(pass *analysis.Pass, call *ast.CallEx
 		Expr:      call,
 		Func:      fn,
 		Signature: sig,
+		Nilness:   nl,
 	}, checkers.Config{
 		RequireStringKey: l.requireStringKey,
 		NoPrintfLike:     l.noPrintfLike,
+		NilStringer:      nilStringerRulesetNames.Has(rulesetName),
 	})
 }
 
@@ -165,7 +174,10 @@ func (l *loggercheck) processConfig() error {
 	for i, rs := range l.rulesetList {
 		indices[rs.PackageImport] = append(indices[rs.PackageImport], i)
 	}
+
+	l.rulesetIndicesByImportMu.Lock()
 	l.rulesetIndicesByImport = indices
+	l.rulesetIndicesByImportMu.Unlock()
 
 	return nil
 }
@@ -177,6 +189,7 @@ func (l *loggercheck) run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nl := nilness.NewLazyIndex(pass)
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 	}
@@ -189,7 +202,7 @@ func (l *loggercheck) run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		l.checkLoggerArguments(pass, call)
+		l.checkLoggerArguments(pass, call, nl)
 	})
 
 	return nil, nil

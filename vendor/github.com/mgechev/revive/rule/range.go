@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"strings"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -43,7 +44,7 @@ func (w *lintRanges) Visit(node ast.Node) ast.Visitor {
 		// for x = range m { ... }
 		return w // single var form
 	}
-	if !isIdent(rs.Value, "_") {
+	if !astutils.IsIdent(rs.Value, "_") {
 		// for ?, y = range m { ... }
 		return w
 	}
@@ -52,6 +53,7 @@ func (w *lintRanges) Visit(node ast.Node) ast.Visitor {
 	newRS.Value = nil
 
 	w.onFailure(lint.Failure{
+		Category:        lint.FailureCategoryStyle,
 		Failure:         fmt.Sprintf("should omit 2nd value from range; this loop is equivalent to `for %s %s range ...`", w.file.Render(rs.Key), rs.Tok),
 		Confidence:      1,
 		Node:            rs.Value,

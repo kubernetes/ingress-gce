@@ -28,7 +28,7 @@ var SCAnalyzer = lint.InitializeAnalyzer(&lint.Analyzer{
 
 var Analyzer = SCAnalyzer.Analyzer
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
 		for _, block := range fn.Blocks {
 			for _, ins := range block.Instrs {
@@ -43,7 +43,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				if refs == nil {
 					continue
 				}
-				for _, ref := range irutil.FilterDebug(*refs) {
+				for _, ref := range *refs {
 					ifstmt, ok := ref.(*ir.If)
 					if !ok {
 						continue

@@ -14,6 +14,8 @@ type ImportsBlocklistRule struct {
 
 var replaceImportRegexp = regexp.MustCompile(`/?\*\*/?`)
 
+var _ lint.ConfigurableRule = (*ImportsBlocklistRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
@@ -24,7 +26,7 @@ func (r *ImportsBlocklistRule) Configure(arguments lint.Arguments) error {
 		if !ok {
 			return fmt.Errorf("invalid argument to the imports-blocklist rule. Expecting a string, got %T", arg)
 		}
-		regStr, err := regexp.Compile(fmt.Sprintf(`(?m)"%s"$`, replaceImportRegexp.ReplaceAllString(argStr, `(\W|\w)*`)))
+		regStr, err := regexp.Compile(fmt.Sprintf(`(?m)"%s"$`, replaceImportRegexp.ReplaceAllString(argStr, `(\W|\w)*`))) //nolint:gocritic // regexpSimplify: false positive
 		if err != nil {
 			return fmt.Errorf("invalid argument to the imports-blocklist rule. Expecting %q to be a valid regular expression, got: %w", argStr, err)
 		}

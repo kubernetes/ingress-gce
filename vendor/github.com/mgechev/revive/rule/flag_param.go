@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -26,7 +27,7 @@ func (*FlagParamRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 
 		boolParams := map[string]struct{}{}
 		for _, param := range fd.Type.Params.List {
-			if !isIdent(param.Type, "bool") {
+			if !astutils.IsIdent(param.Type, "bool") {
 				continue
 			}
 
@@ -77,9 +78,8 @@ func (w conditionVisitor) Visit(node ast.Node) ast.Visitor {
 		return w.idents[ident.Name] == struct{}{}
 	}
 
-	uses := pick(ifStmt.Cond, findUsesOfIdents)
-
-	if len(uses) < 1 {
+	uses := astutils.SeekNode[*ast.Ident](ifStmt.Cond, findUsesOfIdents)
+	if uses == nil {
 		return w
 	}
 
@@ -87,7 +87,7 @@ func (w conditionVisitor) Visit(node ast.Node) ast.Visitor {
 		Confidence: 1,
 		Node:       w.fd.Type.Params,
 		Category:   lint.FailureCategoryBadPractice,
-		Failure:    fmt.Sprintf("parameter '%s' seems to be a control flag, avoid control coupling", uses[0]),
+		Failure:    fmt.Sprintf("parameter '%s' seems to be a control flag, avoid control coupling", uses.Name),
 	})
 
 	return nil

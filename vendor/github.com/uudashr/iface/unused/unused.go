@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"reflect"
+	"go/types"
+	"os"
 	"slices"
 	"strings"
 
@@ -14,7 +15,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-// Analyzer is the unused interface analyzer.
+// Analyzer detects interfaces which are not used anywhere in the same package where they are defined.
 var Analyzer = newAnalyzer()
 
 func newAnalyzer() *analysis.Analyzer {
@@ -22,16 +23,22 @@ func newAnalyzer() *analysis.Analyzer {
 
 	analyzer := &analysis.Analyzer{
 		Name:     "unused",
-		Doc:      "Identifies interfaces that are not used anywhere in the same package where the interface is defined",
+		Doc:      "Detects interfaces which are not used anywhere in the same package where they are defined. Exported interfaces are reported without a suggested fix, since they may be used by other packages.",
 		URL:      "https://pkg.go.dev/github.com/uudashr/iface/unused",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      r.run,
 	}
 
-	analyzer.Flags.BoolVar(&r.debug, "debug", false, "enable debug mode")
+	analyzer.Flags.BoolVar(&r.debug, "nerd", false, "enable nerd mode")
 	analyzer.Flags.StringVar(&r.exclude, "exclude", "", "comma-separated list of packages to exclude from the check")
 
 	return analyzer
+}
+
+type ifaceEntry struct {
+	ifaceName string
+	ts        *ast.TypeSpec
+	decl      *ast.GenDecl
 }
 
 type runner struct {
@@ -39,8 +46,17 @@ type runner struct {
 	exclude string
 }
 
-func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
-	excludes := strings.Split(r.exclude, ",")
+func (r *runner) run(pass *analysis.Pass) (any, error) {
+	var excludes []string
+
+	if r.exclude != "" {
+		for _, pkg := range strings.Split(r.exclude, ",") {
+			if p := strings.TrimSpace(pkg); p != "" {
+				excludes = append(excludes, p)
+			}
+		}
+	}
+
 	if slices.Contains(excludes, pass.Pkg.Path()) {
 		return nil, nil
 	}
@@ -48,8 +64,7 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	// Collect all interface type declarations
-	ifaceDecls := make(map[string]*ast.TypeSpec)
-	genDecls := make(map[string]*ast.GenDecl) // ifaceName -> GenDecl
+	ifaces := make(map[*types.TypeName]ifaceEntry)
 
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
@@ -62,17 +77,19 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if r.debug {
-			fmt.Printf("GenDecl: %v specs=%d\n", decl.Tok, len(decl.Specs))
+			fmt.Fprintf(os.Stderr, "GenDecl: %v specs=%d\n", decl.Tok, len(decl.Specs))
 		}
 
 		if decl.Tok != token.TYPE {
 			return
 		}
 
+		if directive.ShouldIgnore(decl.Doc, pass.Analyzer.Name) {
+			return
+		}
+
 		for i, spec := range decl.Specs {
-			if r.debug {
-				fmt.Printf(" spec[%d]: %v %v\n", i, spec, reflect.TypeOf(spec))
-			}
+			r.debugf(" spec[%d]: %v %T\n", i, spec, spec)
 
 			ts, ok := spec.(*ast.TypeSpec)
 			if !ok {
@@ -84,28 +101,34 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 				continue
 			}
 
-			if r.debug {
-				fmt.Println(" Interface type declaration:", ts.Name.Name, ts.Pos())
-			}
+			r.debugln("  -> Interface type declaration:", ts.Name.Name, ts.Pos())
 
-			dir := directive.ParseIgnore(decl.Doc)
-			if dir != nil && dir.ShouldIgnore(pass.Analyzer.Name) {
-				// skip due to ignore directive
+			if directive.ShouldIgnore(ts.Doc, pass.Analyzer.Name) {
 				continue
 			}
 
-			ifaceDecls[ts.Name.Name] = ts
-			genDecls[ts.Name.Name] = decl
+			obj := pass.TypesInfo.Defs[ts.Name]
+
+			typeName, ok := obj.(*types.TypeName)
+			if !ok {
+				continue
+			}
+
+			ifaces[typeName] = ifaceEntry{
+				ifaceName: ts.Name.Name,
+				ts:        ts,
+				decl:      decl,
+			}
 		}
 	})
 
 	if r.debug {
 		var ifaceNames []string
-		for name := range ifaceDecls {
-			ifaceNames = append(ifaceNames, name)
+		for tn := range ifaces {
+			ifaceNames = append(ifaceNames, tn.Name())
 		}
 
-		fmt.Println("Declared interfaces:", ifaceNames)
+		fmt.Fprintln(os.Stderr, "Declared interfaces:", ifaceNames)
 	}
 
 	// Inspect whether the interface is used within the package
@@ -119,52 +142,85 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		ts, ok := ifaceDecls[ident.Name]
+		obj := pass.TypesInfo.Uses[ident]
+
+		typeName, ok := obj.(*types.TypeName)
 		if !ok {
 			return
 		}
 
-		if ts.Pos() == ident.Pos() {
-			// The identifier is the interface type declaration
+		entry, ok := ifaces[typeName]
+		if !ok {
 			return
 		}
 
-		delete(ifaceDecls, ident.Name)
-		delete(genDecls, ident.Name)
+		r.debugln(" used:", entry.ifaceName)
+
+		delete(ifaces, typeName)
 	})
 
 	if r.debug {
-		fmt.Printf("Package %s %s\n", pass.Pkg.Path(), pass.Pkg.Name())
+		fmt.Fprintf(os.Stderr, "Package %s %s\n", pass.Pkg.Path(), pass.Pkg.Name())
 	}
 
-	for name, ts := range ifaceDecls {
-		decl := genDecls[name]
+	for typeName, entry := range ifaces {
+		ts := entry.ts
+		decl := entry.decl
 
-		var node ast.Node
-		if len(decl.Specs) == 1 {
-			node = decl
-		} else {
-			node = ts
-		}
+		msg := fmt.Sprintf("interface '%s' is declared but not used within the package", typeName.Name())
 
-		msg := fmt.Sprintf("interface %s is declared but not used within the package", name)
-		pass.Report(analysis.Diagnostic{
+		diag := analysis.Diagnostic{
 			Pos:     ts.Pos(),
 			Message: msg,
-			SuggestedFixes: []analysis.SuggestedFix{
-				{
-					Message: "Remove the unused interface declaration",
-					TextEdits: []analysis.TextEdit{
-						{
-							Pos:     node.Pos(),
-							End:     node.End(),
-							NewText: []byte{},
-						},
-					},
-				},
-			},
-		})
+		}
+
+		if fix := removalFix(decl, ts, typeName); fix != nil {
+			diag.SuggestedFixes = []analysis.SuggestedFix{*fix}
+		}
+
+		pass.Report(diag)
 	}
 
 	return nil, nil
+}
+
+func removalFix(decl *ast.GenDecl, ts *ast.TypeSpec, typeName *types.TypeName) *analysis.SuggestedFix {
+	if typeName.Exported() {
+		return nil
+	}
+
+	start, end := decl.Pos(), decl.End()
+	doc := decl.Doc
+
+	if len(decl.Specs) > 1 {
+		start, end = ts.Pos(), ts.End()
+		doc = ts.Doc
+	}
+
+	if doc != nil {
+		start = doc.Pos()
+	}
+
+	return &analysis.SuggestedFix{
+		Message: "Remove the unused interface declaration",
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     start,
+				End:     end,
+				NewText: []byte{},
+			},
+		},
+	}
+}
+
+func (r *runner) debugln(a ...any) {
+	if r.debug {
+		fmt.Fprintln(os.Stderr, a...)
+	}
+}
+
+func (r *runner) debugf(format string, a ...any) {
+	if r.debug {
+		fmt.Fprintf(os.Stderr, format, a...)
+	}
 }

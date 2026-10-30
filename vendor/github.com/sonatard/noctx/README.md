@@ -2,13 +2,13 @@
 
 ![](https://github.com/sonatard/noctx/workflows/CI/badge.svg)
 
-`noctx` finds sending http request without context.Context.
+`noctx` finds function calls without context.Context.
 
-You should use `noctx` if sending http request in your library.
-Passing `context.Context` enables library user to cancel http request, getting trace information and so on.
+Passing `context.Context` enables library user to cancel request, getting trace information and so on.
+
+`noctx` helps you to identify code that could be rewritten to use the context.Context.
 
 ## Usage
-
 
 ### noctx with go vet
 
@@ -19,7 +19,7 @@ go vet is a Go standard tool for analyzing source code.
 $ go install github.com/sonatard/noctx/cmd/noctx@latest
 ```
 
-2. noctx execute
+2. Execute noctx
 ```sh
 $ go vet -vettool=`which noctx` main.go
 ./main.go:6:11: net/http.Get must not be called
@@ -41,137 +41,76 @@ linters:
 
 # Or enable-all is true.
 linters:
-  enable-all: true
+  default: all
   disable:
    - xxx # Add unused linter to disable linters.
 ```
 
-3. noctx execute
+3. Execute noctx
 ```sh
 # Use .golangci.yml
 $ golangci-lint run
 
-# Only noctx execute
+# Only execute noctx
 golangci-lint run --enable-only noctx
 ```
 
-## Detection rules
+## net/http package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L41-L50
 
-- Executing following functions
-  - `net/http.Get`
-  - `net/http.Head`
-  - `net/http.Post`
-  - `net/http.PostForm`
-  - `(*net/http.Client).Get`
-  - `(*net/http.Client).Head`
-  - `(*net/http.Client).Post`
-  - `(*net/http.Client).PostForm`
-- `http.Request` returned by `http.NewRequest` function and passes it to other function.
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/http_client/http_client.go#L11
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/http_request/http_request.go#L17
 
-## How to fix
+### Reference
+- [net/http - NewRequest](https://pkg.go.dev/net/http#NewRequest)
+- [net/http - NewRequestWithContext](https://pkg.go.dev/net/http#NewRequestWithContext)
+- [net/http - Request.WithContext](https://pkg.go.dev/net/http#Request.WithContext)
+- [net/http/httptest - NewRequest](https://pkg.go.dev/net/http/httptest#NewRequest)
 
-- Send http request using `(*http.Client).Do(*http.Request)` method.
-- In Go 1.13 and later, use `http.NewRequestWithContext` function instead of using `http.NewRequest` function.
-- In Go 1.12 and earlier, call `(http.Request).WithContext(ctx)` after `http.NewRequest`.
+## net package
 
-`(http.Request).WithContext(ctx)` has a disadvantage of performance because it returns a copy of `http.Request`. Use `http.NewRequestWithContext` function if you only support Go1.13 or later.
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L26-L39
 
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/network/net.go#L17
 
-If your library already provides functions that don't accept context, you define a new function that accepts context and make the existing function a wrapper for a new function.
+### References
+- [net - ListenConfig](https://pkg.go.dev/net#ListenConfig)
+- [net - Dialer.DialContext](https://pkg.go.dev/net#Dialer.DialContext)
+- [net - Resolver](https://pkg.go.dev/net#Resolver)
+- [net - DefaultResolver](https://pkg.go.dev/net#DefaultResolver)
 
+## database/sql package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L52-L66
 
-```go
-// Before fix code
-// Sending an HTTP request but not accepting context
-func Send(body io.Reader)  error {
-    req,err := http.NewRequest(http.MethodPost, "http://example.com", body)
-    if err != nil {
-        return err
-    }
-    _, err = http.DefaultClient.Do(req)
-    if err != nil{
-        return err
-    }
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/sql/sql.go#L18
 
-    return nil
-}
-```
+### Reference
+- [database/sql](https://pkg.go.dev/database/sql)
 
-```go
-// After fix code
-func Send(body io.Reader) error {
-    // Pass context.Background() to SendWithContext
-    return SendWithContext(context.Background(), body)
-}
+## crypt/tls package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L71-L74
 
-// Sending an HTTP request and accepting context
-func SendWithContext(ctx context.Context, body io.Reader) error {
-    // Change NewRequest to NewRequestWithContext and pass context it
-    req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", body)
-    if err != nil {
-        return err
-    }
-    _, err = http.DefaultClient.Do(req)
-    if err != nil {
-        return err
-    }
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/crypto_tls/tls.go#L17
 
-    return nil
-}
-```
+### Reference
+- [crypto/tls - Dialer.DialContext](https://pkg.go.dev/crypto/tls#Dialer.DialContext)
+- [crypto/tls - Conn.HandshakeContext](https://pkg.go.dev/crypto/tls#Conn.HandshakeContext)
 
-## Detection sample
+## exec package
+### Rules
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/noctx.go#L68-L69
 
-```go
-package main
+### Sample
+https://github.com/sonatard/noctx/blob/b768dab1764733f7f69c5075b7497eff4c58f260/testdata/src/exec_cmd/exec.go#L11
 
-import (
-	"context"
-	"net/http"
-)
-
-func main() {
-	const url = "http://example.com"
-	http.Get(url) // want `net/http\.Get must not be called`
-	http.Head(url)          // want `net/http\.Head must not be called`
-	http.Post(url, "", nil) // want `net/http\.Post must not be called`
-	http.PostForm(url, nil) // want `net/http\.PostForm must not be called`
-
-	cli := &http.Client{}
-	cli.Get(url) // want `\(\*net/http\.Client\)\.Get must not be called`
-	cli.Head(url)          // want `\(\*net/http\.Client\)\.Head must not be called`
-	cli.Post(url, "", nil) // want `\(\*net/http\.Client\)\.Post must not be called`
-	cli.PostForm(url, nil) // want `\(\*net/http\.Client\)\.PostForm must not be called`
-
-	req, _ := http.NewRequest(http.MethodPost, url, nil) // want `should rewrite http.NewRequestWithContext or add \(\*Request\).WithContext`
-	cli.Do(req)
-
-	ctx := context.Background()
-	req2, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, nil) // OK
-	cli.Do(req2)
-
-	req3, _ := http.NewRequest(http.MethodPost, url, nil) // OK
-	req3 = req3.WithContext(ctx)
-	cli.Do(req3)
-
-	f2 := func(req *http.Request, ctx context.Context) *http.Request {
-		return req
-	}
-	req4, _ := http.NewRequest(http.MethodPost, url, nil) // want `should rewrite http.NewRequestWithContext or add \(\*Request\).WithContext`
-	req4 = f2(req4, ctx)
-	cli.Do(req4)
-
-	req5, _ := func() (*http.Request, error) {
-		return http.NewRequest(http.MethodPost, url, nil) // want `should rewrite http.NewRequestWithContext or add \(\*Request\).WithContext`
-	}()
-	cli.Do(req5)
-
-}
-```
-
-## Reference
-
-- [net/http - NewRequest](https://golang.org/pkg/net/http/#NewRequest)
-- [net/http - NewRequestWithContext](https://golang.org/pkg/net/http/#NewRequestWithContext)
-- [net/http - Request.WithContext](https://golang.org/pkg/net/http/#Request.WithContext)
+### Reference
+- [exec - exec.CommandContext](https://pkg.go.dev/exec#CommandContext)
 

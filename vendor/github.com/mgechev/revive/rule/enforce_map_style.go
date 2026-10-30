@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -40,6 +41,8 @@ func mapStyleFromString(s string) (enforceMapStyleType, error) {
 type EnforceMapStyleRule struct {
 	enforceMapStyle enforceMapStyleType
 }
+
+var _ lint.ConfigurableRule = (*EnforceMapStyleRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
@@ -101,8 +104,7 @@ func (r *EnforceMapStyleRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fa
 				return true
 			}
 
-			ident, ok := v.Fun.(*ast.Ident)
-			if !ok || ident.Name != "make" {
+			if !astutils.IsIdent(v.Fun, "make") {
 				return true
 			}
 

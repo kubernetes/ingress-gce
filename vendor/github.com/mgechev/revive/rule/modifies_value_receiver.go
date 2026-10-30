@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"strings"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -34,13 +35,14 @@ func (r *ModifiesValRecRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fai
 			continue // receiver is not modified
 		}
 
-		methodReturnsReceiver := len(r.findReturnReceiverStatements(receiverName, funcDecl.Body)) > 0
+		methodReturnsReceiver := r.seekReturnReceiverStatement(receiverName, funcDecl.Body) != nil
 		if methodReturnsReceiver {
 			continue // modification seems legit (see issue #1066)
 		}
 
 		for _, assignment := range assignmentsToReceiver {
 			failures = append(failures, lint.Failure{
+				Category:   lint.FailureCategoryLogic,
 				Node:       assignment,
 				Confidence: 1,
 				Failure:    "suspicious assignment to a by-value method receiver",
@@ -78,7 +80,7 @@ func (*ModifiesValRecRule) getNameFromExpr(ie ast.Expr) string {
 	return ident.Name
 }
 
-func (r *ModifiesValRecRule) findReturnReceiverStatements(receiverName string, target ast.Node) []ast.Node {
+func (r *ModifiesValRecRule) seekReturnReceiverStatement(receiverName string, target ast.Node) ast.Node {
 	finder := func(n ast.Node) bool {
 		// look for returns with the receiver as value
 		returnStatement, ok := n.(*ast.ReturnStmt)
@@ -116,7 +118,7 @@ func (r *ModifiesValRecRule) findReturnReceiverStatements(receiverName string, t
 		return false
 	}
 
-	return pick(target, finder)
+	return astutils.SeekNode[ast.Node](target, finder)
 }
 
 func (r *ModifiesValRecRule) mustSkip(receiver *ast.Field, pkg *lint.Package) bool {
@@ -179,5 +181,5 @@ func (r *ModifiesValRecRule) getReceiverModifications(receiverName string, funcB
 		return false
 	}
 
-	return pick(funcBody, receiverModificationFinder)
+	return astutils.PickNodes(funcBody, receiverModificationFinder)
 }

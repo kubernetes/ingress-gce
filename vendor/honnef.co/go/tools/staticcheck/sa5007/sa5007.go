@@ -34,7 +34,7 @@ should be used instead.`,
 
 var Analyzer = SCAnalyzer.Analyzer
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
 		eachCall(fn, func(caller *ir.Function, site ir.CallInstruction, callee *ir.Function) {
 			if callee != fn {
@@ -47,16 +47,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			block := site.Block()
-			for _, b := range fn.Blocks {
+			for b := range fn.Exits() {
 				if block.Dominates(b) {
 					continue
 				}
-				if len(b.Instrs) == 0 {
-					continue
-				}
-				if _, ok := b.Control().(*ir.Return); ok {
-					return
-				}
+				return
 			}
 			report.Report(pass, site, "infinite recursive call")
 		})

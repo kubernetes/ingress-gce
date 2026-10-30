@@ -15,12 +15,18 @@ type ImportAliasNamingRule struct {
 
 const defaultImportAliasNamingAllowRule = "^[a-z][a-z0-9]{0,}$"
 
+//nolint:gocritic // regexpSimplify: backward compatibility
 var defaultImportAliasNamingAllowRegexp = regexp.MustCompile(defaultImportAliasNamingAllowRule)
+
+var _ lint.ConfigurableRule = (*ImportAliasNamingRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *ImportAliasNamingRule) Configure(arguments lint.Arguments) error {
+	r.allowRegexp = nil
+	r.denyRegexp = nil
+
 	if len(arguments) == 0 {
 		r.allowRegexp = defaultImportAliasNamingAllowRegexp
 		return nil
@@ -34,13 +40,13 @@ func (r *ImportAliasNamingRule) Configure(arguments lint.Arguments) error {
 		}
 	case map[string]any: // expecting map[string]string
 		for k, v := range namingRule {
-			switch k {
-			case "allowRegex":
+			switch {
+			case isRuleOption(k, "allowRegex"):
 				err := r.setAllowRule(v)
 				if err != nil {
 					return err
 				}
-			case "denyRegex":
+			case isRuleOption(k, "denyRegex"):
 				err := r.setDenyRule(v)
 				if err != nil {
 					return err

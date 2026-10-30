@@ -5,7 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"reflect"
+	"os"
+	"slices"
+	"strings"
 
 	"github.com/uudashr/iface/internal/directive"
 	"golang.org/x/tools/go/analysis"
@@ -13,7 +15,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-// Analyzer is the duplicate interface analyzer.
+// Analyzer detects interfaces within the same package that have identical methods or type constraints.
 var Analyzer = newAnalyzer()
 
 func newAnalyzer() *analysis.Analyzer {
@@ -21,13 +23,13 @@ func newAnalyzer() *analysis.Analyzer {
 
 	analyzer := &analysis.Analyzer{
 		Name:     "identical",
-		Doc:      "Identifies interfaces in the same package that have identical method sets",
-		URL:      "https://pkg.go.dev/github.com/uudashr/iface/duplicate",
+		Doc:      "Detects interfaces within the same package that have identical methods or type constraints.",
+		URL:      "https://pkg.go.dev/github.com/uudashr/iface/identical",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      r.run,
 	}
 
-	analyzer.Flags.BoolVar(&r.debug, "debug", false, "enable debug mode")
+	analyzer.Flags.BoolVar(&r.debug, "nerd", false, "enable nerd mode")
 
 	return analyzer
 }
@@ -54,46 +56,49 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if r.debug {
-			fmt.Printf("GenDecl: %v specs=%d\n", decl.Tok, len(decl.Specs))
+			fmt.Fprintf(os.Stderr, "GenDecl: %v specs=%d\n", decl.Tok, len(decl.Specs))
 		}
 
 		if decl.Tok != token.TYPE {
 			return
 		}
 
+		if directive.ShouldIgnore(decl.Doc, pass.Analyzer.Name) {
+			return
+		}
+
 		for i, spec := range decl.Specs {
-			if r.debug {
-				fmt.Printf(" spec[%d]: %v %v\n", i, spec, reflect.TypeOf(spec))
-			}
+			r.debugf(" spec[%d]: %v %T\n", i, spec, spec)
 
 			ts, ok := spec.(*ast.TypeSpec)
 			if !ok {
-				return
+				// this code is unreachable since we already have guard the token type
+				continue
 			}
+
+			r.debugf("  -> ts.Type %T\n", ts.Type)
 
 			ifaceType, ok := ts.Type.(*ast.InterfaceType)
 			if !ok {
-				return
+				continue
 			}
 
 			if r.debug {
-				fmt.Println("Interface declaration:", ts.Name.Name, ts.Pos(), len(ifaceType.Methods.List))
+				fmt.Fprintln(os.Stderr, "  -> Interface declaration:", ts.Name.Name, ts.Pos(), len(ifaceType.Methods.List))
 
-				for i, field := range ifaceType.Methods.List {
+				for j, field := range ifaceType.Methods.List {
 					switch ft := field.Type.(type) {
 					case *ast.FuncType:
-						fmt.Printf(" [%d] Field: func %s %v %v\n", i, field.Names[0].Name, reflect.TypeOf(field.Type), field.Pos())
+						fmt.Fprintf(os.Stderr, "  [%d] Field: func %s %T %v\n", j, field.Names[0].Name, ft, field.Pos())
 					case *ast.Ident:
-						fmt.Printf(" [%d] Field: iface %s %v %v\n", i, ft.Name, reflect.TypeOf(field.Type), field.Pos())
+						fmt.Fprintf(os.Stderr, "  [%d] Field: iface %s %T %v\n", j, ft.Name, ft, field.Pos())
 					default:
-						fmt.Printf(" [%d] Field: unknown %v\n", i, reflect.TypeOf(ft))
+						fmt.Fprintf(os.Stderr, "  [%d] Field: unknown %T\n", j, ft)
 					}
 				}
 			}
 
-			dir := directive.ParseIgnore(decl.Doc)
-			if dir != nil && dir.ShouldIgnore(pass.Analyzer.Name) {
-				// skip due to ignore directive
+			if directive.ShouldIgnore(ts.Doc, pass.Analyzer.Name) {
 				continue
 			}
 
@@ -101,19 +106,20 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 
 			obj := pass.TypesInfo.Defs[ts.Name]
 			if obj == nil {
-				return
+				continue
 			}
 
 			iface, ok := obj.Type().Underlying().(*types.Interface)
 			if !ok {
-				return
+				continue
 			}
 
 			ifaceTypes[ts.Name.Name] = iface
 		}
 	})
 
-Loop:
+	identicals := make(map[string][]string)
+
 	for name, typ := range ifaceTypes {
 		for otherName, otherTyp := range ifaceTypes {
 			if name == otherName {
@@ -124,15 +130,29 @@ Loop:
 				continue
 			}
 
-			if r.debug {
-				fmt.Println("Identical interface:", name, "and", otherName)
-			}
+			r.debugln("Identical interface:", name, "and", otherName)
 
-			pass.Reportf(ifaceDecls[name], "interface %s contains identical methods or type constraints from another interface, causing redundancy", name)
-
-			continue Loop
+			identicals[name] = append(identicals[name], otherName)
 		}
 	}
 
+	for name, others := range identicals {
+		slices.Sort(others)
+		otherNames := strings.Join(others, ", ")
+		pass.Reportf(ifaceDecls[name], "interface '%s' contains identical methods or type constraints with another interface, causing redundancy (see: %s)", name, otherNames)
+	}
+
 	return nil, nil
+}
+
+func (r *runner) debugln(a ...any) {
+	if r.debug {
+		fmt.Fprintln(os.Stderr, a...)
+	}
+}
+
+func (r *runner) debugf(format string, a ...any) {
+	if r.debug {
+		fmt.Fprintf(os.Stderr, format, a...)
+	}
 }

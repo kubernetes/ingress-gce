@@ -5,10 +5,11 @@ import (
 	"go/ast"
 	"strings"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
-// ContextAsArgumentRule suggests that `context.Context` should be the first argument of a function.
+// ContextAsArgumentRule suggests that [context.Context] should be the first argument of a function.
 type ContextAsArgumentRule struct {
 	allowTypes map[string]struct{}
 }
@@ -28,7 +29,7 @@ func (r *ContextAsArgumentRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 		// Flag any that show up after the first.
 		isCtxStillAllowed := true
 		for _, arg := range fnArgs {
-			argIsCtx := isPkgDot(arg.Type, "context", "Context")
+			argIsCtx := astutils.IsPkgDotName(arg.Type, "context", "Context")
 			if argIsCtx && !isCtxStillAllowed {
 				failures = append(failures, lint.Failure{
 					Node:       arg,
@@ -40,7 +41,7 @@ func (r *ContextAsArgumentRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 				break // only flag one
 			}
 
-			typeName := gofmt(arg.Type)
+			typeName := astutils.GoFmt(arg.Type)
 			// a parameter of type context.Context is still allowed if the current arg type is in the allow types LookUpTable
 			_, isCtxStillAllowed = r.allowTypes[typeName]
 		}
@@ -53,6 +54,8 @@ func (r *ContextAsArgumentRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 func (*ContextAsArgumentRule) Name() string {
 	return "context-as-argument"
 }
+
+var _ lint.ConfigurableRule = (*ContextAsArgumentRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
@@ -74,16 +77,14 @@ func (*ContextAsArgumentRule) getAllowTypesFromArguments(args lint.Arguments) (m
 			return nil, fmt.Errorf("invalid argument to the context-as-argument rule. Expecting a k,v map, got %T", args[0])
 		}
 		for k, v := range argKV {
-			switch k {
-			case "allowTypesBefore":
-				typesBefore, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("invalid argument to the context-as-argument.allowTypesBefore rule. Expecting a string, got %T", v)
-				}
-				allowTypesBefore = append(allowTypesBefore, strings.Split(typesBefore, ",")...)
-			default:
+			if !isRuleOption(k, "allowTypesBefore") {
 				return nil, fmt.Errorf("invalid argument to the context-as-argument rule. Unrecognized key %s", k)
 			}
+			typesBefore, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid argument to the context-as-argument.allowTypesBefore rule. Expecting a string, got %T", v)
+			}
+			allowTypesBefore = append(allowTypesBefore, strings.Split(typesBefore, ",")...)
 		}
 	}
 

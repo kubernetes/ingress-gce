@@ -7,7 +7,6 @@ import (
 	"honnef.co/go/tools/analysis/lint"
 	"honnef.co/go/tools/analysis/report"
 	"honnef.co/go/tools/go/ir"
-	"honnef.co/go/tools/go/ir/irutil"
 	"honnef.co/go/tools/internal/passes/buildir"
 
 	"golang.org/x/tools/go/analysis"
@@ -29,7 +28,7 @@ var SCAnalyzer = lint.InitializeAnalyzer(&lint.Analyzer{
 
 var Analyzer = SCAnalyzer.Analyzer
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
 		cb := func(node ast.Node) bool {
 			var typ *ast.FuncType
@@ -65,7 +64,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					if refs == nil {
 						continue
 					}
-					if len(irutil.FilterDebug(*refs)) != 0 {
+					if len(*refs) != 0 {
 						continue
 					}
 

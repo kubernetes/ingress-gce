@@ -3,41 +3,48 @@ package formatter
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
-	"github.com/chavacava/garif"
+	"codeberg.org/chavacava/garif"
+
 	"github.com/mgechev/revive/lint"
 )
 
-// Sarif is an implementation of the Formatter interface
+// Sarif is an implementation of the [lint.Formatter] interface
 // which formats revive failures into SARIF format.
 type Sarif struct {
 	Metadata lint.FormatterMetadata
 }
 
-// Name returns the name of the formatter
+// Name returns the name of the formatter.
 func (*Sarif) Name() string {
 	return "sarif"
 }
 
-const reviveSite = "https://github.com/mgechev/revive"
+const reviveSite = "https://revive.run"
 
 // Format formats the failures gotten from the lint.
 func (*Sarif) Format(failures <-chan lint.Failure, cfg lint.Config) (string, error) {
 	sarifLog := newReviveRunLog(cfg)
 
 	for failure := range failures {
-		sarifLog.AddResult(failure)
+		sarifLog.addResult(failure)
 	}
 
 	buf := new(bytes.Buffer)
-	sarifLog.PrettyWrite(buf)
+	err := sarifLog.PrettyWrite(buf)
+	if err != nil {
+		return "", err
+	}
 
 	return buf.String(), nil
 }
 
 type reviveRunLog struct {
 	*garif.LogFile
+
 	run   *garif.Run
 	rules map[string]lint.RuleConfig
 }
@@ -58,21 +65,14 @@ func newReviveRunLog(cfg lint.Config) *reviveRunLog {
 }
 
 func (l *reviveRunLog) addRules(cfg map[string]lint.RuleConfig) {
-	for name, ruleCfg := range cfg {
+	for _, name := range slices.Sorted(maps.Keys(cfg)) {
 		rule := garif.NewRule(name).WithHelpUri(reviveSite + "/r#" + name)
-		setRuleProperties(rule, ruleCfg)
-		driver := l.run.Tool.Driver
-
-		if driver.Rules == nil {
-			driver.Rules = []*garif.ReportingDescriptor{rule}
-			return
-		}
-
-		driver.Rules = append(driver.Rules, rule)
+		setRuleProperties(rule, cfg[name])
+		l.run.Tool.Driver.Rules = append(l.run.Tool.Driver.Rules, rule)
 	}
 }
 
-func (l *reviveRunLog) AddResult(failure lint.Failure) {
+func (l *reviveRunLog) addResult(failure lint.Failure) {
 	positiveOrZero := func(x int) int {
 		if x > 0 {
 			return x
