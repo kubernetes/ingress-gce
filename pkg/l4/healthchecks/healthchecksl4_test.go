@@ -18,9 +18,13 @@ package healthchecks
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"k8s.io/ingress-gce/pkg/flags"
@@ -38,6 +42,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -513,7 +518,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
@@ -731,7 +736,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			if svcNetwork == nil {
 				svcNetwork = network.DefaultNetwork(fakeGCE)
 			}
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
 				if err != nil {
@@ -896,7 +901,7 @@ func TestEnsureHealthCheckWithIPv6OnlyFirewalls(t *testing.T) {
 			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
 			svcNetwork := network.DefaultNetwork(fakeGCE)
 
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
 				if err != nil {
@@ -1179,4 +1184,604 @@ func TestGetHCFirewallSourceRangesWithFlags(t *testing.T) {
 	// Reset flags
 	flags.F.OverrideL4ILBHealthCheckSourceCIDRs = ""
 	flags.F.OverrideL4NetLBHealthCheckSourceCIDRs = ""
+}
+
+// longIPv6HCSvcName is a Service name long enough for the V2 and V2.1 IPv6 health check
+// firewall names to differ (and for the V2 name to lose the namespace/name hash).
+const longIPv6HCSvcName = "extremely-long-name-that-has-a-different-ending-that-gets-truncated"
+
+// newIPv6HCMigrationTestEnv returns a fake GCE cloud and a long-named ILB Service with
+// ETP=Local, for which the V2 and V2.1 IPv6 health check firewall names differ.
+func newIPv6HCMigrationTestEnv(t *testing.T, vals gce.TestClusterValues) (*gce.Cloud, *corev1.Service) {
+	t.Helper()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	createVMInstanceWithTag(t, fakeGCE, "k8s-test")
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
+	ilbClass := annotations.RegionalInternalLoadBalancerClass
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: longIPv6HCSvcName, Namespace: "default", UID: types.UID("1")},
+		Spec: corev1.ServiceSpec{
+			Ports:                 []corev1.ServicePort{{Port: 80, Protocol: corev1.ProtocolTCP}},
+			Type:                  "LoadBalancer",
+			LoadBalancerClass:     &ilbClass,
+			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+			HealthCheckNodePort:   1234,
+		},
+	}
+	return fakeGCE, svc
+}
+
+// ipv6HCFirewallNames returns the V2 and V2.1 IPv6 health check firewall names of `svc`,
+// failing the test if they are equal.
+func ipv6HCFirewallNames(t *testing.T, l4Namer namer.L4ResourcesNamer, svc *corev1.Service) (string, string) {
+	t.Helper()
+	v2 := l4Namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	v21 := l4Namer.L4IPv6HealthCheckFirewallV21(svc.Namespace, svc.Name, false)
+	if v2 == v21 {
+		t.Fatalf("test requires different V2 and V2.1 names, got %q for both", v2)
+	}
+	return v2, v21
+}
+
+func createIPv6HCFirewall(t *testing.T, fakeGCE *gce.Cloud, name, port string) {
+	t.Helper()
+	err := fakeGCE.CreateFirewall(&compute.Firewall{
+		Name:         name,
+		Network:      gce.DefaultTestClusterValues().NetworkURL,
+		SourceRanges: []string{L4ILBIPv6HCRange},
+		TargetTags:   []string{"k8s-test"},
+		Allowed:      []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{port}}},
+	})
+	if err != nil {
+		t.Fatalf("fakeGCE.CreateFirewall(%q) err=%v", name, err)
+	}
+}
+
+func firewallExists(t *testing.T, fakeGCE *gce.Cloud, name string) bool {
+	t.Helper()
+	_, err := fakeGCE.GetFirewall(name)
+	if err != nil && !utils.IsNotFoundError(err) {
+		t.Fatalf("fakeGCE.GetFirewall(%q) err=%v", name, err)
+	}
+	return err == nil
+}
+
+// recordFirewallDeletes makes the fake cloud record the names of all firewall DELETE
+// calls. If `deleteErr` returns a non-nil error for a name, the DELETE fails with it.
+func recordFirewallDeletes(fakeGCE *gce.Cloud, deleteErr func(name string) error) *[]string {
+	var deleted []string
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockFirewalls.DeleteHook = func(_ context.Context, key *meta.Key, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, error) {
+		deleted = append(deleted, key.Name)
+		if deleteErr != nil {
+			if err := deleteErr(key.Name); err != nil {
+				return true, err
+			}
+		}
+		return false, nil
+	}
+	return &deleted
+}
+
+// drainEvents returns all events emitted to `recorder` so far.
+func drainEvents(recorder *record.FakeRecorder) []string {
+	var events []string
+	for {
+		select {
+		case e := <-recorder.Events:
+			events = append(events, e)
+		default:
+			return events
+		}
+	}
+}
+
+func ensureIPv6OnlyHC(hcs *l4HealthChecks, l4Namer namer.L4ResourcesNamer, svc *corev1.Service, l4Type utils.L4LBType, fakeGCE *gce.Cloud) *EnsureHealthCheckResult {
+	svcNetwork := network.DefaultNetwork(fakeGCE)
+	return hcs.EnsureHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, l4Type, []string{"k8s-test-node"}, false, true, *svcNetwork, klog.TODO())
+}
+
+// TestEnsureHealthCheckIPv6FirewallNamingMigration verifies that the IPv6 health check
+// firewall rule is migrated between the V2 and V2.1 naming schemas in a single sync:
+// the rule with the name in use is ensured first, then the rule with the other name is
+// deleted. The other rule is looked up with a GET first, so no DELETE is issued when it
+// doesn't exist.
+func TestEnsureHealthCheckIPv6FirewallNamingMigration(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	testCases := []struct {
+		desc            string
+		useV21Naming    bool
+		l4Type          utils.L4LBType
+		otherRuleExists bool
+	}{
+		{
+			desc:         "V2 naming, no V2.1 rule: V2 rule is ensured and no DELETE is issued",
+			useV21Naming: false,
+			l4Type:       utils.ILB,
+		},
+		{
+			desc:         "V2.1 naming, no V2 rule: V2.1 rule is ensured and no DELETE is issued",
+			useV21Naming: true,
+			l4Type:       utils.ILB,
+		},
+		{
+			desc:            "ILB migration to V2.1 naming: V2 rule is deleted",
+			useV21Naming:    true,
+			l4Type:          utils.ILB,
+			otherRuleExists: true,
+		},
+		{
+			desc:            "NetLB migration to V2.1 naming: V2 rule is deleted",
+			useV21Naming:    true,
+			l4Type:          utils.XLB,
+			otherRuleExists: true,
+		},
+		{
+			desc:            "ILB rollback to V2 naming: V2.1 rule is deleted",
+			useV21Naming:    false,
+			l4Type:          utils.ILB,
+			otherRuleExists: true,
+		},
+		{
+			desc:            "NetLB rollback to V2 naming: V2.1 rule is deleted",
+			useV21Naming:    false,
+			l4Type:          utils.XLB,
+			otherRuleExists: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE, svc := newIPv6HCMigrationTestEnv(t, gce.DefaultTestClusterValues())
+			v2FwName, v21FwName := ipv6HCFirewallNames(t, l4Namer, svc)
+			wantFwName, otherFwName := v2FwName, v21FwName
+			if tc.useV21Naming {
+				wantFwName, otherFwName = v21FwName, v2FwName
+			}
+			if tc.otherRuleExists {
+				createIPv6HCFirewall(t, fakeGCE, otherFwName, "1234")
+			}
+			deleted := recordFirewallDeletes(fakeGCE, nil)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, tc.useV21Naming)
+
+			result := ensureIPv6OnlyHC(hcs, l4Namer, svc, tc.l4Type, fakeGCE)
+			if result.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+			}
+			if result.HCFirewallRuleIPv6Name != wantFwName {
+				t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, wantFwName)
+			}
+			if !firewallExists(t, fakeGCE, wantFwName) {
+				t.Errorf("rule %q doesn't exist after sync", wantFwName)
+			}
+			if firewallExists(t, fakeGCE, otherFwName) {
+				t.Errorf("rule %q with the other naming schema exists after sync", otherFwName)
+			}
+			var wantDeleted []string
+			if tc.otherRuleExists {
+				wantDeleted = []string{otherFwName}
+			}
+			if diff := cmp.Diff(wantDeleted, *deleted); diff != "" {
+				t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+			}
+
+			// A second sync is a no-op: no DELETE is issued.
+			*deleted = nil
+			if result := ensureIPv6OnlyHC(hcs, l4Namer, svc, tc.l4Type, fakeGCE); result.Err != nil {
+				t.Fatalf("second EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+			}
+			if len(*deleted) != 0 {
+				t.Errorf("second sync deleted firewalls %v, want none", *deleted)
+			}
+		})
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallShortNameUnchanged verifies that for Services with short
+// names the V2.1 naming produces the V2 name, so enabling it neither creates nor deletes rules.
+func TestEnsureHealthCheckIPv6FirewallShortNameUnchanged(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCMigrationTestEnv(t, gce.DefaultTestClusterValues())
+	svc.Name = "short"
+	v2FwName := l4Namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	createIPv6HCFirewall(t, fakeGCE, v2FwName, "1234")
+	deleted := recordFirewallDeletes(fakeGCE, nil)
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, utils.ILB, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if result.HCFirewallRuleIPv6Name != v2FwName {
+		t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, v2FwName)
+	}
+	if !firewallExists(t, fakeGCE, v2FwName) {
+		t.Errorf("rule %q doesn't exist after sync", v2FwName)
+	}
+	if len(*deleted) != 0 {
+		t.Errorf("deleted firewalls %v, want none", *deleted)
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallCollidingServices verifies that two Services whose V2
+// IPv6 health check firewall names collide get distinct V2.1 firewall rules allowing their
+// respective HealthCheckNodePorts, and that the colliding V2 rule is deleted.
+func TestEnsureHealthCheckIPv6FirewallCollidingServices(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svcA := newIPv6HCMigrationTestEnv(t, gce.DefaultTestClusterValues())
+	svcB := svcA.DeepCopy()
+	svcB.Name = "extremely-long-name-that-has-a-different-ending-that-gets-shortened"
+	svcB.UID = types.UID("2")
+	svcB.Spec.HealthCheckNodePort = 5678
+
+	v2FwName, v21FwNameA := ipv6HCFirewallNames(t, l4Namer, svcA)
+	if got := l4Namer.L4IPv6HealthCheckFirewall(svcB.Namespace, svcB.Name, false); got != v2FwName {
+		t.Fatalf("expected svcA and svcB to collide on V2 firewall name %q, got %q", v2FwName, got)
+	}
+	v21FwNameB := l4Namer.L4IPv6HealthCheckFirewallV21(svcB.Namespace, svcB.Name, false)
+	if v21FwNameA == v21FwNameB {
+		t.Fatalf("expected distinct V2.1 names for svcA and svcB, got %q", v21FwNameA)
+	}
+	// The colliding V2 rule allows the port of whichever Service synced last.
+	createIPv6HCFirewall(t, fakeGCE, v2FwName, "5678")
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	for _, svc := range []*corev1.Service{svcA, svcB} {
+		if res := ensureIPv6OnlyHC(hcs, l4Namer, svc, utils.ILB, fakeGCE); res.Err != nil {
+			t.Fatalf("sync of %s err=%v", svc.Name, res.Err)
+		}
+	}
+
+	if firewallExists(t, fakeGCE, v2FwName) {
+		t.Errorf("colliding V2 rule %q still exists after both Services migrated", v2FwName)
+	}
+	for _, want := range []struct {
+		fwName string
+		port   string
+	}{
+		{fwName: v21FwNameA, port: "1234"},
+		{fwName: v21FwNameB, port: "5678"},
+	} {
+		fw, err := fakeGCE.GetFirewall(want.fwName)
+		if err != nil {
+			t.Fatalf("GetFirewall(%q) err=%v", want.fwName, err)
+		}
+		if len(fw.Allowed) != 1 || len(fw.Allowed[0].Ports) != 1 || fw.Allowed[0].Ports[0] != want.port {
+			t.Errorf("firewall %q Allowed = %+v, want port %s", want.fwName, fw.Allowed, want.port)
+		}
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallCleanupErrors verifies that errors while cleaning up the
+// rule with the other naming schema fail the sync with the IPv6 health check firewall as the
+// resource in error, after the rule in use has been ensured, and that the next sync retries.
+func TestEnsureHealthCheckIPv6FirewallCleanupErrors(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	for _, tc := range []struct {
+		desc       string
+		failGet    bool
+		failDelete bool
+	}{
+		{desc: "GET of the other rule fails", failGet: true},
+		{desc: "DELETE of the other rule fails", failDelete: true},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE, svc := newIPv6HCMigrationTestEnv(t, gce.DefaultTestClusterValues())
+			v2FwName, v21FwName := ipv6HCFirewallNames(t, l4Namer, svc)
+			createIPv6HCFirewall(t, fakeGCE, v2FwName, "1234")
+
+			fail := true
+			injectedErr := &googleapi.Error{Code: http.StatusInternalServerError, Message: "injected error"}
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			if tc.failGet {
+				mockGCE.MockFirewalls.GetHook = func(_ context.Context, key *meta.Key, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, *compute.Firewall, error) {
+					if fail && key.Name == v2FwName {
+						return true, nil, injectedErr
+					}
+					return false, nil, nil
+				}
+			}
+			recordFirewallDeletes(fakeGCE, func(name string) error {
+				if fail && tc.failDelete && name == v2FwName {
+					return injectedErr
+				}
+				return nil
+			})
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+			result := ensureIPv6OnlyHC(hcs, l4Namer, svc, utils.ILB, fakeGCE)
+			if result.Err == nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=nil, want error")
+			}
+			if result.GceResourceInError != annotations.FirewallForHealthcheckIPv6Resource {
+				t.Errorf("GceResourceInError = %q, want %q", result.GceResourceInError, annotations.FirewallForHealthcheckIPv6Resource)
+			}
+			if !firewallExists(t, fakeGCE, v21FwName) {
+				t.Errorf("rule %q in use wasn't ensured before the cleanup", v21FwName)
+			}
+			fail = false
+			if !firewallExists(t, fakeGCE, v2FwName) {
+				t.Errorf("rule %q was deleted although the cleanup failed", v2FwName)
+			}
+
+			result = ensureIPv6OnlyHC(hcs, l4Namer, svc, utils.ILB, fakeGCE)
+			if result.Err != nil {
+				t.Fatalf("retry EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+			}
+			if result.HCFirewallRuleIPv6Name != v21FwName {
+				t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, v21FwName)
+			}
+			if firewallExists(t, fakeGCE, v2FwName) {
+				t.Errorf("rule %q still exists after the retry", v2FwName)
+			}
+		})
+	}
+}
+
+// TestDeleteHealthCheckWithDualStackFirewallsDeletesBothIPv6FirewallNames verifies that on
+// Service deletion the IPv6 health check firewall rules with both naming schemas are deleted,
+// e.g. when the Service is deleted after the naming flag was flipped and before a resync, or
+// after the Service was switched to IPv4 only. The rule with the other naming schema is looked
+// up with a GET first, so no DELETE is issued for it when it doesn't exist.
+func TestDeleteHealthCheckWithDualStackFirewallsDeletesBothIPv6FirewallNames(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	for _, tc := range []struct {
+		desc            string
+		useV21Naming    bool
+		otherRuleExists bool
+	}{
+		{desc: "V2.1 naming, V2 rule exists", useV21Naming: true, otherRuleExists: true},
+		{desc: "V2 naming, V2.1 rule exists", useV21Naming: false, otherRuleExists: true},
+		{desc: "V2.1 naming, only V2.1 rule exists", useV21Naming: true},
+		{desc: "V2 naming, only V2 rule exists", useV21Naming: false},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE, svc := newIPv6HCMigrationTestEnv(t, gce.DefaultTestClusterValues())
+			v2FwName, v21FwName := ipv6HCFirewallNames(t, l4Namer, svc)
+			currentFwName, otherFwName := v2FwName, v21FwName
+			if tc.useV21Naming {
+				currentFwName, otherFwName = v21FwName, v2FwName
+			}
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, tc.useV21Naming)
+			if res := ensureIPv6OnlyHC(hcs, l4Namer, svc, utils.ILB, fakeGCE); res.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", res.Err)
+			}
+			// Simulate a rule left behind with the other naming schema.
+			if tc.otherRuleExists {
+				createIPv6HCFirewall(t, fakeGCE, otherFwName, "1234")
+			}
+			deleted := recordFirewallDeletes(fakeGCE, nil)
+
+			if _, err := hcs.DeleteHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.ILB, klog.TODO()); err != nil {
+				t.Fatalf("DeleteHealthCheckWithDualStackFirewalls() err=%v", err)
+			}
+			for _, fwName := range []string{v21FwName, v2FwName} {
+				if firewallExists(t, fakeGCE, fwName) {
+					t.Errorf("rule %q exists after Service deletion", fwName)
+				}
+			}
+			ipv4FwName := l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false)
+			wantDeleted := []string{ipv4FwName, currentFwName}
+			if tc.otherRuleExists {
+				wantDeleted = append(wantDeleted, otherFwName)
+			}
+			if diff := cmp.Diff(wantDeleted, *deleted); diff != "" {
+				t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallMigrationOnXPN verifies the migration between naming
+// schemas on Shared VPC (XPN) clusters where the controller lacks some firewall permissions:
+// syncs and deletions succeed, an XPN event with the gcloud command is raised for each change
+// the security admin has to make, and the rule with the other naming schema is never deleted
+// while the rule in use doesn't exist.
+func TestEnsureHealthCheckIPv6FirewallMigrationOnXPN(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	type fwNames struct{ ipv4, current, other string }
+	testCases := []struct {
+		desc            string
+		useV21Naming    bool
+		forbidInsert    bool
+		forbidPatch     bool
+		forbidDelete    bool
+		currentExists   bool
+		otherRuleExists bool
+		// wantOtherDeleteAttempted is whether a DELETE of the other rule is issued on sync.
+		wantOtherDeleteAttempted bool
+		wantOtherAfterSync       bool
+		// wantSyncEvents returns the gcloud commands expected in XPN events on sync.
+		wantSyncEvents func(n fwNames) []string
+		// wantDeleteEvents returns the gcloud commands expected in XPN events on deletion.
+		wantDeleteEvents func(n fwNames) []string
+	}{
+		{
+			desc:         "V2 naming, all mutations forbidden",
+			useV21Naming: false,
+			forbidInsert: true, forbidPatch: true, forbidDelete: true,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules create " + n.current}
+			},
+			wantDeleteEvents: func(n fwNames) []string {
+				return []string{"firewall-rules delete " + n.ipv4, "firewall-rules delete " + n.current}
+			},
+		},
+		{
+			desc:         "migration to V2.1, all mutations forbidden: V2 rule is kept without a DELETE",
+			useV21Naming: true,
+			forbidInsert: true, forbidPatch: true, forbidDelete: true,
+			otherRuleExists:    true,
+			wantOtherAfterSync: true,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules create " + n.current}
+			},
+			wantDeleteEvents: func(n fwNames) []string {
+				return []string{"firewall-rules delete " + n.ipv4, "firewall-rules delete " + n.current, "firewall-rules delete " + n.other}
+			},
+		},
+		{
+			desc:         "rollback to V2, all mutations forbidden: V2.1 rule is kept without a DELETE",
+			useV21Naming: false,
+			forbidInsert: true, forbidPatch: true, forbidDelete: true,
+			otherRuleExists:    true,
+			wantOtherAfterSync: true,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules create " + n.current}
+			},
+			wantDeleteEvents: func(n fwNames) []string {
+				return []string{"firewall-rules delete " + n.ipv4, "firewall-rules delete " + n.current, "firewall-rules delete " + n.other}
+			},
+		},
+		{
+			desc:               "migration to V2.1, insert forbidden but delete allowed: V2 rule is kept",
+			useV21Naming:       true,
+			forbidInsert:       true,
+			otherRuleExists:    true,
+			wantOtherAfterSync: true,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules create " + n.current}
+			},
+			wantDeleteEvents: func(n fwNames) []string { return nil },
+		},
+		{
+			desc:         "migration to V2.1 after the admin created the V2.1 rule, patch and delete forbidden",
+			useV21Naming: true,
+			forbidInsert: true, forbidPatch: true, forbidDelete: true,
+			currentExists:            true,
+			otherRuleExists:          true,
+			wantOtherDeleteAttempted: true,
+			wantOtherAfterSync:       true,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules update " + n.current, "firewall-rules delete " + n.other}
+			},
+			wantDeleteEvents: func(n fwNames) []string {
+				return []string{"firewall-rules delete " + n.ipv4, "firewall-rules delete " + n.current, "firewall-rules delete " + n.other}
+			},
+		},
+		{
+			desc:         "migration to V2.1 after the admin created the V2.1 rule, only delete allowed: V2 rule is deleted",
+			useV21Naming: true,
+			forbidInsert: true, forbidPatch: true,
+			currentExists:            true,
+			otherRuleExists:          true,
+			wantOtherDeleteAttempted: true,
+			wantOtherAfterSync:       false,
+			wantSyncEvents: func(n fwNames) []string {
+				return []string{"firewall-rules create " + n.ipv4, "firewall-rules update " + n.current}
+			},
+			wantDeleteEvents: func(n fwNames) []string { return nil },
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			vals := gce.DefaultTestClusterValues()
+			vals.OnXPN = true
+			fakeGCE, svc := newIPv6HCMigrationTestEnv(t, vals)
+			v2FwName, v21FwName := ipv6HCFirewallNames(t, l4Namer, svc)
+			n := fwNames{ipv4: l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false), current: v2FwName, other: v21FwName}
+			if tc.useV21Naming {
+				n.current, n.other = v21FwName, v2FwName
+			}
+			// Rules created by the security admin. The current rule allows a stale port so
+			// that the sync needs to patch it.
+			if tc.currentExists {
+				createIPv6HCFirewall(t, fakeGCE, n.current, "9999")
+			}
+			if tc.otherRuleExists {
+				createIPv6HCFirewall(t, fakeGCE, n.other, "1234")
+			}
+
+			xpnErr := func(call, name string) *googleapi.Error {
+				return &googleapi.Error{
+					Code:    http.StatusForbidden,
+					Message: fmt.Sprintf("Required 'compute.firewalls.%s' permission for 'projects/something/global/firewalls/%s'.", call, name),
+				}
+			}
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			if tc.forbidInsert {
+				mockGCE.MockFirewalls.InsertHook = func(_ context.Context, key *meta.Key, _ *compute.Firewall, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, error) {
+					return true, xpnErr("insert", key.Name)
+				}
+			}
+			if tc.forbidPatch {
+				mockGCE.MockFirewalls.PatchHook = func(_ context.Context, key *meta.Key, _ *compute.Firewall, _ *cloud.MockFirewalls, _ ...cloud.Option) error {
+					return xpnErr("patch", key.Name)
+				}
+				mockGCE.MockFirewalls.UpdateHook = mockGCE.MockFirewalls.PatchHook
+			}
+			deleted := recordFirewallDeletes(fakeGCE, func(name string) error {
+				if tc.forbidDelete {
+					return xpnErr("delete", name)
+				}
+				return nil
+			})
+
+			recorder := record.NewFakeRecorder(100)
+			hcs := NewL4HealthChecks(fakeGCE, recorder, klog.TODO(), true, tc.useV21Naming)
+			svcNetwork := network.DefaultNetwork(fakeGCE)
+
+			res := hcs.EnsureHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Regional, utils.ILB, []string{"k8s-test-node"}, true, true, *svcNetwork, klog.TODO())
+			if res.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() unexpected err: %v", res.Err)
+			}
+			if res.HCFirewallRuleIPv6Name != n.current {
+				t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", res.HCFirewallRuleIPv6Name, n.current)
+			}
+			if got := firewallExists(t, fakeGCE, n.current); got != tc.currentExists {
+				t.Errorf("rule %q in use exists = %v, want %v", n.current, got, tc.currentExists)
+			}
+			if got := firewallExists(t, fakeGCE, n.other); got != tc.wantOtherAfterSync {
+				t.Errorf("rule %q with the other naming schema exists = %v, want %v", n.other, got, tc.wantOtherAfterSync)
+			}
+			if got := slices.Contains(*deleted, n.other); got != tc.wantOtherDeleteAttempted {
+				t.Errorf("DELETE of rule %q issued = %v, want %v (deleted: %v)", n.other, got, tc.wantOtherDeleteAttempted, *deleted)
+			}
+			assertXPNEvents(t, drainEvents(recorder), tc.wantSyncEvents(n))
+
+			hcName := l4Namer.L4HealthCheck(svc.Namespace, svc.Name, false)
+			if hc, err := hcs.hcProvider.Get(hcName, meta.Regional); err != nil || hc == nil {
+				t.Fatalf("expected health check %q to be created, got hc=%v, err=%v", hcName, hc, err)
+			}
+
+			if _, err := hcs.DeleteHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Regional, utils.ILB, klog.TODO()); err != nil {
+				t.Fatalf("DeleteHealthCheckWithDualStackFirewalls() unexpected err: %v", err)
+			}
+			if hc, err := hcs.hcProvider.Get(hcName, meta.Regional); err != nil || hc != nil {
+				t.Errorf("expected health check %q to be deleted, got hc=%v, err=%v", hcName, hc, err)
+			}
+			assertXPNEvents(t, drainEvents(recorder), tc.wantDeleteEvents(n))
+		})
+	}
+}
+
+// assertXPNEvents checks that `events` are exactly XPN events with the gcloud commands
+// containing `wantCmds`, in order.
+func assertXPNEvents(t *testing.T, events []string, wantCmds []string) {
+	t.Helper()
+	if len(events) != len(wantCmds) {
+		t.Errorf("got %d events %v, want %d XPN events for %v", len(events), events, len(wantCmds), wantCmds)
+		return
+	}
+	for i, e := range events {
+		if !strings.HasPrefix(e, corev1.EventTypeNormal+" XPN ") || !strings.Contains(e, wantCmds[i]+" ") {
+			t.Errorf("event[%d] = %q, want XPN event with %q", i, e, wantCmds[i])
+		}
+	}
 }

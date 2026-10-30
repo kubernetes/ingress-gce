@@ -148,6 +148,7 @@ var F = struct {
 	EnableL3ForwardingRuleForNetLBMixedProtocol bool
 	EnableL4DenyFirewall                        bool
 	EnableL4DenyFirewallRollbackCleanup         bool
+	EnableL4IPv6HealthCheckFirewallV21Naming    bool
 	EnableIPV6OnlyNEG                           bool
 	MultiProjectOwnerLabelKey                   string
 	OverrideHealthCheckSourceCIDRs              string
@@ -376,6 +377,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableL3ForwardingRuleForNetLBMixedProtocol, "enable-l3-default-forwarding-rule-for-netlb-mixed-protocol", false, "Enable support for mixed protocol L4 external load balancers using L3_DEFAULT forwarding rule. This has multiple benefits over the previous NetLB mixed protocol implementation, including lower cost and no traffic interruption on mixed-to-mixed port changes. This flag will eventually be a default implementation for --enable-l4netlb-mixed-protocol.")
 	flag.BoolVar(&F.EnableL4DenyFirewall, "enable-l4-deny-firewall", false, "Enable creation and updates of Deny VPC Firewall Rules for L4 external load balancers. Requires --enable-pinhole and --enable-l4-deny-firewall-rollback-cleanup to be true.")
 	flag.BoolVar(&F.EnableL4DenyFirewallRollbackCleanup, "enable-l4-deny-firewall-rollback-cleanup", false, "Enable cleanup codepath of the deny firewalls for rollback. The reason for it not being enabled by default is the additional GCE API calls that are made for checking if the deny firewalls exist/deletion which will eat up the quota unnecessarily.")
+	flag.BoolVar(&F.EnableL4IPv6HealthCheckFirewallV21Naming, "enable-l4-ipv6-health-check-firewall-v21-naming", false, "Name non-shared IPv6 health check firewall rules of L4 load balancers with the V2.1 naming schema, which always keeps the namespace/name hash. The V2 name can collide for Services with long names.")
 	flag.StringVar(&F.ProviderConfigNameLabelKey, "provider-config-name-label-key", "cloud.gke.io/provider-config-name", "The label key for provider-config name, which is used to identify the provider-config of objects in multi-project mode.")
 	flag.BoolVar(&F.EnableIPV6OnlyNEG, "enable-ipv6-only-neg", false, "Enable support for IPV6 Only NEG's.")
 	flag.StringVar(&F.MultiProjectOwnerLabelKey, "multi-project-owner-label-key", "multiproject.gke.io/owner", "The label key for multi-project owner, which is used to identify the owner of objects in multi-project mode.")
