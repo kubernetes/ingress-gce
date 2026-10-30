@@ -50,6 +50,7 @@ type LocalL4EndpointsCalculator struct {
 	logger                   klog.Logger
 	networkInfo              *network.NetworkInfo
 	negMetrics               *metrics.NegMetrics
+	allowIPv6Fallback        bool
 }
 
 // LocalL4EndpointsCalculatorParams contains the parameters for the LocalL4EndpointsCalculator
@@ -61,6 +62,7 @@ type LocalL4EndpointsCalculatorParams struct {
 	LbType                   types.L4LBType
 	NegMetrics               *metrics.NegMetrics
 	IncludeDrainNodesL4Local bool
+	AllowIPv6Fallback        bool
 }
 
 func NewLocalL4EndpointsCalculator(params LocalL4EndpointsCalculatorParams, logger klog.Logger) *LocalL4EndpointsCalculator {
@@ -78,6 +80,7 @@ func NewLocalL4EndpointsCalculator(params LocalL4EndpointsCalculatorParams, logg
 		logger:                   logger.WithName("LocalL4EndpointsCalculator"),
 		networkInfo:              params.NetworkInfo,
 		negMetrics:               params.NegMetrics,
+		allowIPv6Fallback:        params.AllowIPv6Fallback,
 	}
 }
 
@@ -146,7 +149,7 @@ func (l *LocalL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsDat
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
 	l.logger.V(2).Info("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger, l.networkInfo, l.allowIPv6Fallback)
 
 	return subsetMap, nil, 0, err
 }
@@ -180,17 +183,19 @@ type ClusterL4EndpointsCalculator struct {
 
 	logger klog.Logger
 
-	negMetrics *metrics.NegMetrics
+	negMetrics        *metrics.NegMetrics
+	allowIPv6Fallback bool
 }
 
 // ClusterL4EndpointsCalculatorParams contains the parameters for the ClusterL4EndpointsCalculator.
 type ClusterL4EndpointsCalculatorParams struct {
-	NodeLister  listers.NodeLister
-	ZoneGetter  *zonegetter.ZoneGetter
-	SvcId       string
-	NetworkInfo *network.NetworkInfo
-	LbType      types.L4LBType
-	NegMetrics  *metrics.NegMetrics
+	NodeLister        listers.NodeLister
+	ZoneGetter        *zonegetter.ZoneGetter
+	SvcId             string
+	NetworkInfo       *network.NetworkInfo
+	LbType            types.L4LBType
+	NegMetrics        *metrics.NegMetrics
+	AllowIPv6Fallback bool
 }
 
 func NewClusterL4EndpointsCalculator(params ClusterL4EndpointsCalculatorParams, logger klog.Logger) *ClusterL4EndpointsCalculator {
@@ -199,13 +204,14 @@ func NewClusterL4EndpointsCalculator(params ClusterL4EndpointsCalculatorParams, 
 		subsetSize = maxSubsetSizeNetLBCluster
 	}
 	return &ClusterL4EndpointsCalculator{
-		zoneGetter:      params.ZoneGetter,
-		subsetSizeLimit: subsetSize,
-		svcId:           params.SvcId,
-		lbType:          params.LbType,
-		logger:          logger.WithName("ClusterL4EndpointsCalculator"),
-		networkInfo:     params.NetworkInfo,
-		negMetrics:      params.NegMetrics,
+		zoneGetter:        params.ZoneGetter,
+		subsetSizeLimit:   subsetSize,
+		svcId:             params.SvcId,
+		lbType:            params.LbType,
+		logger:            logger.WithName("ClusterL4EndpointsCalculator"),
+		networkInfo:       params.NetworkInfo,
+		negMetrics:        params.NegMetrics,
+		allowIPv6Fallback: params.AllowIPv6Fallback,
 	}
 }
 
@@ -249,7 +255,7 @@ func (l *ClusterL4EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsD
 		wanted = l.wantedExternalEndpointsCount(eds, currentMap, len(zoneSubnetPairs))
 	}
 
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, wanted, l.svcId, currentMap, l.logger, l.networkInfo)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, wanted, l.svcId, currentMap, l.logger, l.networkInfo, l.allowIPv6Fallback)
 	return subsetMap, nil, 0, err
 }
 
