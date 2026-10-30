@@ -2,6 +2,7 @@ package address
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/net"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
@@ -38,6 +40,9 @@ func IPv4ToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service,
 		// if no value from annotation (for example, annotation has only IPv6 addresses) -- continue
 	}
 	if svc.Spec.LoadBalancerIP != "" {
+		if net.IsIPv6String(svc.Spec.LoadBalancerIP) {
+			return "", "", l4utils.NewIPConfigurationError(svc.Spec.LoadBalancerIP, fmt.Sprintf("spec.loadBalancerIP is not supported for IPv6 addresses; use the %q annotation with a reserved regional IPv6 address name instead", annotations.StaticL4AddressesAnnotationKey))
+		}
 		return svc.Spec.LoadBalancerIP, "", nil
 	}
 	if fwdRule == nil {
@@ -71,6 +76,9 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 		addr := ipv6AddressWithoutRange(ipv6AddressFromAnnotation)
 		logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from annotation", "address", addr)
 		return addr, ipNameFromAnnotation, nil
+	}
+	if svc.Spec.LoadBalancerIP != "" && (!l4utils.NeedsIPv4(svc) || net.IsIPv6String(svc.Spec.LoadBalancerIP)) {
+		return "", "", l4utils.NewIPConfigurationError(svc.Spec.LoadBalancerIP, fmt.Sprintf("spec.loadBalancerIP is not supported for IPv6 addresses; use the %q annotation with a reserved regional IPv6 address name instead", annotations.StaticL4AddressesAnnotationKey))
 	}
 	if ipv6FwdRule == nil {
 		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
