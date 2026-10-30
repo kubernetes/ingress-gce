@@ -88,6 +88,9 @@ type Controller struct {
 	serviceQueue workqueue.RateLimitingInterface
 	// endpointQueue takes endpoint key as work item. Endpoint key with format "namespace/name".
 	endpointQueue workqueue.RateLimitingInterface
+	// endpointSyncBatchPeriod is the delay used to coalesce rapid EndpointSlice
+	// updates for the same Service before enqueueing a NEG sync.
+	endpointSyncBatchPeriod time.Duration
 	// nodeQueue takes node name as work item.
 	nodeQueue workqueue.RateLimitingInterface
 	// nodeTopologyQueue acts as an intermeidate queue to trigger sync on all
@@ -398,6 +401,7 @@ func NewController(
 		networkResolver:                netResolver,
 		serviceQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_service_queue"),
 		endpointQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_endpoint_queue"),
+		endpointSyncBatchPeriod:        flags.F.NegEndpointSyncBatchPeriod,
 		nodeQueue:                      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "neg_node_queue"),
 		syncTracker:                    utils.NewTimeTracker(),
 		reflector:                      reflector,
@@ -1185,7 +1189,11 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 		return
 	}
 	c.logger.V(3).Info("Adding EndpointSlice to endpointQueue for processing", "endpointSlice", key)
-	c.endpointQueue.Add(key)
+	if c.endpointSyncBatchPeriod > 0 {
+		c.endpointQueue.AddAfter(key, c.endpointSyncBatchPeriod)
+	} else {
+		c.endpointQueue.Add(key)
+	}
 }
 
 func (c *Controller) enqueueNode(obj interface{}) {
