@@ -17,6 +17,8 @@ type ErrorStringsRule struct {
 	errorFunctions map[string]map[string]struct{}
 }
 
+var _ lint.ConfigurableRule = (*ErrorStringsRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
@@ -37,14 +39,19 @@ func (r *ErrorStringsRule) Configure(arguments lint.Arguments) error {
 
 	var invalidCustomFunctions []string
 	for _, argument := range arguments {
-		if functionName, ok := argument.(string); ok {
-			fields := strings.Split(strings.TrimSpace(functionName), ".")
-			if len(fields) != 2 || len(fields[0]) == 0 || len(fields[1]) == 0 {
-				invalidCustomFunctions = append(invalidCustomFunctions, functionName)
-				continue
-			}
-			r.errorFunctions[fields[0]] = map[string]struct{}{fields[1]: {}}
+		pkgFunction, ok := argument.(string)
+		if !ok {
+			continue
 		}
+		pkg, function, ok := strings.Cut(strings.TrimSpace(pkgFunction), ".")
+		if !ok || pkg == "" || function == "" {
+			invalidCustomFunctions = append(invalidCustomFunctions, pkgFunction)
+			continue
+		}
+		if _, ok := r.errorFunctions[pkg]; !ok {
+			r.errorFunctions[pkg] = map[string]struct{}{}
+		}
+		r.errorFunctions[pkg][function] = struct{}{}
 	}
 	if len(invalidCustomFunctions) != 0 {
 		return fmt.Errorf("found invalid custom function: %s", strings.Join(invalidCustomFunctions, ","))
@@ -83,7 +90,7 @@ type lintErrorStrings struct {
 	onFailure      func(lint.Failure)
 }
 
-// Visit browses the AST
+// Visit browses the AST.
 func (w lintErrorStrings) Visit(n ast.Node) ast.Visitor {
 	ce, ok := n.(*ast.CallExpr)
 	if !ok {
@@ -121,8 +128,8 @@ func (w lintErrorStrings) Visit(n ast.Node) ast.Visitor {
 	return w
 }
 
-// match returns true if the expression corresponds to the known pkg.function
-// i.e.: errors.Wrap
+// match returns true if the expression corresponds to the known pkg.function,
+// i.e.: errors.Wrap.
 func (w lintErrorStrings) match(expr *ast.CallExpr) bool {
 	sel, ok := expr.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -142,8 +149,8 @@ func (w lintErrorStrings) match(expr *ast.CallExpr) bool {
 	return ok
 }
 
-// getMessage returns the message depending on its position
-// returns false if the cast is unsuccessful
+// getMessage returns the message depending on its position.
+// Returns false if the cast is unsuccessful.
 func (w lintErrorStrings) getMessage(expr *ast.CallExpr) (s *ast.BasicLit, success bool) {
 	str, ok := w.checkArg(expr, 0)
 	if ok {
@@ -173,21 +180,29 @@ func (lintErrorStrings) checkArg(expr *ast.CallExpr, arg int) (s *ast.BasicLit, 
 func lintErrorString(s string) (isClean bool, conf float64) {
 	const basicConfidence = 0.8
 	const capConfidence = basicConfidence - 0.2
-	first, firstN := utf8.DecodeRuneInString(s)
+
 	last, _ := utf8.DecodeLastRuneInString(s)
 	if last == '.' || last == ':' || last == '!' || last == '\n' {
 		return false, basicConfidence
 	}
-	if unicode.IsUpper(first) {
-		// People use proper nouns and exported Go identifiers in error strings,
-		// so decrease the confidence of warnings for capitalization.
-		if len(s) <= firstN {
-			return false, capConfidence
+
+	first, firstN := utf8.DecodeRuneInString(s)
+	if !unicode.IsUpper(first) {
+		return true, 0
+	}
+
+	// People use proper nouns and exported Go identifiers in error strings,
+	// so decrease the confidence of warnings for capitalization.
+	for _, r := range s[firstN:] {
+		if unicode.IsSpace(r) {
+			break
 		}
-		// Flag strings starting with something that doesn't look like an initialism.
-		if second, _ := utf8.DecodeRuneInString(s[firstN:]); !unicode.IsUpper(second) {
-			return false, capConfidence
+
+		if unicode.IsUpper(r) || unicode.IsDigit(r) {
+			return true, 0 // accept words with more than 2 capital letters or digits (e.g. GitHub, URLs, I2000)
 		}
 	}
-	return true, 0
+
+	// Flag strings starting with something that doesn't look like an initialism.
+	return false, capConfidence
 }

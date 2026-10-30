@@ -3,46 +3,150 @@ package rule
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/fatih/structtag"
+
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
 // StructTagRule lints struct tags.
 type StructTagRule struct {
-	userDefined map[string][]string // map: key -> []option
+	userDefined map[tagKey][]string // map: key -> []option
+	omittedTags map[tagKey]struct{} // set of tags that must not be analyzed
 }
+
+type tagKey string
+
+const (
+	keyASN1         tagKey = "asn1"
+	keyBSON         tagKey = "bson"
+	keyCbor         tagKey = "cbor"
+	keyCodec        tagKey = "codec"
+	keyDatastore    tagKey = "datastore"
+	keyDefault      tagKey = "default"
+	keyJSON         tagKey = "json"
+	keyMapstructure tagKey = "mapstructure"
+	keyProperties   tagKey = "properties"
+	keyProtobuf     tagKey = "protobuf"
+	keyRequired     tagKey = "required"
+	keySpanner      tagKey = "spanner"
+	keyTOML         tagKey = "toml"
+	keyURL          tagKey = "url"
+	keyValidate     tagKey = "validate"
+	keyXML          tagKey = "xml"
+	keyYAML         tagKey = "yaml"
+)
+
+type tagChecker func(checkCtx *checkContext, tag *structtag.Tag, field *ast.Field) (message string, succeeded bool)
+
+var tagCheckers = map[tagKey]tagChecker{
+	keyASN1:         checkASN1Tag,
+	keyBSON:         checkBSONTag,
+	keyCbor:         checkCborTag,
+	keyCodec:        checkCodecTag,
+	keyDatastore:    checkDatastoreTag,
+	keyDefault:      checkDefaultTag,
+	keyJSON:         checkJSONTag,
+	keyMapstructure: checkMapstructureTag,
+	keyProperties:   checkPropertiesTag,
+	keyProtobuf:     checkProtobufTag,
+	keyRequired:     checkRequiredTag,
+	keySpanner:      checkSpannerTag,
+	keyTOML:         checkTOMLTag,
+	keyURL:          checkURLTag,
+	keyValidate:     checkValidateTag,
+	keyXML:          checkXMLTag,
+	keyYAML:         checkYAMLTag,
+}
+
+type checkContext struct {
+	userDefined    map[tagKey][]string     // map: key -> []option
+	usedTagNbr     map[tagKey]map[int]bool // used tag numbers, per tag key
+	usedTagName    map[string]bool         // list of used tag keys
+	commonOptions  map[string]bool         // list of options defined for all fields
+	isAtLeastGo124 bool
+}
+
+// useTagNbr reports whether number was already used by another field for the given tag key
+// and marks it as used otherwise. Each tag key has its own numbering namespace.
+func (checkCtx *checkContext) useTagNbr(key tagKey, number int) (alreadyUsed bool) {
+	numbers := checkCtx.usedTagNbr[key]
+	if numbers == nil {
+		numbers = map[int]bool{}
+		checkCtx.usedTagNbr[key] = numbers
+	}
+
+	if numbers[number] {
+		return true
+	}
+
+	numbers[number] = true
+	return false
+}
+
+func (checkCtx *checkContext) isUserDefined(key tagKey, opt string) bool {
+	if checkCtx.userDefined == nil {
+		return false
+	}
+
+	options := checkCtx.userDefined[key]
+	return slices.Contains(options, opt)
+}
+
+func (checkCtx *checkContext) isCommonOption(opt string) bool {
+	if checkCtx.commonOptions == nil {
+		return false
+	}
+
+	_, ok := checkCtx.commonOptions[opt]
+	return ok
+}
+
+func (checkCtx *checkContext) addCommonOption(opt string) {
+	if checkCtx.commonOptions == nil {
+		checkCtx.commonOptions = map[string]bool{}
+	}
+
+	checkCtx.commonOptions[opt] = true
+}
+
+var _ lint.ConfigurableRule = (*StructTagRule)(nil)
 
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *StructTagRule) Configure(arguments lint.Arguments) error {
+	r.userDefined = map[tagKey][]string{}
+	r.omittedTags = map[tagKey]struct{}{}
 	if len(arguments) == 0 {
 		return nil
 	}
 
-	err := checkNumberOfArguments(1, arguments, r.Name())
-	if err != nil {
-		return err
-	}
-	r.userDefined = make(map[string][]string, len(arguments))
 	for _, arg := range arguments {
 		item, ok := arg.(string)
 		if !ok {
 			return fmt.Errorf("invalid argument to the %s rule. Expecting a string, got %v (of type %T)", r.Name(), arg, arg)
 		}
+
 		parts := strings.Split(item, ",")
-		if len(parts) < 2 {
-			return fmt.Errorf("invalid argument to the %s rule. Expecting a string of the form key[,option]+, got %s", r.Name(), item)
+		keyStr := strings.TrimSpace(parts[0])
+		keyStr, isOmitted := strings.CutPrefix(keyStr, "!")
+		key := tagKey(keyStr)
+		if isOmitted {
+			r.omittedTags[key] = struct{}{}
+			continue
 		}
-		key := strings.TrimSpace(parts[0])
+
 		for i := 1; i < len(parts); i++ {
 			option := strings.TrimSpace(parts[i])
 			r.userDefined[key] = append(r.userDefined[key], option)
 		}
 	}
+
 	return nil
 }
 
@@ -56,7 +160,9 @@ func (r *StructTagRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure 
 	w := lintStructTagRule{
 		onFailure:      onFailure,
 		userDefined:    r.userDefined,
-		isAtLeastGo124: file.Pkg.IsAtLeastGo124(),
+		omittedTags:    r.omittedTags,
+		isAtLeastGo124: file.Pkg.IsAtLeastGoVersion(lint.Go124),
+		tagCheckers:    tagCheckers,
 	}
 
 	ast.Walk(w, file.AST)
@@ -71,25 +177,29 @@ func (*StructTagRule) Name() string {
 
 type lintStructTagRule struct {
 	onFailure      func(lint.Failure)
-	userDefined    map[string][]string // map: key -> []option
-	usedTagNbr     map[int]bool        // list of used tag numbers
-	usedTagName    map[string]bool     // list of used tag keys
+	userDefined    map[tagKey][]string // map: key -> []option
+	omittedTags    map[tagKey]struct{}
 	isAtLeastGo124 bool
+	tagCheckers    map[tagKey]tagChecker
 }
 
 func (w lintStructTagRule) Visit(node ast.Node) ast.Visitor {
-	switch n := node.(type) {
-	case *ast.StructType:
+	if n, ok := node.(*ast.StructType); ok {
 		isEmptyStruct := n.Fields == nil || n.Fields.NumFields() < 1
 		if isEmptyStruct {
 			return nil // skip empty structs
 		}
 
-		w.usedTagNbr = map[int]bool{}
-		w.usedTagName = map[string]bool{}
+		checkCtx := &checkContext{
+			userDefined:    w.userDefined,
+			usedTagNbr:     map[tagKey]map[int]bool{},
+			usedTagName:    map[string]bool{},
+			isAtLeastGo124: w.isAtLeastGo124,
+		}
+
 		for _, f := range n.Fields.List {
 			if f.Tag != nil {
-				w.checkTaggedField(f)
+				w.checkTaggedField(checkCtx, f)
 			}
 		}
 	}
@@ -97,25 +207,84 @@ func (w lintStructTagRule) Visit(node ast.Node) ast.Visitor {
 	return w
 }
 
-const (
-	keyASN1     = "asn1"
-	keyBSON     = "bson"
-	keyDefault  = "default"
-	keyJSON     = "json"
-	keyProtobuf = "protobuf"
-	keyRequired = "required"
-	keyXML      = "xml"
-	keyYAML     = "yaml"
-)
+// checkTaggedField checks the tag of the given field.
+// precondition: the field has a tag
+func (w lintStructTagRule) checkTaggedField(checkCtx *checkContext, field *ast.Field) {
+	tags, err := structtag.Parse(strings.Trim(field.Tag.Value, "`"))
+	if err != nil || tags == nil {
+		w.addFailuref(field.Tag, "malformed tag")
+		return
+	}
 
-func (w lintStructTagRule) checkTagNameIfNeed(tag *structtag.Tag) (string, bool) {
+	analyzedTags := map[tagKey]struct{}{}
+	for _, tag := range tags.Tags() {
+		_, mustOmit := w.omittedTags[tagKey(tag.Key)]
+		if mustOmit {
+			continue
+		}
+
+		if msg, ok := w.checkTagNameIfNeed(checkCtx, tag); !ok {
+			w.addFailureWithTagKey(field.Tag, msg, tag.Key)
+		}
+
+		if msg, ok := checkOptionsOnIgnoredField(tag); !ok {
+			w.addFailureWithTagKey(field.Tag, msg, tag.Key)
+		}
+
+		key := tagKey(tag.Key)
+		checker, ok := w.tagCheckers[key]
+		if !ok {
+			continue // we don't have a checker for the tag
+		}
+
+		msg, ok := checker(checkCtx, tag, field)
+		if !ok {
+			w.addFailureWithTagKey(field.Tag, msg, tag.Key)
+		}
+
+		analyzedTags[key] = struct{}{}
+	}
+
+	if w.shallWarnOnUnexportedField(field.Names, analyzedTags) {
+		w.addFailuref(field, "tag on not-exported field %s", field.Names[0].Name)
+	}
+}
+
+// tagKeyToSpecialField maps tag keys to their "special" meaning struct fields.
+var tagKeyToSpecialField = map[tagKey]string{
+	"codec": structTagCodecSpecialField,
+}
+
+func (lintStructTagRule) shallWarnOnUnexportedField(fieldNames []*ast.Ident, tags map[tagKey]struct{}) bool {
+	if len(fieldNames) != 1 { // only handle the case of single field  name (99.999% of cases)
+		return false
+	}
+
+	if fieldNames[0].IsExported() {
+		return false
+	}
+
+	fieldNameStr := fieldNames[0].Name
+
+	for key := range tags {
+		specialField, ok := tagKeyToSpecialField[key]
+		if ok && specialField == fieldNameStr {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (w lintStructTagRule) checkTagNameIfNeed(checkCtx *checkContext, tag *structtag.Tag) (message string, succeeded bool) {
 	isUnnamedTag := tag.Name == "" || tag.Name == "-"
 	if isUnnamedTag {
 		return "", true
 	}
 
-	switch tag.Key {
-	case keyBSON, keyJSON, keyXML, keyYAML, keyProtobuf:
+	key := tagKey(tag.Key)
+	switch key {
+	case keyBSON, keyCodec, keyJSON, keyProtobuf, keySpanner, keyXML, keyYAML: // keys that need to check for duplicated tags
 	default:
 		return "", true
 	}
@@ -127,22 +296,23 @@ func (w lintStructTagRule) checkTagNameIfNeed(tag *structtag.Tag) (string, bool)
 
 	// We concat the key and name as the mapping key here
 	// to allow the same tag name in different tag type.
-	key := tag.Key + ":" + tagName
-	if _, ok := w.usedTagName[key]; ok {
-		return fmt.Sprintf("duplicate tag name: '%s'", tagName), false
+	mapKey := tag.Key + ":" + tagName
+	if _, ok := checkCtx.usedTagName[mapKey]; ok {
+		return fmt.Sprintf("duplicated tag name %q", tagName), false
 	}
 
-	w.usedTagName[key] = true
+	checkCtx.usedTagName[mapKey] = true
 
 	return "", true
 }
 
 func (lintStructTagRule) getTagName(tag *structtag.Tag) string {
-	switch tag.Key {
+	key := tagKey(tag.Key)
+	switch key {
 	case keyProtobuf:
 		for _, option := range tag.Options {
-			if tagName, found := strings.CutPrefix(option, "name="); found {
-				return tagName
+			if tagKey, found := strings.CutPrefix(option, "name="); found {
+				return tagKey
 			}
 		}
 		return "" // protobuf tag lacks 'name' option
@@ -151,185 +321,467 @@ func (lintStructTagRule) getTagName(tag *structtag.Tag) string {
 	}
 }
 
-// checkTaggedField checks the tag of the given field.
-// precondition: the field has a tag
-func (w lintStructTagRule) checkTaggedField(f *ast.Field) {
-	if len(f.Names) > 0 && !f.Names[0].IsExported() {
-		w.addFailure(f, "tag on not-exported field "+f.Names[0].Name)
-	}
-
-	tags, err := structtag.Parse(strings.Trim(f.Tag.Value, "`"))
-	if err != nil || tags == nil {
-		w.addFailure(f.Tag, "malformed tag")
-		return
-	}
-
-	for _, tag := range tags.Tags() {
-		if msg, ok := w.checkTagNameIfNeed(tag); !ok {
-			w.addFailure(f.Tag, msg)
-		}
-
-		switch key := tag.Key; key {
-		case keyASN1:
-			msg, ok := w.checkASN1Tag(f.Type, tag)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		case keyBSON:
-			msg, ok := w.checkBSONTag(tag.Options)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		case keyDefault:
-			if !w.typeValueMatch(f.Type, tag.Name) {
-				w.addFailure(f.Tag, "field's type and default value's type mismatch")
-			}
-		case keyJSON:
-			msg, ok := w.checkJSONTag(tag.Name, tag.Options)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		case keyProtobuf:
-			msg, ok := w.checkProtobufTag(tag)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		case keyRequired:
-			if tag.Name != "true" && tag.Name != "false" {
-				w.addFailure(f.Tag, "required should be 'true' or 'false'")
-			}
-		case keyXML:
-			msg, ok := w.checkXMLTag(tag.Options)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		case keyYAML:
-			msg, ok := w.checkYAMLTag(tag.Options)
-			if !ok {
-				w.addFailure(f.Tag, msg)
-			}
-		default:
-			// unknown key
-		}
-	}
-}
-
-func (w lintStructTagRule) checkASN1Tag(t ast.Expr, tag *structtag.Tag) (string, bool) {
-	checkList := append(tag.Options, tag.Name)
+func checkASN1Tag(checkCtx *checkContext, tag *structtag.Tag, field *ast.Field) (message string, succeeded bool) {
+	fieldType := field.Type
+	checkList := slices.Concat(tag.Options, []string{tag.Name})
 	for _, opt := range checkList {
 		switch opt {
 		case "application", "explicit", "generalized", "ia5", "omitempty", "optional", "set", "utf8":
-
+			// do nothing
 		default:
-			if strings.HasPrefix(opt, "tag:") {
-				parts := strings.Split(opt, ":")
-				tagNumber := parts[1]
-				number, err := strconv.Atoi(tagNumber)
-				if err != nil {
-					return fmt.Sprintf("ASN1 tag must be a number, got '%s'", tagNumber), false
-				}
-				if w.usedTagNbr[number] {
-					return fmt.Sprintf("duplicated tag number %v", number), false
-				}
-				w.usedTagNbr[number] = true
-
-				continue
+			msg, ok := checkCompoundANS1Option(checkCtx, opt, fieldType)
+			if !ok {
+				return msg, false
 			}
-
-			if strings.HasPrefix(opt, "default:") {
-				parts := strings.Split(opt, ":")
-				if len(parts) < 2 {
-					return "malformed default for ASN1 tag", false
-				}
-				if !w.typeValueMatch(t, parts[1]) {
-					return "field's type and default value's type mismatch", false
-				}
-
-				continue
-			}
-
-			if w.isUserDefined(keyASN1, opt) {
-				continue
-			}
-
-			return fmt.Sprintf("unknown option '%s' in ASN1 tag", opt), false
 		}
 	}
 
 	return "", true
 }
 
-func (w lintStructTagRule) checkBSONTag(options []string) (string, bool) {
-	for _, opt := range options {
+func checkCompoundANS1Option(checkCtx *checkContext, opt string, fieldType ast.Expr) (message string, succeeded bool) {
+	key, value, _ := strings.Cut(opt, ":")
+	switch key {
+	case "tag":
+		number, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Sprintf("tag must be a number but is %q", value), false
+		}
+		if checkCtx.useTagNbr(keyASN1, number) {
+			return fmt.Sprintf(msgDuplicatedTagNumber, number), false
+		}
+	case "default":
+		if !typeValueMatch(fieldType, value) {
+			return msgTypeMismatch, false
+		}
+	default:
+		if !checkCtx.isUserDefined(keyASN1, opt) {
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+	return "", true
+}
+
+func checkDatastoreTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
+		switch opt {
+		case "flatten", "noindex", "omitempty":
+		default:
+			if checkCtx.isUserDefined(keyDatastore, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+func checkDefaultTag(_ *checkContext, tag *structtag.Tag, field *ast.Field) (message string, succeeded bool) {
+	if !typeValueMatch(field.Type, tag.Name) {
+		return msgTypeMismatch, false
+	}
+
+	return "", true
+}
+
+func checkBSONTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
 		switch opt {
 		case "inline", "minsize", "omitempty":
 		default:
-			if w.isUserDefined(keyBSON, opt) {
+			if checkCtx.isUserDefined(keyBSON, opt) {
 				continue
 			}
-			return fmt.Sprintf("unknown option '%s' in BSON tag", opt), false
+			return fmt.Sprintf(msgUnknownOption, opt), false
 		}
 	}
 
 	return "", true
 }
 
-func (w lintStructTagRule) checkJSONTag(name string, options []string) (string, bool) {
-	for _, opt := range options {
+func checkCborTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	hasToArray := false
+	hasOmitEmptyOrZero := false
+	hasKeyAsInt := false
+
+	for _, opt := range tag.Options {
+		switch opt {
+		case "omitempty", "omitzero":
+			hasOmitEmptyOrZero = true
+		case "toarray":
+			if tag.Name != "" {
+				return `tag name for option "toarray" should be empty`, false
+			}
+			hasToArray = true
+		case "keyasint":
+			intKey, err := strconv.Atoi(tag.Name)
+			if err != nil {
+				return `tag name for option "keyasint" should be an integer`, false
+			}
+
+			if checkCtx.useTagNbr(keyCbor, intKey) {
+				return fmt.Sprintf("duplicated integer key %d", intKey), false
+			}
+
+			hasKeyAsInt = true
+			continue
+
+		default:
+			if !checkCtx.isUserDefined(keyCbor, opt) {
+				return fmt.Sprintf(msgUnknownOption, opt), false
+			}
+		}
+	}
+
+	// Check for duplicated tag names
+	if tag.Name != "" {
+		_, ok := checkCtx.usedTagName[tag.Name]
+		if ok {
+			return fmt.Sprintf("duplicated tag name %s", tag.Name), false
+		}
+		checkCtx.usedTagName[tag.Name] = true
+	}
+
+	// Check for integer tag names without keyasint option
+	if !hasKeyAsInt {
+		_, err := strconv.Atoi(tag.Name)
+		if err == nil {
+			return `integer tag names are only allowed in presence of "keyasint" option`, false
+		}
+	}
+
+	if hasToArray && hasOmitEmptyOrZero {
+		return `options "omitempty" and "omitzero" are ignored in presence of "toarray" option`, false
+	}
+
+	return "", true
+}
+
+const structTagCodecSpecialField = "_struct"
+
+func checkCodecTag(checkCtx *checkContext, tag *structtag.Tag, field *ast.Field) (message string, succeeded bool) {
+	fieldNames := field.Names
+	mustAddToCommonOptions := len(fieldNames) == 1 && fieldNames[0].Name == structTagCodecSpecialField // see https://github.com/revive-lint/revive/issues/1477#issuecomment-3191493076
+	for _, opt := range tag.Options {
+		if mustAddToCommonOptions {
+			checkCtx.addCommonOption(opt)
+		} else if checkCtx.isCommonOption(opt) {
+			return fmt.Sprintf("redundant option %q, already set for all fields", opt), false
+		}
+
+		switch opt {
+		case "omitempty", "toarray", "int", "uint", "float", "-", "omitemptyarray":
+		default:
+			if checkCtx.isUserDefined(keyCodec, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+func checkJSONTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
 		switch opt {
 		case "omitempty", "string":
 		case "":
 			// special case for JSON key "-"
-			if name != "-" {
-				return "option can not be empty in JSON tag", false
+			if tag.Name != "-" {
+				return "option can not be empty", false
 			}
 		case "omitzero":
-			if w.isAtLeastGo124 {
+			if checkCtx.isAtLeastGo124 {
 				continue
 			}
-			fallthrough
+			return `prior Go 1.24, option "omitzero" is unsupported`, false
 		default:
-			if w.isUserDefined(keyJSON, opt) {
+			if checkCtx.isUserDefined(keyJSON, opt) {
 				continue
 			}
-			return fmt.Sprintf("unknown option '%s' in JSON tag", opt), false
+			return fmt.Sprintf(msgUnknownOption, opt), false
 		}
 	}
 
 	return "", true
 }
 
-func (w lintStructTagRule) checkXMLTag(options []string) (string, bool) {
+func checkMapstructureTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
+		switch opt {
+		case "omitempty", "reminder", "squash":
+		default:
+			if checkCtx.isUserDefined(keyMapstructure, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+func checkPropertiesTag(_ *checkContext, tag *structtag.Tag, field *ast.Field) (message string, succeeded bool) {
+	options := tag.Options
+	if len(options) == 0 {
+		return "", true
+	}
+
+	seenOptions := map[string]bool{}
+	fieldType := field.Type
 	for _, opt := range options {
+		msg, ok := fmt.Sprintf("unknown or malformed option %q", opt), false
+		if key, value, found := strings.Cut(opt, "="); found {
+			msg, ok = checkCompoundPropertiesOption(key, value, fieldType, seenOptions)
+		}
+
+		if !ok {
+			return msg, false
+		}
+	}
+
+	return "", true
+}
+
+func checkCompoundPropertiesOption(key, value string, fieldType ast.Expr, seenOptions map[string]bool) (message string, succeeded bool) {
+	if _, ok := seenOptions[key]; ok {
+		return fmt.Sprintf(msgDuplicatedOption, key), false
+	}
+	seenOptions[key] = true
+
+	if strings.TrimSpace(value) == "" {
+		return fmt.Sprintf("option %q not of the form %s=value", key, key), false
+	}
+
+	switch key {
+	case "default":
+		if !typeValueMatch(fieldType, value) {
+			return msgTypeMismatch, false
+		}
+	case "layout":
+		if astutils.GoFmt(fieldType) != "time.Time" {
+			return "layout option is only applicable to fields of type time.Time", false
+		}
+	}
+
+	return "", true
+}
+
+func checkProtobufTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	// check name
+	switch tag.Name {
+	case "bytes", "fixed32", "fixed64", "group", "varint", "zigzag32", "zigzag64":
+		// do nothing
+	default:
+		return fmt.Sprintf("invalid tag name %q", tag.Name), false
+	}
+
+	return checkProtobufOptions(checkCtx, tag.Options)
+}
+
+func checkProtobufOptions(checkCtx *checkContext, options []string) (message string, succeeded bool) {
+	seenOptions := map[string]bool{}
+	hasName := false
+	for _, opt := range options {
+		opt, _, _ := strings.Cut(opt, "=")
+
+		if number, err := strconv.Atoi(opt); err == nil {
+			if checkCtx.useTagNbr(keyProtobuf, number) {
+				return fmt.Sprintf(msgDuplicatedTagNumber, number), false
+			}
+			continue // option is an integer
+		}
+
+		switch opt {
+		case "json", "opt", "proto3", "rep", "req":
+			// do nothing
+		case "name":
+			hasName = true
+		default:
+			if checkCtx.isUserDefined(keyProtobuf, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+
+		_, alreadySeen := seenOptions[opt]
+		if alreadySeen {
+			return fmt.Sprintf(msgDuplicatedOption, opt), false
+		}
+		seenOptions[opt] = true
+	}
+
+	if !hasName {
+		return `mandatory option "name" not found`, false
+	}
+
+	return "", true
+}
+
+func checkRequiredTag(_ *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	switch tag.Name {
+	case "true", "false":
+		return "", true
+	default:
+		return `required should be "true" or "false"`, false
+	}
+}
+
+func checkTOMLTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
+		switch opt {
+		case "omitempty":
+		default:
+			if checkCtx.isUserDefined(keyTOML, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+func checkURLTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	var delimiter string
+	for _, opt := range tag.Options {
+		switch opt {
+		case "int", "omitempty", "numbered", "brackets",
+			"unix", "unixmilli", "unixnano": // TODO : check that the field is of type time.Time
+		case "comma", "semicolon", "space":
+			if delimiter == "" {
+				delimiter = opt
+				continue
+			}
+			return fmt.Sprintf("can not set both %q and %q as delimiters", opt, delimiter), false
+		default:
+			if checkCtx.isUserDefined(keyURL, opt) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+func checkValidateTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	previousOption := ""
+	seenKeysOption := false
+	options := append([]string{tag.Name}, tag.Options...)
+	for _, opt := range options {
+		switch opt {
+		case "keys":
+			if previousOption != "dive" {
+				return `option "keys" must follow a "dive" option`, false
+			}
+			seenKeysOption = true
+		case "endkeys":
+			if !seenKeysOption {
+				return `option "endkeys" without a previous "keys" option`, false
+			}
+			seenKeysOption = false
+		default:
+			parts := strings.Split(opt, "|")
+			errMsg, ok := checkValidateOptionsAlternatives(checkCtx, parts)
+			if !ok {
+				return errMsg, false
+			}
+		}
+		previousOption = opt
+	}
+
+	return "", true
+}
+
+func checkXMLTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
 		switch opt {
 		case "any", "attr", "cdata", "chardata", "comment", "innerxml", "omitempty", "typeattr":
 		default:
-			if w.isUserDefined(keyXML, opt) {
+			if checkCtx.isUserDefined(keyXML, opt) {
 				continue
 			}
-			return fmt.Sprintf("unknown option '%s' in XML tag", opt), false
+			return fmt.Sprintf(msgUnknownOption, opt), false
 		}
 	}
 
 	return "", true
 }
 
-func (w lintStructTagRule) checkYAMLTag(options []string) (string, bool) {
-	for _, opt := range options {
+func checkYAMLTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
 		switch opt {
 		case "flow", "inline", "omitempty":
 		default:
-			if w.isUserDefined(keyYAML, opt) {
+			if checkCtx.isUserDefined(keyYAML, opt) {
 				continue
 			}
-			return fmt.Sprintf("unknown option '%s' in YAML tag", opt), false
+			return fmt.Sprintf(msgUnknownOption, opt), false
 		}
 	}
 
 	return "", true
 }
 
-func (lintStructTagRule) typeValueMatch(t ast.Expr, val string) bool {
+func checkSpannerTag(checkCtx *checkContext, tag *structtag.Tag, _ *ast.Field) (message string, succeeded bool) {
+	for _, opt := range tag.Options {
+		if !checkCtx.isUserDefined(keySpanner, opt) {
+			return fmt.Sprintf(msgUnknownOption, opt), false
+		}
+	}
+
+	return "", true
+}
+
+// checkOptionsOnIgnoredField checks if an ignored struct field (tag name "-") has any options specified.
+// It returns a message and false if there are useless options present, or an empty message and true if valid.
+func checkOptionsOnIgnoredField(tag *structtag.Tag) (message string, succeeded bool) {
+	if tag.Name != "-" {
+		return "", true
+	}
+
+	switch len(tag.Options) {
+	case 0:
+		return "", true
+	case 1:
+		opt := strings.TrimSpace(tag.Options[0])
+		if opt == "" {
+			return "", true // accept "-," as options
+		}
+
+		return fmt.Sprintf("useless option %s for ignored field", opt), false
+	default:
+		return fmt.Sprintf("useless options %s for ignored field", strings.Join(tag.Options, ",")), false
+	}
+}
+
+func checkValidateOptionsAlternatives(checkCtx *checkContext, alternatives []string) (message string, succeeded bool) {
+	for _, alternative := range alternatives {
+		alternative := strings.TrimSpace(alternative)
+		lhs, _, found := strings.Cut(alternative, "=")
+		if found {
+			_, ok := validateLHS[lhs]
+			if ok || checkCtx.isUserDefined(keyValidate, lhs) {
+				continue
+			}
+			return fmt.Sprintf(msgUnknownOption, lhs), false
+		}
+
+		badOpt, ok := areValidateOpts(alternative)
+		if ok || checkCtx.isUserDefined(keyValidate, badOpt) {
+			continue
+		}
+
+		return fmt.Sprintf(msgUnknownOption, badOpt), false
+	}
+
+	return "", true
+}
+
+func typeValueMatch(t ast.Expr, val string) bool {
 	tID, ok := t.(*ast.Ident)
 	if !ok {
 		return true
@@ -345,87 +797,279 @@ func (lintStructTagRule) typeValueMatch(t ast.Expr, val string) bool {
 	case "int":
 		_, err := strconv.ParseInt(val, 10, 64)
 		typeMatches = err == nil
-	case "string":
-	case "nil":
-	default:
+	default: // "string", "nil", ...
 		// unchecked type
 	}
 
 	return typeMatches
 }
 
-func (w lintStructTagRule) checkProtobufTag(tag *structtag.Tag) (string, bool) {
-	// check name
-	switch tag.Name {
-	case "bytes", "fixed32", "fixed64", "group", "varint", "zigzag32", "zigzag64":
-		// do nothing
-	default:
-		return fmt.Sprintf("invalid protobuf tag name '%s'", tag.Name), false
-	}
+func (w lintStructTagRule) addFailureWithTagKey(n ast.Node, msg, tagKey string) {
+	w.addFailuref(n, "%s in %s tag", msg, tagKey)
+}
 
-	// check options
-	seenOptions := map[string]bool{}
-	for _, opt := range tag.Options {
-		if number, err := strconv.Atoi(opt); err == nil {
-			_, alreadySeen := w.usedTagNbr[number]
-			if alreadySeen {
-				return fmt.Sprintf("duplicated tag number %v", number), false
-			}
-			w.usedTagNbr[number] = true
-			continue // option is an integer
-		}
+func (w lintStructTagRule) addFailuref(n ast.Node, msg string, args ...any) {
+	w.onFailure(lint.Failure{
+		Category:   lint.FailureCategoryBadPractice,
+		Node:       n,
+		Failure:    fmt.Sprintf(msg, args...),
+		Confidence: 1,
+	})
+}
 
-		switch {
-		case opt == "opt" || opt == "proto3" || opt == "rep" || opt == "req":
-			// do nothing
-		case strings.Contains(opt, "="):
-			o := strings.Split(opt, "=")[0]
-			_, alreadySeen := seenOptions[o]
-			if alreadySeen {
-				return fmt.Sprintf("protobuf tag has duplicated option '%s'", o), false
-			}
-			seenOptions[o] = true
-			continue
-		}
-	}
-	_, hasName := seenOptions["name"]
-	if !hasName {
-		return "protobuf tag lacks mandatory option 'name'", false
-	}
-
-	for k := range seenOptions {
-		switch k {
-		case "name", "json":
-			// do nothing
-		default:
-			if w.isUserDefined(keyProtobuf, k) {
-				continue
-			}
-			return fmt.Sprintf("unknown option '%s' in protobuf tag", k), false
+func areValidateOpts(opts string) (string, bool) {
+	for opt := range strings.SplitSeq(opts, "|") {
+		_, ok := validateSingleOptions[opt]
+		if !ok {
+			return opt, false
 		}
 	}
 
 	return "", true
 }
 
-func (w lintStructTagRule) addFailure(n ast.Node, msg string) {
-	w.onFailure(lint.Failure{
-		Node:       n,
-		Failure:    msg,
-		Confidence: 1,
-	})
+const (
+	msgDuplicatedOption    = "duplicated option %q"
+	msgDuplicatedTagNumber = "duplicated tag number %v"
+	msgUnknownOption       = "unknown option %q"
+	msgTypeMismatch        = "type mismatch between field type and default value type"
+)
+
+var validateSingleOptions = map[string]struct{}{
+	"alpha":                         {},
+	"alphanum":                      {},
+	"alphanumunicode":               {},
+	"alphaunicode":                  {},
+	"ascii":                         {},
+	"base32":                        {},
+	"base64":                        {},
+	"base64rawurl":                  {},
+	"base64url":                     {},
+	"bcp47_language_tag":            {},
+	"bic":                           {},
+	"boolean":                       {},
+	"btc_addr":                      {},
+	"btc_addr_bech32":               {},
+	"cidr":                          {},
+	"cidrv4":                        {},
+	"cidrv6":                        {},
+	"contains":                      {},
+	"containsany":                   {},
+	"containsrune":                  {},
+	"credit_card":                   {},
+	"cron":                          {},
+	"cve":                           {},
+	"datauri":                       {},
+	"datetime":                      {},
+	"dir":                           {},
+	"dirpath":                       {},
+	"dive":                          {},
+	"dns_rfc1035_label":             {},
+	"e164":                          {},
+	"ein":                           {},
+	"email":                         {},
+	"endsnotwith":                   {},
+	"endswith":                      {},
+	"eq":                            {},
+	"eq_ignore_case":                {},
+	"eqcsfield":                     {},
+	"eqfield":                       {},
+	"eth_addr":                      {},
+	"eth_addr_checksum":             {},
+	"excluded_if":                   {},
+	"excluded_unless":               {},
+	"excluded_with":                 {},
+	"excluded_with_all":             {},
+	"excluded_without":              {},
+	"excluded_without_all":          {},
+	"excludes":                      {},
+	"excludesall":                   {},
+	"excludesrune":                  {},
+	"fieldcontains":                 {},
+	"fieldexcludes":                 {},
+	"file":                          {},
+	"filepath":                      {},
+	"fqdn":                          {},
+	"gt":                            {},
+	"gtcsfield":                     {},
+	"gte":                           {},
+	"gtecsfield":                    {},
+	"gtefield":                      {},
+	"gtfield":                       {},
+	"hexadecimal":                   {},
+	"hexcolor":                      {},
+	"hostname":                      {},
+	"hostname_port":                 {},
+	"hostname_rfc1123":              {},
+	"hsl":                           {},
+	"hsla":                          {},
+	"html":                          {},
+	"html_encoded":                  {},
+	"http_url":                      {},
+	"image":                         {},
+	"ip":                            {},
+	"ip4_addr":                      {},
+	"ip6_addr":                      {},
+	"ip_addr":                       {},
+	"ipv4":                          {},
+	"ipv6":                          {},
+	"isbn":                          {},
+	"isbn10":                        {},
+	"isbn13":                        {},
+	"isdefault":                     {},
+	"iso3166_1_alpha2":              {},
+	"iso3166_1_alpha2_eu":           {},
+	"iso3166_1_alpha3":              {},
+	"iso3166_1_alpha3_eu":           {},
+	"iso3166_1_alpha_numeric":       {},
+	"iso3166_1_alpha_numeric_eu":    {},
+	"iso3166_2":                     {},
+	"iso4217":                       {},
+	"iso4217_numeric":               {},
+	"issn":                          {},
+	"json":                          {},
+	"jwt":                           {},
+	"latitude":                      {},
+	"len":                           {},
+	"longitude":                     {},
+	"lowercase":                     {},
+	"lt":                            {},
+	"ltcsfield":                     {},
+	"lte":                           {},
+	"ltecsfield":                    {},
+	"ltefield":                      {},
+	"ltfield":                       {},
+	"luhn_checksum":                 {},
+	"mac":                           {},
+	"max":                           {},
+	"md4":                           {},
+	"md5":                           {},
+	"min":                           {},
+	"mongodb":                       {},
+	"mongodb_connection_string":     {},
+	"multibyte":                     {},
+	"ne":                            {},
+	"ne_ignore_case":                {},
+	"necsfield":                     {},
+	"nefield":                       {},
+	"number":                        {},
+	"numeric":                       {},
+	"omitempty":                     {},
+	"omitnil":                       {},
+	"omitzero":                      {},
+	"oneof":                         {},
+	"oneofci":                       {},
+	"port":                          {},
+	"postcode_iso3166_alpha2":       {},
+	"postcode_iso3166_alpha2_field": {},
+	"printascii":                    {},
+	"required":                      {},
+	"required_if":                   {},
+	"required_unless":               {},
+	"required_with":                 {},
+	"required_with_all":             {},
+	"required_without":              {},
+	"required_without_all":          {},
+	"rgb":                           {},
+	"rgba":                          {},
+	"ripemd128":                     {},
+	"ripemd160":                     {},
+	"semver":                        {},
+	"sha256":                        {},
+	"sha384":                        {},
+	"sha512":                        {},
+	"skip_unless":                   {},
+	"spicedb":                       {},
+	"ssn":                           {},
+	"startsnotwith":                 {},
+	"startswith":                    {},
+	"tcp4_addr":                     {},
+	"tcp6_addr":                     {},
+	"tcp_addr":                      {},
+	"tiger128":                      {},
+	"tiger160":                      {},
+	"tiger192":                      {},
+	"timezone":                      {},
+	"udp4_addr":                     {},
+	"udp6_addr":                     {},
+	"udp_addr":                      {},
+	"ulid":                          {},
+	"unique":                        {},
+	"unix_addr":                     {},
+	"uppercase":                     {},
+	"uri":                           {},
+	"url":                           {},
+	"url_encoded":                   {},
+	"urn_rfc2141":                   {},
+	"uuid":                          {},
+	"uuid3":                         {},
+	"uuid3_rfc4122":                 {},
+	"uuid4":                         {},
+	"uuid4_rfc4122":                 {},
+	"uuid5":                         {},
+	"uuid5_rfc4122":                 {},
+	"uuid_rfc4122":                  {},
+	"validateFn":                    {},
 }
 
-func (w lintStructTagRule) isUserDefined(key, opt string) bool {
-	if w.userDefined == nil {
-		return false
-	}
-
-	options := w.userDefined[key]
-	for _, o := range options {
-		if opt == o {
-			return true
-		}
-	}
-	return false
+// validateLHS are options that are used in expressions of the form:
+//
+//	<option> = <RHS>
+var validateLHS = map[string]struct{}{
+	"contains":             {},
+	"containsany":          {},
+	"containsfield":        {},
+	"containsrune":         {},
+	"datetime":             {},
+	"endsnotwith":          {},
+	"endswith":             {},
+	"eq":                   {},
+	"eq_ignore_case":       {},
+	"eqcsfield":            {},
+	"eqfield":              {},
+	"excluded_if":          {},
+	"excluded_unless":      {},
+	"excluded_with":        {},
+	"excluded_with_all":    {},
+	"excluded_without":     {},
+	"excluded_without_all": {},
+	"excludes":             {},
+	"excludesall":          {},
+	"excludesfield":        {},
+	"excludesrune":         {},
+	"fieldcontains":        {},
+	"fieldexcludes":        {},
+	"gt":                   {},
+	"gtcsfield":            {},
+	"gte":                  {},
+	"gtecsfield":           {},
+	"gtefield":             {},
+	"gtfield":              {},
+	"len":                  {},
+	"lt":                   {},
+	"ltcsfield":            {},
+	"lte":                  {},
+	"ltecsfield":           {},
+	"ltefield":             {},
+	"ltfield":              {},
+	"max":                  {},
+	"min":                  {},
+	"ne":                   {},
+	"ne_ignore_case":       {},
+	"necsfield":            {},
+	"nefield":              {},
+	"oneof":                {},
+	"oneofci":              {},
+	"required_if":          {},
+	"required_unless":      {},
+	"required_with":        {},
+	"required_with_all":    {},
+	"required_without":     {},
+	"required_without_all": {},
+	"skip_unless":          {},
+	"spicedb":              {},
+	"startsnotwith":        {},
+	"startswith":           {},
+	"unique":               {},
+	"validateFn":           {},
 }

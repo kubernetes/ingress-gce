@@ -37,7 +37,7 @@ var Analyzer = SCAnalyzer.Analyzer
 
 var allocationNilCheckQ = pattern.MustParse(`(IfStmt _ cond@(BinaryExpr lhs op@(Or "==" "!=") (Builtin "nil")) _ _)`)
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	irpkg := pass.ResultOf[buildir.Analyzer].(*buildir.IR).Pkg
 
 	var path []ast.Node
@@ -95,8 +95,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					values = append(values, v)
 				}
 				return neverNil(v.X, false)
-			case *ir.Sigma:
-				return neverNil(v.X, true)
 			case *ir.Phi:
 				for _, e := range v.Edges {
 					if !neverNil(e, true) {

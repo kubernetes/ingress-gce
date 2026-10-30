@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -18,7 +19,7 @@ func (*OptimizeOperandsOrderRule) Apply(file *lint.File, _ lint.Arguments) []lin
 	onFailure := func(failure lint.Failure) {
 		failures = append(failures, failure)
 	}
-	w := lintOptimizeOperandsOrderlExpr{
+	w := lintOptimizeOperandsOrderExpr{
 		onFailure: onFailure,
 	}
 	ast.Walk(w, file.AST)
@@ -30,13 +31,13 @@ func (*OptimizeOperandsOrderRule) Name() string {
 	return "optimize-operands-order"
 }
 
-type lintOptimizeOperandsOrderlExpr struct {
+type lintOptimizeOperandsOrderExpr struct {
 	onFailure func(failure lint.Failure)
 }
 
 // Visit checks boolean AND and OR expressions to determine
 // if swapping their operands may result in an execution speedup.
-func (w lintOptimizeOperandsOrderlExpr) Visit(node ast.Node) ast.Visitor {
+func (w lintOptimizeOperandsOrderExpr) Visit(node ast.Node) ast.Visitor {
 	binExpr, ok := node.(*ast.BinaryExpr)
 	if !ok {
 		return w
@@ -63,20 +64,20 @@ func (w lintOptimizeOperandsOrderlExpr) Visit(node ast.Node) ast.Visitor {
 	}
 
 	// check if the left sub-expression contains a function call
-	nodes := pick(binExpr.X, isCaller)
-	if len(nodes) < 1 {
+	call := astutils.SeekNode[*ast.CallExpr](binExpr.X, isCaller)
+	if call == nil {
 		return w
 	}
 
 	// check if the right sub-expression does not contain a function call
-	nodes = pick(binExpr.Y, isCaller)
-	if len(nodes) > 0 {
+	call = astutils.SeekNode[*ast.CallExpr](binExpr.Y, isCaller)
+	if call != nil {
 		return w
 	}
 
 	newExpr := ast.BinaryExpr{X: binExpr.Y, Y: binExpr.X, Op: binExpr.Op}
 	w.onFailure(lint.Failure{
-		Failure:    fmt.Sprintf("for better performance '%v' might be rewritten as '%v'", gofmt(binExpr), gofmt(&newExpr)),
+		Failure:    fmt.Sprintf("for better performance '%v' might be rewritten as '%v'", astutils.GoFmt(binExpr), astutils.GoFmt(&newExpr)),
 		Node:       node,
 		Category:   lint.FailureCategoryOptimization,
 		Confidence: 0.3,

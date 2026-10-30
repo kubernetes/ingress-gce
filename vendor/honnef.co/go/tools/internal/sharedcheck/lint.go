@@ -13,7 +13,6 @@ import (
 	"honnef.co/go/tools/analysis/report"
 	"honnef.co/go/tools/go/ast/astutil"
 	"honnef.co/go/tools/go/ir"
-	"honnef.co/go/tools/go/ir/irutil"
 	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/internal/passes/buildir"
 
@@ -21,7 +20,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
-func CheckRangeStringRunes(pass *analysis.Pass) (interface{}, error) {
+func CheckRangeStringRunes(pass *analysis.Pass) (any, error) {
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
 		cb := func(node ast.Node) bool {
 			rng, ok := node.(*ast.RangeStmt)
@@ -58,7 +57,7 @@ func CheckRangeStringRunes(pass *analysis.Pass) (interface{}, error) {
 
 			// Expect two refs: one for obtaining the length of the slice,
 			// one for accessing the elements
-			if len(irutil.FilterDebug(*refs)) != 2 {
+			if len(*refs) != 2 {
 				// TODO(dh): right now, we check that only one place
 				// refers to our slice. This will miss cases such as
 				// ranging over the slice twice. Ideally, we'd ensure that
@@ -94,7 +93,7 @@ func CheckRangeStringRunes(pass *analysis.Pass) (interface{}, error) {
 // - variables named the blank identifier – a pattern used to confirm the types of variables
 // - untyped expressions on the rhs – the explicitness might aid readability
 func RedundantTypeInDeclarationChecker(verb string, flagHelpfulTypes bool) *analysis.Analyzer {
-	fn := func(pass *analysis.Pass) (interface{}, error) {
+	fn := func(pass *analysis.Pass) (any, error) {
 		eval := func(expr ast.Expr) (types.TypeAndValue, error) {
 			info := &types.Info{
 				Types: map[ast.Expr]types.TypeAndValue{},

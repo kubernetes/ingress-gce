@@ -29,8 +29,10 @@ const (
 	FuncSigArgType
 	ErrFuncActualArgType
 	GomegaParamArgType
+	TBParamArgType
 	MultiRetsArgType
 	ErrorMethodArgType
+	ErrorMethodNoErrArgType
 
 	ErrorTypeArgType
 
@@ -42,18 +44,18 @@ func (a ArgType) Is(val ArgType) bool {
 	return a&val != 0
 }
 
-func getActualArgPayload(origActualExpr, actualExprClone *ast.CallExpr, pass *analysis.Pass, info *gomegahandler.GomegaBasicInfo) (ArgPayload, int) {
-	origArgExpr, argExprClone, actualOffset, isGomegaExpr := getActualArg(origActualExpr, actualExprClone, info.MethodName, pass)
+func getActualArgPayload(actualExprClone *ast.CallExpr, pass *analysis.Pass, info *gomegahandler.GomegaBasicInfo) (ArgPayload, int) {
+	origArgExpr, argExprClone, actualOffset, isGomegaExpr := getActualArg(actualExprClone, info, pass)
 	if !isGomegaExpr {
 		return nil, 0
 	}
 
 	var arg ArgPayload
 
-	if info.HasErrorMethod {
-		arg = &ErrorMethodPayload{}
-	} else if value.IsExprError(pass, origArgExpr) {
-		arg = newErrPayload(origArgExpr, argExprClone, pass)
+	if value.IsExprError(pass, origArgExpr, info.HasErrorMethod) {
+		arg = newErrPayload(origArgExpr, argExprClone, pass, info.HasErrorMethod)
+	} else if info.HasErrorMethod {
+		arg = &ErrorMethodNoErrPayload{}
 	} else {
 		switch expr := origArgExpr.(type) {
 		case *ast.CallExpr:
@@ -62,7 +64,6 @@ func getActualArgPayload(origActualExpr, actualExprClone *ast.CallExpr, pass *an
 		case *ast.BinaryExpr:
 			arg = parseBinaryExpr(expr, argExprClone.(*ast.BinaryExpr), pass)
 		}
-
 	}
 
 	if arg != nil {
@@ -80,13 +81,14 @@ func getActualArgPayload(origActualExpr, actualExprClone *ast.CallExpr, pass *an
 	return newRegularArgPayload(origArgExpr, argExprClone, pass), actualOffset
 }
 
-func getActualArg(origActualExpr *ast.CallExpr, actualExprClone *ast.CallExpr, actualMethodName string, pass *analysis.Pass) (ast.Expr, ast.Expr, int, bool) {
+func getActualArg(actualExprClone *ast.CallExpr, info *gomegahandler.GomegaBasicInfo, pass *analysis.Pass) (ast.Expr, ast.Expr, int, bool) {
 	var (
-		origArgExpr  ast.Expr
-		argExprClone ast.Expr
+		origArgExpr    ast.Expr
+		argExprClone   ast.Expr
+		origActualExpr = info.RootCall
 	)
 
-	funcOffset := gomegainfo.ActualArgOffset(actualMethodName)
+	funcOffset := gomegainfo.ActualArgOffset(info.MethodName)
 	if funcOffset < 0 {
 		return nil, nil, 0, false
 	}
@@ -98,7 +100,7 @@ func getActualArg(origActualExpr *ast.CallExpr, actualExprClone *ast.CallExpr, a
 	origArgExpr = origActualExpr.Args[funcOffset]
 	argExprClone = actualExprClone.Args[funcOffset]
 
-	if gomegainfo.IsAsyncActualMethod(actualMethodName) {
+	if info.RootCallType == gomegahandler.AsyncAssertionCall {
 		if ginkgoinfo.IsGinkgoContext(pass.TypesInfo.TypeOf(origArgExpr)) {
 			funcOffset++
 			if len(origActualExpr.Args) <= funcOffset {
@@ -178,9 +180,17 @@ type ErrPayload struct {
 	value.Valuer
 }
 
-func newErrPayload(orig, clone ast.Expr, pass *analysis.Pass) *ErrPayload {
+func newErrPayload(orig, clone ast.Expr, pass *analysis.Pass, withErrorMethod bool) ArgPayload {
+	v := value.GetValuerWithError(orig, clone, pass, withErrorMethod)
+
+	if withErrorMethod {
+		return &ErrorMethodPayload{
+			Valuer: v,
+		}
+	}
+
 	return &ErrPayload{
-		Valuer: value.GetValuer(orig, clone, pass),
+		Valuer: v,
 	}
 }
 
@@ -188,10 +198,18 @@ func (*ErrPayload) ArgType() ArgType {
 	return ErrActualArgType | ErrorTypeArgType
 }
 
-type ErrorMethodPayload struct{}
+type ErrorMethodNoErrPayload struct{}
+
+func (ErrorMethodNoErrPayload) ArgType() ArgType {
+	return ErrorMethodNoErrArgType
+}
+
+type ErrorMethodPayload struct {
+	value.Valuer
+}
 
 func (ErrorMethodPayload) ArgType() ArgType {
-	return ErrorMethodArgType | ErrorTypeArgType
+	return ErrorMethodArgType | ErrActualArgType | ErrorTypeArgType
 }
 
 func parseBinaryExpr(origActualExpr, argExprClone *ast.BinaryExpr, pass *analysis.Pass) ArgPayload {

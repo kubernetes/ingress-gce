@@ -3,6 +3,7 @@ package rule
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/mgechev/revive/lint"
 )
@@ -17,10 +18,13 @@ var (
 	singleRegexp = regexp.MustCompile("^//")
 )
 
+var _ lint.ConfigurableRule = (*FileHeaderRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *FileHeaderRule) Configure(arguments lint.Arguments) error {
+	r.header = ""
 	if len(arguments) < 1 {
 		return nil
 	}
@@ -41,6 +45,7 @@ func (r *FileHeaderRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure
 
 	failure := []lint.Failure{
 		{
+			Category:   lint.FailureCategoryComments,
 			Node:       file.AST,
 			Confidence: 1,
 			Failure:    "the file doesn't have an appropriate header",
@@ -55,7 +60,7 @@ func (r *FileHeaderRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure
 	if g == nil {
 		return failure
 	}
-	comment := ""
+	var comment strings.Builder
 	for _, c := range g.List {
 		text := c.Text
 		if multiRegexp.MatchString(text) {
@@ -63,7 +68,7 @@ func (r *FileHeaderRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure
 		} else if singleRegexp.MatchString(text) {
 			text = text[2:]
 		}
-		comment += text
+		comment.WriteString(text)
 	}
 
 	regex, err := regexp.Compile(r.header)
@@ -71,7 +76,7 @@ func (r *FileHeaderRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure
 		return newInternalFailureError(err)
 	}
 
-	if !regex.MatchString(comment) {
+	if !regex.MatchString(comment.String()) {
 		return failure
 	}
 	return nil

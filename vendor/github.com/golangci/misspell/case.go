@@ -21,7 +21,7 @@ func CaseStyle(word string) WordCase {
 	lowerCount := 0
 
 	// this iterates over RUNES not BYTES
-	for i := 0; i < len(word); i++ {
+	for i := range len(word) {
 		ch := word[i]
 		switch {
 		case ch >= 'a' && ch <= 'z':
@@ -39,6 +39,7 @@ func CaseStyle(word string) WordCase {
 	case upperCount == 1 && lowerCount > 0 && word[0] >= 'A' && word[0] <= 'Z':
 		return CaseTitle
 	}
+
 	return CaseUnknown
 }
 

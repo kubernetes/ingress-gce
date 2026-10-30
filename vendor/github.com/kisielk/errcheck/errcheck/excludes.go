@@ -17,6 +17,12 @@ var DefaultExcludedSymbols = []string{
 	"(*bytes.Buffer).WriteRune",
 	"(*bytes.Buffer).WriteString",
 
+	// crypto
+	"crypto/rand.Read", // https://github.com/golang/go/issues/66821
+
+	// errors
+	"errors.AsType",
+
 	// fmt
 	"fmt.Print",
 	"fmt.Printf",
@@ -47,6 +53,9 @@ var DefaultExcludedSymbols = []string{
 
 	// hash
 	"(hash.Hash).Write",
+	"(*crypto/sha3.SHA3).Write",
+	"(*crypto/sha3.SHAKE).Read",
+	"(*crypto/sha3.SHAKE).Write",
 
 	// hash/maphash
 	"(*hash/maphash.Hash).Write",

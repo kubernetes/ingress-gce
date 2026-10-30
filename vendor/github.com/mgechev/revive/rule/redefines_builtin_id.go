@@ -43,6 +43,7 @@ var builtFunctionsAfterGo121 = map[string]bool{
 var builtInTypes = map[string]bool{
 	"bool":       true,
 	"byte":       true,
+	"comparable": true,
 	"complex128": true,
 	"complex64":  true,
 	"error":      true,
@@ -78,7 +79,7 @@ func (*RedefinesBuiltinIDRule) Apply(file *lint.File, _ lint.Arguments) []lint.F
 	astFile := file.AST
 
 	builtFuncs := maps.Clone(builtFunctions)
-	if file.Pkg.IsAtLeastGo121() {
+	if file.Pkg.IsAtLeastGoVersion(lint.Go121) {
 		maps.Copy(builtFuncs, builtFunctionsAfterGo121)
 	}
 	w := &lintRedefinesBuiltinID{

@@ -23,35 +23,31 @@ import (
 )
 
 type readfile struct {
-	issue.MetaData
-	gosec.CallList
-	pathJoin   gosec.CallList
-	clean      gosec.CallList
-	cleanedVar map[any]ast.Node
+	callListRule
+	pathJoin gosec.CallList
+	clean    gosec.CallList
+
+	// cleanedVar maps the defining *types.Var (result of Clean) to the Clean call node
+	cleanedVar map[*types.Var]ast.Node
+	// joinedVar maps the defining *types.Var (result of Join) to the Join call node
+	joinedVar map[*types.Var]ast.Node
 }
 
-// ID returns the identifier for this rule
-func (r *readfile) ID() string {
-	return r.MetaData.ID
-}
-
-// isJoinFunc checks if there is a filepath.Join or other join function
+// isJoinFunc checks if the call is a filepath.Join with at least one non-constant argument
 func (r *readfile) isJoinFunc(n ast.Node, c *gosec.Context) bool {
 	if call := r.pathJoin.ContainsPkgCallExpr(n, c, false); call != nil {
 		for _, arg := range call.Args {
-			// edge case: check if one of the args is a BinaryExpr
 			if binExp, ok := arg.(*ast.BinaryExpr); ok {
-				// iterate and resolve all found identities from the BinaryExpr
 				if _, ok := gosec.FindVarIdentities(binExp, c); ok {
 					return true
 				}
 			}
 
-			// try and resolve identity
 			if ident, ok := arg.(*ast.Ident); ok {
-				obj := c.Info.ObjectOf(ident)
-				if _, ok := obj.(*types.Var); ok && !gosec.TryResolve(ident, c) {
-					return true
+				if obj := c.Info.ObjectOf(ident); obj != nil {
+					if _, ok := obj.(*types.Var); ok && !gosec.TryResolve(ident, c) {
+						return true
+					}
 				}
 			}
 		}
@@ -59,65 +55,170 @@ func (r *readfile) isJoinFunc(n ast.Node, c *gosec.Context) bool {
 	return false
 }
 
-// isFilepathClean checks if there is a filepath.Clean for given variable
-func (r *readfile) isFilepathClean(n *ast.Ident, c *gosec.Context) bool {
-	if _, ok := r.cleanedVar[n.Obj.Decl]; ok {
-		return true
+// isFilepathClean checks if the variable is the result of a filepath.Clean (or similar) call
+func (r *readfile) isFilepathClean(v *types.Var, _ *gosec.Context) bool {
+	_, ok := r.cleanedVar[v]
+	return ok
+}
+
+// trackCleanAssign records a variable defined as the result of a Clean() call
+func (r *readfile) trackCleanAssign(assign *ast.AssignStmt, c *gosec.Context) {
+	if len(assign.Rhs) == 0 {
+		return
 	}
-	if n.Obj.Kind != ast.Var {
+	if cleanCall, ok := assign.Rhs[0].(*ast.CallExpr); ok {
+		if r.clean.ContainsPkgCallExpr(cleanCall, c, false) != nil {
+			if len(assign.Lhs) > 0 {
+				if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+					if obj := c.Info.ObjectOf(ident); obj != nil {
+						if v, ok := obj.(*types.Var); ok {
+							r.cleanedVar[v] = cleanCall
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// trackJoinAssignStmt records a variable defined from a Join() call
+func (r *readfile) trackJoinAssignStmt(assign *ast.AssignStmt, c *gosec.Context) {
+	if len(assign.Rhs) == 0 {
+		return
+	}
+	if call, ok := assign.Rhs[0].(*ast.CallExpr); ok {
+		if r.pathJoin.ContainsPkgCallExpr(call, c, false) != nil {
+			if len(assign.Lhs) > 0 {
+				if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+					if obj := c.Info.ObjectOf(ident); obj != nil {
+						if v, ok := obj.(*types.Var); ok {
+							r.joinedVar[v] = call
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// osRootSuggestion returns an Autofix suggestion for os.Root (Go 1.24+)
+func (r *readfile) osRootSuggestion() string {
+	major, minor, _ := gosec.GoVersion()
+	if major == 1 && minor >= 24 || major > 1 {
+		return "Consider using os.Root to scope file access under a fixed root (Go >=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+	}
+	return ""
+}
+
+// isSafeJoin checks for safe Join(baseConstant, cleanedOrConstant)
+func (r *readfile) isSafeJoin(call *ast.CallExpr, c *gosec.Context) bool {
+	if r.pathJoin.ContainsPkgCallExpr(call, c, false) == nil {
 		return false
 	}
-	if node, ok := n.Obj.Decl.(*ast.AssignStmt); ok {
-		if call, ok := node.Rhs[0].(*ast.CallExpr); ok {
-			if clean := r.clean.ContainsPkgCallExpr(call, c, false); clean != nil {
-				return true
+
+	var hasBaseDir bool
+	var hasCleanArg bool
+
+	for _, arg := range call.Args {
+		switch a := arg.(type) {
+		case *ast.BasicLit:
+			hasBaseDir = true
+		case *ast.Ident:
+			if gosec.TryResolve(a, c) {
+				hasBaseDir = true
+			} else if obj := c.Info.ObjectOf(a); obj != nil {
+				if v, ok := obj.(*types.Var); ok && r.isFilepathClean(v, c) {
+					hasCleanArg = true
+				}
+			}
+		case *ast.CallExpr:
+			if r.clean.ContainsPkgCallExpr(a, c, false) != nil {
+				hasCleanArg = true
 			}
 		}
 	}
-	return false
+	return hasBaseDir && hasCleanArg
 }
 
-// trackFilepathClean tracks back the declaration of variable from filepath.Clean argument
-func (r *readfile) trackFilepathClean(n ast.Node) {
-	if clean, ok := n.(*ast.CallExpr); ok && len(clean.Args) > 0 {
-		if ident, ok := clean.Args[0].(*ast.Ident); ok {
-			// ident.Obj may be nil if the referenced declaration is in another file. It also may be incorrect.
-			// if it is nil, do not follow it.
-			if ident.Obj != nil {
-				r.cleanedVar[ident.Obj.Decl] = n
-			}
-		}
-	}
-}
-
-// Match inspects AST nodes to determine if the match the methods `os.Open` or `ioutil.ReadFile`
 func (r *readfile) Match(n ast.Node, c *gosec.Context) (*issue.Issue, error) {
-	if node := r.clean.ContainsPkgCallExpr(n, c, false); node != nil {
-		r.trackFilepathClean(n)
-		return nil, nil
-	} else if node := r.ContainsPkgCallExpr(n, c, false); node != nil {
-		for _, arg := range node.Args {
-			// handles path joining functions in Arg
-			// eg. os.Open(filepath.Join("/tmp/", file))
-			if callExpr, ok := arg.(*ast.CallExpr); ok {
-				if r.isJoinFunc(callExpr, c) {
-					return c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence), nil
-				}
-			}
-			// handles binary string concatenation eg. ioutil.Readfile("/tmp/" + file + "/blob")
-			if binExp, ok := arg.(*ast.BinaryExpr); ok {
-				// resolve all found identities from the BinaryExpr
-				if _, ok := gosec.FindVarIdentities(binExp, c); ok {
-					return c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence), nil
-				}
-			}
+	// Track assignments from Clean() or Join()
+	if assign, ok := n.(*ast.AssignStmt); ok {
+		r.trackCleanAssign(assign, c)
+		r.trackJoinAssignStmt(assign, c)
+	}
 
-			if ident, ok := arg.(*ast.Ident); ok {
-				obj := c.Info.ObjectOf(ident)
-				if _, ok := obj.(*types.Var); ok &&
-					!gosec.TryResolve(ident, c) &&
-					!r.isFilepathClean(ident, c) {
-					return c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence), nil
+	// Main check: file reading calls
+	if readCall := r.calls.ContainsPkgCallExpr(n, c, false); readCall != nil {
+		if len(readCall.Args) == 0 {
+			return nil, nil
+		}
+		pathArg := readCall.Args[0]
+
+		// Direct Clean() call as argument → safe
+		if cleanCall, ok := pathArg.(*ast.CallExpr); ok {
+			if r.clean.ContainsPkgCallExpr(cleanCall, c, false) != nil {
+				return nil, nil
+			}
+		}
+
+		// Direct Join() call as argument
+		if joinCall, ok := pathArg.(*ast.CallExpr); ok {
+			if r.isSafeJoin(joinCall, c) {
+				return nil, nil
+			}
+			if r.isJoinFunc(joinCall, c) {
+				iss := c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence)
+				if s := r.osRootSuggestion(); s != "" {
+					iss.Autofix = s
+				}
+				return iss, nil
+			}
+		}
+
+		// Variable assigned from Join()
+		if ident, ok := pathArg.(*ast.Ident); ok {
+			if obj := c.Info.ObjectOf(ident); obj != nil {
+				if v, ok := obj.(*types.Var); ok {
+					if joinCall, ok := r.joinedVar[v]; ok {
+						if r.isFilepathClean(v, c) {
+							return nil, nil
+						}
+						if jc, ok := joinCall.(*ast.CallExpr); ok && r.isSafeJoin(jc, c) {
+							return nil, nil
+						}
+						iss := c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence)
+						if s := r.osRootSuggestion(); s != "" {
+							iss.Autofix = s
+						}
+						return iss, nil
+					}
+				}
+			}
+		}
+
+		// Binary concatenation
+		if binExp, ok := pathArg.(*ast.BinaryExpr); ok {
+			if _, ok := gosec.FindVarIdentities(binExp, c); ok {
+				iss := c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence)
+				if s := r.osRootSuggestion(); s != "" {
+					iss.Autofix = s
+				}
+				return iss, nil
+			}
+		}
+
+		// Plain variable — tainted unless constant or cleaned
+		if ident, ok := pathArg.(*ast.Ident); ok {
+			if obj := c.Info.ObjectOf(ident); obj != nil {
+				if v, ok := obj.(*types.Var); ok {
+					if gosec.TryResolve(ident, c) || r.isFilepathClean(v, c) {
+						return nil, nil
+					}
+					iss := c.NewIssue(n, r.ID(), r.What, r.Severity, r.Confidence)
+					if s := r.osRootSuggestion(); s != "" {
+						iss.Autofix = s
+					}
+					return iss, nil
 				}
 			}
 		}
@@ -125,19 +226,14 @@ func (r *readfile) Match(n ast.Node, c *gosec.Context) (*issue.Issue, error) {
 	return nil, nil
 }
 
-// NewReadFile detects cases where we read files
+// NewReadFile detects potential file inclusion via variable in file read operations
 func NewReadFile(id string, _ gosec.Config) (gosec.Rule, []ast.Node) {
 	rule := &readfile{
-		pathJoin: gosec.NewCallList(),
-		clean:    gosec.NewCallList(),
-		CallList: gosec.NewCallList(),
-		MetaData: issue.MetaData{
-			ID:         id,
-			What:       "Potential file inclusion via variable",
-			Severity:   issue.Medium,
-			Confidence: issue.High,
-		},
-		cleanedVar: map[any]ast.Node{},
+		callListRule: newCallListRule(id, "Potential file inclusion via variable", issue.Medium, issue.High),
+		pathJoin:     gosec.NewCallList(),
+		clean:        gosec.NewCallList(),
+		cleanedVar:   make(map[*types.Var]ast.Node),
+		joinedVar:    make(map[*types.Var]ast.Node),
 	}
 	rule.pathJoin.Add("path/filepath", "Join")
 	rule.pathJoin.Add("path", "Join")
@@ -145,9 +241,6 @@ func NewReadFile(id string, _ gosec.Config) (gosec.Rule, []ast.Node) {
 	rule.clean.Add("path/filepath", "Rel")
 	rule.clean.Add("path/filepath", "EvalSymlinks")
 	rule.Add("io/ioutil", "ReadFile")
-	rule.Add("os", "ReadFile")
-	rule.Add("os", "Open")
-	rule.Add("os", "OpenFile")
-	rule.Add("os", "Create")
-	return rule, []ast.Node{(*ast.CallExpr)(nil)}
+	rule.AddAll("os", "ReadFile", "Open", "OpenFile", "Create")
+	return rule, []ast.Node{(*ast.CallExpr)(nil), (*ast.AssignStmt)(nil)}
 }

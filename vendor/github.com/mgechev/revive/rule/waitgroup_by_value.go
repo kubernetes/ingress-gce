@@ -3,10 +3,11 @@ package rule
 import (
 	"go/ast"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
-// WaitGroupByValueRule lints sync.WaitGroup passed by copy in functions.
+// WaitGroupByValueRule lints [sync.WaitGroup] passed by copy in functions.
 type WaitGroupByValueRule struct{}
 
 // Apply applies the rule to given file.
@@ -40,11 +41,12 @@ func (w lintWaitGroupByValueRule) Visit(node ast.Node) ast.Visitor {
 
 	// Check all function parameters
 	for _, field := range fd.Type.Params.List {
-		if !w.isWaitGroup(field.Type) {
+		if !astutils.IsPkgDotName(field.Type, "sync", "WaitGroup") {
 			continue
 		}
 
 		w.onFailure(lint.Failure{
+			Category:   lint.FailureCategoryLogic,
 			Confidence: 1,
 			Node:       field,
 			Failure:    "sync.WaitGroup passed by value, the function will get a copy of the original one",
@@ -52,15 +54,4 @@ func (w lintWaitGroupByValueRule) Visit(node ast.Node) ast.Visitor {
 	}
 
 	return nil // skip visiting function body
-}
-
-func (lintWaitGroupByValueRule) isWaitGroup(ft ast.Expr) bool {
-	se, ok := ft.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
-
-	x, _ := se.X.(*ast.Ident)
-	sel := se.Sel.Name
-	return x.Name == "sync" && sel == "WaitGroup"
 }

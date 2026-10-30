@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-// FileFilter - file filter to exclude some files for rule
-// supports whole
-// 1. file/dir names : pkg/mypkg/my.go,
-// 2. globs: **/*.pb.go,
-// 3. regexes (~ prefix) ~-tmp\.\d+\.go
-// 4. special test marker `TEST` - treats as `~_test\.go`
+// FileFilter filters file to exclude some files for a rule.
+// Supports the following:
+//   - File or directory names: pkg/mypkg/my.go
+//   - Globs: **/*.pb.go,
+//   - Regexes (with ~ prefix): ~-tmp\.\d+\.go
+//   - Special test marker `TEST` (treated as `~_test\.go`).
 type FileFilter struct {
 	// raw definition of filter inside config
 	raw string
@@ -23,15 +23,15 @@ type FileFilter struct {
 	matchesNothing bool
 }
 
-// ParseFileFilter - creates [FileFilter] for given raw filter
-// if empty string, it matches nothing
-// if `*`, or `~`, it matches everything
-// while regexp could be invalid, it could return it's compilation error
+// ParseFileFilter creates a [FileFilter] for the given raw filter.
+// If the string is empty, it matches nothing.
+// If the string is `*` or `~`, it matches everything.
+// If the regular expression is invalid, it returns a compilation error.
 func ParseFileFilter(rawFilter string) (*FileFilter, error) {
 	rawFilter = strings.TrimSpace(rawFilter)
 	result := new(FileFilter)
 	result.raw = rawFilter
-	result.matchesNothing = len(result.raw) == 0
+	result.matchesNothing = result.raw == ""
 	result.matchesAll = result.raw == "*" || result.raw == "~"
 	if !result.matchesAll && !result.matchesNothing {
 		if err := result.prepareRegexp(); err != nil {
@@ -41,9 +41,10 @@ func ParseFileFilter(rawFilter string) (*FileFilter, error) {
 	return result, nil
 }
 
+// String returns the original raw filter definition as it appears in the configuration.
 func (ff *FileFilter) String() string { return ff.raw }
 
-// MatchFileName - checks if file name matches filter
+// MatchFileName checks if the file name matches the filter.
 func (ff *FileFilter) MatchFileName(name string) bool {
 	if ff.matchesAll {
 		return true
@@ -55,10 +56,7 @@ func (ff *FileFilter) MatchFileName(name string) bool {
 	return ff.rx.MatchString(name)
 }
 
-var (
-	fileFilterInvalidGlobRegexp = regexp.MustCompile(`[^/]\*\*[^/]`)
-	escapeRegexSymbols          = ".+{}()[]^$"
-)
+var fileFilterInvalidGlobRegexp = regexp.MustCompile(`[^/]\*\*[^/]`)
 
 func (ff *FileFilter) prepareRegexp() error {
 	var err error
@@ -73,6 +71,7 @@ func (ff *FileFilter) prepareRegexp() error {
 		}
 		return nil
 	}
+	src = strings.ReplaceAll(src, "\\", "/")
 	/* globs */
 	if strings.Contains(src, "*") {
 		if fileFilterInvalidGlobRegexp.MatchString(src) {
@@ -97,10 +96,7 @@ func (ff *FileFilter) prepareRegexp() error {
 				rxBuild.WriteString("[^/]*")
 				wasStar = false
 			}
-			if strings.ContainsRune(escapeRegexSymbols, c) {
-				rxBuild.WriteByte('\\')
-			}
-			rxBuild.WriteRune(c)
+			rxBuild.WriteString(regexp.QuoteMeta(string(c)))
 			if c == '/' && justDirGlob {
 				rxBuild.WriteRune('?')
 			}
@@ -117,12 +113,8 @@ func (ff *FileFilter) prepareRegexp() error {
 		return nil
 	}
 
-	// it's whole file mask, just escape dots and normilze separators
-	fillRx := src
-	fillRx = strings.ReplaceAll(fillRx, "\\", "/")
-	fillRx = strings.ReplaceAll(fillRx, ".", `\.`)
-	fillRx = "^" + fillRx + "$"
-	ff.rx, err = regexp.Compile(fillRx)
+	// it's whole file mask: match it literally
+	ff.rx, err = regexp.Compile("^" + regexp.QuoteMeta(src) + "$")
 	if err != nil {
 		return fmt.Errorf("invalid file filter [%s], regexp compile full path: [%w]", ff.raw, err)
 	}

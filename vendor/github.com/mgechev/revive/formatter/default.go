@@ -7,13 +7,13 @@ import (
 	"github.com/mgechev/revive/lint"
 )
 
-// Default is an implementation of the Formatter interface
+// Default is an implementation of the [lint.Formatter] interface
 // which formats the errors to text.
 type Default struct {
 	Metadata lint.FormatterMetadata
 }
 
-// Name returns the name of the formatter
+// Name returns the name of the formatter.
 func (*Default) Name() string {
 	return "default"
 }
@@ -21,12 +21,17 @@ func (*Default) Name() string {
 // Format formats the failures gotten from the lint.
 func (*Default) Format(failures <-chan lint.Failure, _ lint.Config) (string, error) {
 	var buf bytes.Buffer
+	prefix := ""
 	for failure := range failures {
-		fmt.Fprintf(&buf, "%v: %s\n", failure.Position.Start, failure.Failure)
+		_, err := fmt.Fprintf(&buf, "%s%v: %s", prefix, failure.Position.Start, failure.Failure)
+		if err != nil {
+			return "", err
+		}
+		prefix = "\n"
 	}
 	return buf.String(), nil
 }
 
 func ruleDescriptionURL(ruleName string) string {
-	return "https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#" + ruleName
+	return "https://revive.run/r#" + ruleName
 }

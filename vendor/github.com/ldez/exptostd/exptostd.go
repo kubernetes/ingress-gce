@@ -55,7 +55,6 @@ type analyzer struct {
 	constraintsPkgReplacements map[string]stdReplacement[*ast.SelectorExpr]
 
 	skipGoVersionDetection bool
-	goVersion              int
 }
 
 // NewAnalyzer create a new Analyzer.
@@ -126,7 +125,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	a.goVersion = getGoVersion(pass)
+	goVersion := getGoVersion(pass)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -166,7 +165,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 
 			switch ident.Name {
 			case pkgMaps:
-				diagnostic, usage := a.detectPackageUsage(pass, a.mapsPkgReplacements, selExpr, ident, node, pkgExpMaps)
+				diagnostic, usage := a.detectPackageUsage(pass, a.mapsPkgReplacements, selExpr, ident, node, pkgExpMaps, goVersion)
 				if usage {
 					pass.Report(diagnostic)
 				}
@@ -174,7 +173,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 				shouldKeepExpMaps = shouldKeepExpMaps || !usage
 
 			case pkgSlices:
-				diagnostic, usage := a.detectPackageUsage(pass, a.slicesPkgReplacements, selExpr, ident, node, pkgExpSlices)
+				diagnostic, usage := a.detectPackageUsage(pass, a.slicesPkgReplacements, selExpr, ident, node, pkgExpSlices, goVersion)
 				if usage {
 					resultExpSlices.Diagnostics = append(resultExpSlices.Diagnostics, diagnostic)
 				}
@@ -185,14 +184,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		case *ast.FuncDecl:
 			if node.Type.TypeParams != nil {
 				for _, field := range node.Type.TypeParams.List {
-					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints)
+					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints, goVersion)
 				}
 			}
 
 		case *ast.TypeSpec:
 			if node.TypeParams != nil {
 				for _, field := range node.TypeParams.List {
-					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints)
+					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints, goVersion)
 				}
 			}
 
@@ -204,11 +203,11 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 			for _, method := range interfaceType.Methods.List {
 				switch exp := method.Type.(type) {
 				case *ast.BinaryExpr:
-					a.detectConstraintsUsage(pass, exp.X, resultExpConstraints)
-					a.detectConstraintsUsage(pass, exp.Y, resultExpConstraints)
+					a.detectConstraintsUsage(pass, exp.X, resultExpConstraints, goVersion)
+					a.detectConstraintsUsage(pass, exp.Y, resultExpConstraints, goVersion)
 
 				case *ast.SelectorExpr:
-					a.detectConstraintsUsage(pass, exp, resultExpConstraints)
+					a.detectConstraintsUsage(pass, exp, resultExpConstraints, goVersion)
 				}
 			}
 		}
@@ -235,14 +234,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 func (a *analyzer) detectPackageUsage(pass *analysis.Pass,
 	replacements map[string]stdReplacement[*ast.CallExpr],
 	selExpr *ast.SelectorExpr, ident *ast.Ident, callExpr *ast.CallExpr,
-	importPath string,
+	importPath string, goVersion int,
 ) (analysis.Diagnostic, bool) {
 	rp, ok := replacements[selExpr.Sel.Name]
 	if !ok {
 		return analysis.Diagnostic{}, false
 	}
 
-	if !a.skipGoVersionDetection && rp.MinGo > a.goVersion {
+	if !a.skipGoVersionDetection && rp.MinGo > goVersion {
 		return analysis.Diagnostic{}, false
 	}
 
@@ -267,47 +266,55 @@ func (a *analyzer) detectPackageUsage(pass *analysis.Pass,
 	return diagnostic, true
 }
 
-func (a *analyzer) detectConstraintsUsage(pass *analysis.Pass, expr ast.Expr, result *Result) {
-	selExpr, ok := expr.(*ast.SelectorExpr)
-	if !ok {
-		return
-	}
-
-	ident, ok := selExpr.X.(*ast.Ident)
-	if !ok {
-		return
-	}
-
-	if !isPackageUsed(pass, ident, pkgExpConstraints) {
-		return
-	}
-
-	rp, ok := a.constraintsPkgReplacements[selExpr.Sel.Name]
-	if !ok {
-		result.shouldKeepImport = true
-		return
-	}
-
-	if !a.skipGoVersionDetection && rp.MinGo > a.goVersion {
-		result.shouldKeepImport = true
-		return
-	}
-
-	diagnostic := analysis.Diagnostic{
-		Pos:     selExpr.Pos(),
-		Message: fmt.Sprintf("%s.%s can be replaced by %s", pkgExpConstraints, selExpr.Sel.Name, rp.Text),
-	}
-
-	if rp.Suggested != nil {
-		fix, err := rp.Suggested(selExpr)
-		if err != nil {
-			diagnostic.Message = fmt.Sprintf("Suggested fix error: %v", err)
-		} else {
-			diagnostic.SuggestedFixes = append(diagnostic.SuggestedFixes, fix)
+func (a *analyzer) detectConstraintsUsage(pass *analysis.Pass, expr ast.Expr, result *Result, goVersion int) {
+	switch selExpr := expr.(type) {
+	case *ast.SelectorExpr:
+		ident, ok := selExpr.X.(*ast.Ident)
+		if !ok {
+			return
 		}
-	}
 
-	pass.Report(diagnostic)
+		if !isPackageUsed(pass, ident, pkgExpConstraints) {
+			return
+		}
+
+		rp, ok := a.constraintsPkgReplacements[selExpr.Sel.Name]
+		if !ok {
+			result.shouldKeepImport = true
+			return
+		}
+
+		if !a.skipGoVersionDetection && rp.MinGo > goVersion {
+			result.shouldKeepImport = true
+			return
+		}
+
+		diagnostic := analysis.Diagnostic{
+			Pos:     selExpr.Pos(),
+			Message: fmt.Sprintf("%s.%s can be replaced by %s", pkgExpConstraints, selExpr.Sel.Name, rp.Text),
+		}
+
+		if rp.Suggested != nil {
+			fix, err := rp.Suggested(selExpr)
+			if err != nil {
+				diagnostic.Message = fmt.Sprintf("Suggested fix error: %v", err)
+			} else {
+				diagnostic.SuggestedFixes = append(diagnostic.SuggestedFixes, fix)
+			}
+		}
+
+		pass.Report(diagnostic)
+
+	case *ast.BinaryExpr:
+		a.detectConstraintsUsage(pass, selExpr.X, result, goVersion)
+		a.detectConstraintsUsage(pass, selExpr.Y, result, goVersion)
+
+	case *ast.UnaryExpr:
+		a.detectConstraintsUsage(pass, selExpr.X, result, goVersion)
+
+	default:
+		return
+	}
 }
 
 func (a *analyzer) suggestReplaceImport(pass *analysis.Pass, imports map[string]*ast.ImportSpec, shouldKeep bool, importPath, stdPackage string) {
@@ -321,7 +328,7 @@ func (a *analyzer) suggestReplaceImport(pass *analysis.Pass, imports map[string]
 	pass.Report(analysis.Diagnostic{
 		Pos:     imp.Pos(),
 		End:     imp.End(),
-		Message: fmt.Sprintf("Import statement '%s' can be replaced by '%s'", src, stdPackage),
+		Message: fmt.Sprintf("Import statement '%s' may be replaced by '%s'", src, stdPackage),
 		SuggestedFixes: []analysis.SuggestedFix{{
 			TextEdits: []analysis.TextEdit{{
 				Pos:     imp.Path.Pos(),
@@ -366,7 +373,7 @@ func suggestedFixForKeysOrValues(callExpr *ast.CallExpr) (analysis.SuggestedFix,
 				Fun: &ast.Ident{Name: "make"},
 				Args: []ast.Expr{
 					&ast.ArrayType{
-						Elt: &ast.Ident{Name: "T"}, // TODO(ldez) improve the type detection.
+						Elt: &ast.Ident{Name: "FIXME"}, // TODO(ldez) improve the type detection.
 					},
 					&ast.BasicLit{Kind: token.INT, Value: "0"},
 					&ast.CallExpr{

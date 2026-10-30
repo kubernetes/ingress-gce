@@ -42,7 +42,7 @@ func (w lintBareReturnRule) Visit(node ast.Node) ast.Visitor {
 	return w
 }
 
-// checkFunc will verify if the given function has named result and bare returns
+// checkFunc will verify if the given function has named result and bare returns.
 func (w lintBareReturnRule) checkFunc(results *ast.FieldList, body *ast.BlockStmt) {
 	hasNamedResults := results != nil && len(results.List) > 0 && results.List[0].Names != nil
 	if !hasNamedResults || body == nil {
@@ -75,6 +75,7 @@ func (w bareReturnFinder) Visit(node ast.Node) ast.Visitor {
 	}
 
 	w.onFailure(lint.Failure{
+		Category:   lint.FailureCategoryStyle,
 		Confidence: 1,
 		Node:       rs,
 		Failure:    "avoid using bare returns, please add return expressions",

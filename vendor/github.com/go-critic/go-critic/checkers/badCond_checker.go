@@ -13,7 +13,6 @@ import (
 	"github.com/go-toolsmith/astcopy"
 	"github.com/go-toolsmith/astequal"
 	"github.com/go-toolsmith/typep"
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 func init() {
@@ -56,8 +55,8 @@ func (c *badCondChecker) checkExpr(expr ast.Expr) {
 	// TODO(quasilyte): recognize more patterns.
 
 	cond := astcast.ToBinaryExpr(expr)
-	lhs := astcast.ToBinaryExpr(astutil.Unparen(cond.X))
-	rhs := astcast.ToBinaryExpr(astutil.Unparen(cond.Y))
+	lhs := astcast.ToBinaryExpr(ast.Unparen(cond.X))
+	rhs := astcast.ToBinaryExpr(ast.Unparen(cond.Y))
 
 	if cond.Op != token.LAND {
 		return
@@ -87,7 +86,8 @@ func (c *badCondChecker) checkExpr(expr ast.Expr) {
 
 func (c *badCondChecker) equalToBoth(lhs, rhs *ast.BinaryExpr) bool {
 	return lhs.Op == token.EQL && rhs.Op == token.EQL &&
-		astequal.Expr(lhs.X, rhs.X)
+		astequal.Expr(lhs.X, rhs.X) &&
+		typep.SideEffectFree(c.ctx.TypesInfo, lhs.Y) && typep.SideEffectFree(c.ctx.TypesInfo, rhs.Y)
 }
 
 func (c *badCondChecker) lessAndGreater(lhs, rhs *ast.BinaryExpr) bool {

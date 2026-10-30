@@ -33,11 +33,20 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 	switch x := n.(type) {
 	case *ast.AssignStmt:
 		// Skip any assignment to the field.
-		for _, s := range x.Lhs {
+		for i, s := range x.Lhs {
 			c.filter.AddPos(s.Pos())
 
 			if se, ok := s.(*ast.StarExpr); ok {
 				c.filter.AddPos(se.X.Pos())
+			}
+
+			if len(x.Rhs) > i {
+				value := x.Rhs[i]
+				if se, ok := value.(*ast.SelectorExpr); ok {
+					if hasPointerKeyWithoutPointerGetter(c.info, s, se) {
+						c.filter.AddPos(se.Sel.Pos())
+					}
+				}
 			}
 		}
 
@@ -52,6 +61,13 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 			c.filter.AddPos(x.X.Pos())
 		}
 
+	case *ast.KeyValueExpr:
+		if se, ok := x.Value.(*ast.SelectorExpr); ok {
+			if hasPointerKeyWithoutPointerGetter(c.info, x.Key, se) {
+				c.filter.AddPos(se.Sel.Pos())
+			}
+		}
+
 	case *ast.CallExpr:
 		if !c.cfg.ReplaceFirstArgInAppend && len(x.Args) > 0 {
 			if v, ok := x.Fun.(*ast.Ident); ok && v.Name == "append" {
@@ -61,16 +77,37 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 			}
 		}
 
-		f, ok := x.Fun.(*ast.SelectorExpr)
-		if !ok {
+		switch fun := x.Fun.(type) {
+		case *ast.Ident:
+			// Allow passing optional parameters to the function without getter.
+
+			if len(x.Args) == 0 {
+				return &Result{}, nil
+			}
+
+			if fun.Obj == nil || fun.Obj.Kind != ast.Fun {
+				return &Result{}, nil
+			}
+
+			decl, ok := fun.Obj.Decl.(*ast.FuncDecl)
+			if !ok || decl.Type == nil {
+				return &Result{}, nil
+			}
+
+			c.filterOptionalProtoSelectorExpr(x.Args)
+
+		case *ast.SelectorExpr:
+			c.filterOptionalProtoSelectorExpr(x.Args)
+
+			if !isProtoMessage(c.info, fun.X) {
+				return &Result{}, nil
+			}
+
+			c.processInner(x)
+
+		default:
 			return &Result{}, nil
 		}
-
-		if !isProtoMessage(c.info, f.X) {
-			return &Result{}, nil
-		}
-
-		c.processInner(x)
 
 	case *ast.SelectorExpr:
 		if !isProtoMessage(c.info, x.X) {
@@ -141,6 +178,31 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 
 		c.filter.AddPos(x.X.Pos())
 
+	case *ast.DeclStmt:
+		decl, ok := x.Decl.(*ast.GenDecl)
+		if !ok {
+			return &Result{}, nil
+		}
+
+		for _, spec := range decl.Specs {
+			vSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+
+			_, ok = vSpec.Type.(*ast.StarExpr)
+			if !ok {
+				continue
+			}
+
+			for _, ve := range vSpec.Values {
+				c.filter.AddPos(ve.Pos())
+			}
+		}
+
+	case *ast.ReturnStmt:
+		c.filterOptionalProtoSelectorExpr(x.Results)
+
 	default:
 		return nil, fmt.Errorf("not implemented for type: %s (%s)", reflect.TypeOf(x), formatNode(n))
 	}
@@ -153,6 +215,25 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 		From: c.from.String(),
 		To:   c.to.String(),
 	}, nil
+}
+
+func (c *processor) filterOptionalProtoSelectorExpr(args []ast.Expr) {
+	for _, arg := range args {
+		a, ok := arg.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+
+		if !isProtoMessage(c.info, a.X) {
+			continue
+		}
+
+		if !isOptionalProto(c.info, a) {
+			continue
+		}
+
+		c.filter.AddPos(a.Sel.Pos())
+	}
 }
 
 func (c *processor) processInner(expr ast.Expr) {
@@ -177,7 +258,11 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.write(".")
 
 		// If getter exists, use it.
-		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) {
+		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) &&
+			// Skip if the field is filtered.
+			!c.filter.IsFiltered(x.Sel.Pos()) &&
+			// Check if the field is a proto-message.
+			isProtoMessage(c.info, x.X) {
 			c.writeFrom(x.Sel.Name)
 			c.writeTo("Get" + x.Sel.Name + "()")
 			return
@@ -218,7 +303,7 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.write("*")
 		c.processInner(x.X)
 
-	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr:
+	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr, *ast.MapType:
 		// Process the node as is.
 		c.write(formatNode(x))
 
@@ -277,6 +362,20 @@ func isProtoMessage(info *types.Info, expr ast.Expr) bool {
 	return false
 }
 
+func isOptionalProto(info *types.Info, a *ast.SelectorExpr) bool {
+	_, isPtrArg := info.TypeOf(a).Underlying().(*types.Pointer)
+	if !isPtrArg {
+		return false
+	}
+
+	getterHasPointer, _ := getterResultHasPointer(info, a.X, a.Sel.Name)
+	if getterHasPointer {
+		return false
+	}
+
+	return true
+}
+
 func typesNamed(info *types.Info, x ast.Expr) (*types.Named, bool) {
 	if info == nil {
 		return nil, false
@@ -292,7 +391,10 @@ func typesNamed(info *types.Info, x ast.Expr) (*types.Named, bool) {
 		t = ptr.Elem()
 	}
 
-	named, ok := t.(*types.Named)
+	// A type declared as an alias of a message, as in `type Message = pb.Message`, is a
+	// types.Alias rather than the types.Named it aliases, so the message it stands for is reached
+	// through it.
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return nil, false
 	}
@@ -348,4 +450,18 @@ func getterResultHasPointer(info *types.Info, x ast.Expr, name string) (hasPoint
 	}
 
 	return false, false
+}
+
+func hasPointerKeyWithoutPointerGetter(info *types.Info, key ast.Expr, value *ast.SelectorExpr) bool {
+	_, isPtr := info.TypeOf(key).(*types.Pointer)
+	if !isPtr {
+		return false
+	}
+
+	getterHasPointer, ok := getterResultHasPointer(info, value.X, value.Sel.Name)
+	if !ok {
+		return false
+	}
+
+	return !getterHasPointer
 }

@@ -52,8 +52,7 @@ echo
 
 export GOLANGCI_LINT_CACHE=$PWD/.cache
 echo -n "Checking linters: "
-ERRS=$(go tool golangci-lint run ${TARGETS} 2>&1 || true)
-if [ -n "${ERRS}" ]; then
+if ! ERRS=$(go tool golangci-lint run ${TARGETS} 2>&1); then
     echo "FAIL"
     echo "${ERRS}"
     echo

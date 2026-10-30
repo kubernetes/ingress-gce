@@ -17,43 +17,58 @@ import (
 
 // Package represents a package in the project.
 type Package struct {
-	fset      *token.FileSet
+	fset *token.FileSet
+
+	mu        sync.RWMutex
 	files     map[string]*File
 	goVersion *goversion.Version
-
 	typesPkg  *types.Package
 	typesInfo *types.Info
-
 	// sortable is the set of types in the package that implement sort.Interface.
 	sortable map[string]bool
 	// main is whether this is a "main" package.
 	main int
-	sync.RWMutex
 }
 
 var (
 	trueValue  = 1
 	falseValue = 2
 
-	go115 = goversion.Must(goversion.NewVersion("1.15"))
-	go121 = goversion.Must(goversion.NewVersion("1.21"))
-	go122 = goversion.Must(goversion.NewVersion("1.22"))
-	go124 = goversion.Must(goversion.NewVersion("1.24"))
+	// Go111 is a constant representing the Go version 1.11.
+	Go111 = goversion.Must(goversion.NewVersion("1.11"))
+	// Go115 is a constant representing the Go version 1.15.
+	Go115 = goversion.Must(goversion.NewVersion("1.15"))
+	// Go118 is a constant representing the Go version 1.18.
+	Go118 = goversion.Must(goversion.NewVersion("1.18"))
+	// Go121 is a constant representing the Go version 1.21.
+	Go121 = goversion.Must(goversion.NewVersion("1.21"))
+	// Go122 is a constant representing the Go version 1.22.
+	Go122 = goversion.Must(goversion.NewVersion("1.22"))
+	// Go124 is a constant representing the Go version 1.24.
+	Go124 = goversion.Must(goversion.NewVersion("1.24"))
+	// Go125 is a constant representing the Go version 1.25.
+	Go125 = goversion.Must(goversion.NewVersion("1.25"))
+	// Go126 is a constant representing the Go version 1.26.
+	Go126 = goversion.Must(goversion.NewVersion("1.26"))
 )
 
 // Files return package's files.
 func (p *Package) Files() map[string]*File {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	return p.files
 }
 
 // IsMain returns if that's the main package.
 func (p *Package) IsMain() bool {
-	p.Lock()
-	defer p.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	if p.main == trueValue {
+	switch p.main {
+	case trueValue:
 		return true
-	} else if p.main == falseValue {
+	case falseValue:
 		return false
 	}
 	for _, f := range p.files {
@@ -66,31 +81,34 @@ func (p *Package) IsMain() bool {
 	return false
 }
 
-// TypesPkg yields information on this package
+// TypesPkg yields information on this package.
 func (p *Package) TypesPkg() *types.Package {
-	p.RLock()
-	defer p.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	return p.typesPkg
 }
 
-// TypesInfo yields type information of this package identifiers
+// TypesInfo yields type information of this package identifiers.
 func (p *Package) TypesInfo() *types.Info {
-	p.RLock()
-	defer p.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	return p.typesInfo
 }
 
-// Sortable yields a map of sortable types in this package
+// Sortable yields a map of sortable types in this package.
 func (p *Package) Sortable() map[string]bool {
-	p.RLock()
-	defer p.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	return p.sortable
 }
 
 // TypeCheck performs type checking for given package.
 func (p *Package) TypeCheck() error {
-	p.Lock()
-	defer p.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	alreadyTypeChecked := p.typesInfo != nil || p.typesPkg != nil
 	if alreadyTypeChecked {
@@ -130,8 +148,8 @@ func (p *Package) TypeCheck() error {
 	return err
 }
 
-// check function encapsulates the call to go/types.Config.Check method and
-// recovers if the called method panics (see issue #59)
+// check function encapsulates the call to [go/types.Config.Check] method and
+// recovers if the called method panics (see issue #59).
 func check(config *types.Config, n string, fset *token.FileSet, astFiles []*ast.File, info *types.Info) (p *types.Package, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -146,9 +164,13 @@ func check(config *types.Config, n string, fset *token.FileSet, astFiles []*ast.
 
 // TypeOf returns the type of expression.
 func (p *Package) TypeOf(expr ast.Expr) types.Type {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	if p.typesInfo == nil {
 		return nil
 	}
+
 	return p.typesInfo.TypeOf(expr)
 }
 
@@ -162,6 +184,9 @@ const (
 )
 
 func (p *Package) scanSortable() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	sortableFlags := map[string]sortableMethodsFlags{}
 	for _, f := range p.files {
 		for _, decl := range f.AST.Decls {
@@ -187,7 +212,7 @@ func (p *Package) scanSortable() {
 func (p *Package) lint(rules []Rule, config Config, failures chan Failure) error {
 	p.scanSortable()
 	var eg errgroup.Group
-	for _, file := range p.files {
+	for _, file := range p.Files() {
 		eg.Go(func() error {
 			return file.lint(rules, config, failures)
 		})
@@ -196,24 +221,20 @@ func (p *Package) lint(rules []Rule, config Config, failures chan Failure) error
 	return eg.Wait()
 }
 
-// IsAtLeastGo115 returns true if the Go version for this package is 1.15 or higher, false otherwise
-func (p *Package) IsAtLeastGo115() bool {
-	return p.goVersion.GreaterThanOrEqual(go115)
+// IsAtLeastGoVersion returns true if the Go version for this package is v or higher, false otherwise.
+func (p *Package) IsAtLeastGoVersion(v *goversion.Version) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.goVersion.GreaterThanOrEqual(v)
 }
 
-// IsAtLeastGo121 returns true if the Go version for this package is 1.21 or higher, false otherwise
-func (p *Package) IsAtLeastGo121() bool {
-	return p.goVersion.GreaterThanOrEqual(go121)
-}
+// GoVersion returns the Go version for this package.
+func (p *Package) GoVersion() *goversion.Version {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
-// IsAtLeastGo122 returns true if the Go version for this package is 1.22 or higher, false otherwise
-func (p *Package) IsAtLeastGo122() bool {
-	return p.goVersion.GreaterThanOrEqual(go122)
-}
-
-// IsAtLeastGo124 returns true if the Go version for this package is 1.24 or higher, false otherwise
-func (p *Package) IsAtLeastGo124() bool {
-	return p.goVersion.GreaterThanOrEqual(go124)
+	return p.goVersion
 }
 
 func getSortableMethodFlagForFunction(fn *ast.FuncDecl) sortableMethodsFlags {

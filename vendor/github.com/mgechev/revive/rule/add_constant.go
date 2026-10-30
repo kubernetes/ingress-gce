@@ -25,8 +25,7 @@ func newAllowList() allowList {
 }
 
 func (wl allowList) add(kind, list string) {
-	elems := strings.Split(list, ",")
-	for _, e := range elems {
+	for e := range strings.SplitSeq(list, ",") {
 		wl[kind][e] = true
 	}
 }
@@ -90,31 +89,49 @@ func (w *lintAddConstantRule) Visit(node ast.Node) ast.Visitor {
 			w.checkLit(n)
 		}
 	case *ast.StructType:
-		if n.Fields != nil {
-			for _, field := range n.Fields.List {
-				if field.Tag != nil {
-					w.structTags[field.Tag] = struct{}{}
-				}
-			}
-		}
+		w.collectStructTags(n)
 	}
 
 	return w
 }
 
-func (w *lintAddConstantRule) checkFunc(expr *ast.CallExpr) {
-	fName := w.getFuncName(expr)
+func (w *lintAddConstantRule) collectStructTags(n *ast.StructType) {
+	if n.Fields == nil {
+		return
+	}
 
-	for _, arg := range expr.Args {
-		switch t := arg.(type) {
-		case *ast.CallExpr:
-			w.checkFunc(t)
-		case *ast.BasicLit:
-			if w.isIgnoredFunc(fName) {
-				continue
-			}
-			w.checkLit(t)
+	for _, field := range n.Fields.List {
+		if field.Tag != nil {
+			w.structTags[field.Tag] = struct{}{}
 		}
+	}
+}
+
+func (w *lintAddConstantRule) checkFunc(expr *ast.CallExpr) {
+	ignored := w.isIgnoredFunc(w.getFuncName(expr))
+	inspect := func(node ast.Node) bool {
+		switch n := node.(type) {
+		case *ast.CallExpr:
+			w.checkFunc(n) // nested calls apply their own ignore-funcs setting
+			return false
+		case *ast.FuncLit:
+			ast.Walk(w, n)
+			return false
+		case *ast.StructType:
+			w.collectStructTags(n)
+		case *ast.BasicLit:
+			if !ignored && !w.isStructTag(n) {
+				w.checkLit(n)
+			}
+			return false
+		}
+
+		return true
+	}
+
+	ast.Inspect(expr.Fun, inspect)
+	for _, arg := range expr.Args {
+		ast.Inspect(arg, inspect)
 	}
 }
 
@@ -167,6 +184,10 @@ func (w *lintAddConstantRule) checkStrLit(n *ast.BasicLit) {
 	mustCheck := count > ignoreMarker
 	if mustCheck {
 		w.strLits[n.Value] = count + 1
+		val, _ := strconv.Unquote(n.Value)
+		if val == "" {
+			return
+		}
 		if w.strLits[n.Value] > w.strLitLimit {
 			w.onFailure(lint.Failure{
 				Confidence: 1,
@@ -197,12 +218,15 @@ func (w *lintAddConstantRule) isStructTag(n *ast.BasicLit) bool {
 	return ok
 }
 
+var _ lint.ConfigurableRule = (*AddConstantRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *AddConstantRule) Configure(arguments lint.Arguments) error {
 	r.strLitLimit = defaultStrLitLimit
 	r.allowList = newAllowList()
+	r.ignoreFunctions = nil
 	if len(arguments) == 0 {
 		return nil
 	}
@@ -212,16 +236,16 @@ func (r *AddConstantRule) Configure(arguments lint.Arguments) error {
 	}
 	for k, v := range args {
 		kind := ""
-		switch k {
-		case "allowFloats":
+		switch {
+		case isRuleOption(k, "allowFloats"):
 			kind = kindFLOAT
 			fallthrough
-		case "allowInts":
+		case isRuleOption(k, "allowInts"):
 			if kind == "" {
 				kind = kindINT
 			}
 			fallthrough
-		case "allowStrs":
+		case isRuleOption(k, "allowStrs"):
 			if kind == "" {
 				kind = kindSTRING
 			}
@@ -230,7 +254,7 @@ func (r *AddConstantRule) Configure(arguments lint.Arguments) error {
 				return fmt.Errorf("invalid argument to the add-constant rule, string expected. Got '%v' (%T)", v, v)
 			}
 			r.allowList.add(kind, list)
-		case "maxLitCount":
+		case isRuleOption(k, "maxLitCount"):
 			sl, ok := v.(string)
 			if !ok {
 				return fmt.Errorf("invalid argument to the add-constant rule, expecting string representation of an integer. Got '%v' (%T)", v, v)
@@ -241,13 +265,13 @@ func (r *AddConstantRule) Configure(arguments lint.Arguments) error {
 				return fmt.Errorf("invalid argument to the add-constant rule, expecting string representation of an integer. Got '%v'", v)
 			}
 			r.strLitLimit = limit
-		case "ignoreFuncs":
+		case isRuleOption(k, "ignoreFuncs"):
 			excludes, ok := v.(string)
 			if !ok {
 				return fmt.Errorf("invalid argument to the ignoreFuncs parameter of add-constant rule, string expected. Got '%v' (%T)", v, v)
 			}
 
-			for _, exclude := range strings.Split(excludes, ",") {
+			for exclude := range strings.SplitSeq(excludes, ",") {
 				exclude = strings.Trim(exclude, " ")
 				if exclude == "" {
 					return errors.New("invalid argument to the ignoreFuncs parameter of add-constant rule, expected regular expression must not be empty")

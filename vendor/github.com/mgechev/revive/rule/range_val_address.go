@@ -9,14 +9,14 @@ import (
 	"github.com/mgechev/revive/lint"
 )
 
-// RangeValAddress lints
+// RangeValAddress warns if address of range value is used dangerously.
 type RangeValAddress struct{}
 
 // Apply applies the rule to given file.
 func (*RangeValAddress) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 	var failures []lint.Failure
 
-	if file.Pkg.IsAtLeastGo122() {
+	if file.Pkg.IsAtLeastGoVersion(lint.Go122) {
 		return failures
 	}
 
@@ -70,7 +70,7 @@ func (w rangeValAddress) Visit(node ast.Node) ast.Visitor {
 
 type rangeBodyVisitor struct {
 	valueIsStarExpr bool
-	valueID         *ast.Object // TODO: ast.Object is deprecated
+	valueID         *ast.Object //nolint:staticcheck // TODO: ast.Object is deprecated
 	onFailure       func(lint.Failure)
 }
 
@@ -159,6 +159,7 @@ func (bw rangeBodyVisitor) isAccessingRangeValueAddress(exp ast.Expr) bool {
 
 func (bw rangeBodyVisitor) newFailure(node ast.Node) lint.Failure {
 	return lint.Failure{
+		Category:   lint.FailureCategoryLogic,
 		Node:       node,
 		Confidence: 1,
 		Failure:    fmt.Sprintf("suspicious assignment of '%s'. range-loop variables always have the same address", bw.valueID.Name),

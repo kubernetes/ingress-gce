@@ -103,6 +103,8 @@ func (w *lintMaxControlNesting) walkControlledBlock(b ast.Node) {
 	w.nestingLevelAcc = oldNestingLevel
 }
 
+var _ lint.ConfigurableRule = (*MaxControlNestingRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
@@ -110,11 +112,6 @@ func (r *MaxControlNestingRule) Configure(arguments lint.Arguments) error {
 	if len(arguments) < 1 {
 		r.max = defaultMaxControlNesting
 		return nil
-	}
-
-	check := checkNumberOfArguments(1, arguments, r.Name())
-	if check != nil {
-		return check
 	}
 
 	maxNesting, ok := arguments[0].(int64) // Alt. non panicking version

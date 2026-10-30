@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 
-	"github.com/nunnatsa/ginkgolinter/internal/interfaces"
+	"github.com/nunnatsa/ginkgolinter/internal/typecheck"
 )
 
 type Valuer interface {
@@ -24,6 +24,10 @@ type Valuer interface {
 }
 
 func GetValuer(orig, clone ast.Expr, pass *analysis.Pass) Valuer {
+	return GetValuerWithError(orig, clone, pass, false)
+}
+
+func GetValuerWithError(orig, clone ast.Expr, pass *analysis.Pass, withErrorMethod bool) Valuer {
 	val := New(orig, clone, pass)
 	unspecified := UnspecifiedValue{
 		Value: val,
@@ -33,7 +37,7 @@ func GetValuer(orig, clone ast.Expr, pass *analysis.Pass) Valuer {
 		return unspecified
 	}
 
-	if IsExprError(pass, orig) {
+	if IsExprError(pass, orig, withErrorMethod) {
 		return &ErrValue{
 			Value: val,
 			err:   clone,
@@ -187,26 +191,31 @@ func Is[T any](x any) bool {
 	return matchType
 }
 
-func IsExprError(pass *analysis.Pass, expr ast.Expr) bool {
+func IsExprError(pass *analysis.Pass, expr ast.Expr, withErrorMethod bool) bool {
 	actualArgType := pass.TypesInfo.TypeOf(expr)
 	switch t := actualArgType.(type) {
 	case *gotypes.Named:
-		return interfaces.ImplementsError(actualArgType)
+		return typecheck.ImplementsError(actualArgType)
 
 	case *gotypes.Pointer:
-		if interfaces.ImplementsError(t) {
+		if typecheck.ImplementsError(t) {
 			return true
 		}
 
 		if tt, ok := t.Elem().(*gotypes.Named); ok {
-			return interfaces.ImplementsError(tt)
+			return typecheck.ImplementsError(tt)
 		}
 
 	case *gotypes.Tuple:
 		if t.Len() > 0 {
-			switch t0 := t.At(0).Type().(type) {
+			retVal := t.At(0).Type()
+			if withErrorMethod {
+				retVal = t.At(t.Len() - 1).Type()
+			}
+
+			switch retVal.(type) {
 			case *gotypes.Named, *gotypes.Pointer:
-				if interfaces.ImplementsError(t0) {
+				if typecheck.ImplementsError(retVal) {
 					return true
 				}
 			}

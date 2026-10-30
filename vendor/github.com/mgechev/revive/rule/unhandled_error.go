@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -16,10 +17,13 @@ type UnhandledErrorRule struct {
 	ignoreList []*regexp.Regexp
 }
 
+var _ lint.ConfigurableRule = (*UnhandledErrorRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *UnhandledErrorRule) Configure(arguments lint.Arguments) error {
+	r.ignoreList = nil
 	for _, arg := range arguments {
 		argStr, ok := arg.(string)
 		if !ok {
@@ -73,8 +77,7 @@ type lintUnhandledErrors struct {
 // Visit looks for statements that are function calls.
 // If the called function returns a value of type error a failure will be created.
 func (w *lintUnhandledErrors) Visit(node ast.Node) ast.Visitor {
-	switch n := node.(type) {
-	case *ast.ExprStmt:
+	if n, ok := node.(*ast.ExprStmt); ok {
 		fCall, ok := n.X.(*ast.CallExpr)
 		if !ok {
 			return nil // not a function call
@@ -112,6 +115,10 @@ func (w *lintUnhandledErrors) addFailure(n *ast.CallExpr) {
 		return
 	}
 
+	if w.isSafeFprintfToBuffer(n) {
+		return
+	}
+
 	w.onFailure(lint.Failure{
 		Category:   lint.FailureCategoryBadPractice,
 		Confidence: 1,
@@ -123,7 +130,7 @@ func (w *lintUnhandledErrors) addFailure(n *ast.CallExpr) {
 func (w *lintUnhandledErrors) funcName(call *ast.CallExpr) string {
 	fn, ok := w.getFunc(call)
 	if !ok {
-		return gofmt(call.Fun)
+		return astutils.GoFmt(call.Fun)
 	}
 
 	name := fn.FullName()
@@ -151,8 +158,8 @@ func (*lintUnhandledErrors) isTypeError(t *types.Named) bool {
 }
 
 func (w *lintUnhandledErrors) returnsAnError(tt *types.Tuple) bool {
-	for i := 0; i < tt.Len(); i++ {
-		nt, ok := tt.At(i).Type().(*types.Named)
+	for v := range tt.Variables() {
+		nt, ok := v.Type().(*types.Named)
 		if ok && w.isTypeError(nt) {
 			return true
 		}
@@ -172,4 +179,22 @@ func (w *lintUnhandledErrors) getFunc(call *ast.CallExpr) (*types.Func, bool) {
 	}
 
 	return fn, true
+}
+
+func (w *lintUnhandledErrors) isSafeFprintfToBuffer(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+
+	fn, ok := w.getFunc(call)
+	if !ok || fn.FullName() != "fmt.Fprintf" {
+		return false
+	}
+
+	argType := w.pkg.TypeOf(call.Args[0])
+	if argType == nil {
+		return false
+	}
+
+	return astutils.IsPointerToPkgDotType(argType, "bytes", "Buffer") || astutils.IsPointerToPkgDotType(argType, "strings", "Builder")
 }
