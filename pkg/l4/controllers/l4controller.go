@@ -113,7 +113,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 	}
 	negMetrics, err := negmetrics.NewNegMetrics()
 	if err != nil {
-		klog.Fatalf("Failed to initialize NEG metrics: %v", err)
+		logger.Error(err, "Failed to initialize NEG metrics")
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud, negMetrics), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)

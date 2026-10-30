@@ -84,8 +84,7 @@ func StartNEGController(
 
 	tenantSyncerMetrics, err := syncMetrics.NewNegMetricsCollectorWithFactory(flags.F.NegMetricsExportInterval, mtFactory, logger)
 	if err != nil {
-		mtFactory.Cleanup()
-		return nil, fmt.Errorf("failed to initialize syncer metrics: %w", err)
+		logger.Error(err, "Failed to initialize syncer metrics")
 	}
 
 	// The ProviderConfig-specific stop channel. We close this in StopControllersForProviderConfig.
@@ -198,7 +197,7 @@ func createNEGController(
 	noDefaultBackendServicePort := utils.ServicePort{}
 	negMetrics, err := metrics.NewNegMetricsWithFactory(factory)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create NEG metrics: %w", err)
+		logger.Error(err, "Failed to create NEG metrics")
 	}
 
 	negController, err := newNEGController(
