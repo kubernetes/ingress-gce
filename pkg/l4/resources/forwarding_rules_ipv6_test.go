@@ -185,7 +185,7 @@ func TestL4EnsureIPv6ForwardingRuleUpdate(t *testing.T) {
 			if tc.namedAddress != nil {
 				fakeGCE.ReserveRegionAddress(tc.namedAddress, fakeGCE.Region())
 			}
-			fr, updated, err := l4.ensureIPv6ForwardingRule(bsLink, gce.ILBOptions{}, tc.existingRule, "")
+			fr, updated, err := l4.ensureIPv6ForwardingRule(bsLink, gce.ILBOptions{}, tc.existingRule, "", true)
 
 			if err != nil && tc.wantErrMsg == "" {
 				t.Errorf("ensureIPv4ForwardingRule() err=%v", err)

@@ -489,23 +489,170 @@ func TestMixedManagerNetLB_EnsureIPv4_L3Default(t *testing.T) {
 func TestMixedManagerNetLB_EnsureIPv4_Resync(t *testing.T) {
 	t.Parallel()
 
-	// Arrange
+	for _, enableL3 := range []bool{false, true} {
+		enableL3 := enableL3
+		t.Run(fmt.Sprintf("l3DefaultEnabled=%t", enableL3), func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			ports := []api_v1.ServicePort{{Protocol: api_v1.ProtocolTCP, Port: 80}, {Protocol: api_v1.ProtocolUDP, Port: 53}}
+			fakeGCE, mgr := arrange(ports, enableL3)
+			// Run first to create resources
+			if _, err := mgr.EnsureIPv4(bsLink); err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+			// Count the address mutations of the resync: the forwarding rules are
+			// up to date, so the IP must not be reserved (and released) again.
+			var mu sync.Mutex
+			var addressInserts, addressDeletes int
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockAddresses.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				addressInserts++
+				return false, nil
+			}
+			mockGCE.MockAddresses.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				addressDeletes++
+				return false, nil
+			}
+
+			// Act
+			result, err := mgr.EnsureIPv4(bsLink)
+			// Assert
+			if err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+
+			if result.SyncStatus != l4utils.ResourceResync {
+				t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceResync)
+			}
+			if enableL3 && result.L3FwdRule == nil {
+				t.Errorf("EnsureIPv4() L3 forwarding rule = nil, want the existing rule")
+			}
+			if !enableL3 && (result.TCPFwdRule == nil || result.UDPFwdRule == nil) {
+				t.Errorf("EnsureIPv4() TCP forwarding rule = %v, UDP forwarding rule = %v, want the existing rules", result.TCPFwdRule, result.UDPFwdRule)
+			}
+			if result.IPManaged != address.IPAddrManaged {
+				t.Errorf("EnsureIPv4() IPManaged = %v, want %v", result.IPManaged, address.IPAddrManaged)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if addressInserts != 0 || addressDeletes != 0 {
+				t.Errorf("EnsureIPv4() on resync made %d address inserts and %d address deletes, want 0 and 0", addressInserts, addressDeletes)
+			}
+		})
+	}
+}
+
+// TestMixedManagerNetLB_EnsureIPv4_ReservesAddressOnTransition verifies that the IP
+// is still reserved when existing forwarding rules have to be deleted because the
+// Service transitions between single protocol, split and L3_DEFAULT rules.
+func TestMixedManagerNetLB_EnsureIPv4_ReservesAddressOnTransition(t *testing.T) {
+	t.Parallel()
+
 	ports := []api_v1.ServicePort{{Protocol: api_v1.ProtocolTCP, Port: 80}, {Protocol: api_v1.ProtocolUDP, Port: 53}}
-	_, mgr := arrange(ports, true)
-	// Run first to create resources
-	if _, err := mgr.EnsureIPv4(bsLink); err != nil {
-		t.Fatalf("EnsureIPv4() error = %v", err)
+	l3Rule := &compute.ForwardingRule{
+		Name:           "k8s2-l3-axyqjz2d-test-ns-test-svc-pyn67fp6",
+		IPAddress:      ip,
+		IPProtocol:     "L3_DEFAULT",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		AllPorts:       true,
+	}
+	tcpRule := &compute.ForwardingRule{
+		Name:           tcpName,
+		IPAddress:      ip,
+		IPProtocol:     "TCP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"80"},
+	}
+	udpRule := &compute.ForwardingRule{
+		Name:           udpName,
+		IPAddress:      ip,
+		IPProtocol:     "UDP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"53"},
+	}
+	legacyRule := &compute.ForwardingRule{
+		Name:           legacyName,
+		IPAddress:      ip,
+		IPProtocol:     "TCP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"80"},
 	}
 
-	// Act
-	result, err := mgr.EnsureIPv4(bsLink)
-	// Assert
-	if err != nil {
-		t.Fatalf("EnsureIPv4() error = %v", err)
+	testCases := []struct {
+		desc             string
+		existingRules    []*compute.ForwardingRule
+		l3DefaultEnabled bool
+	}{
+		{
+			desc:             "split rules to L3_DEFAULT rule",
+			existingRules:    []*compute.ForwardingRule{tcpRule, udpRule},
+			l3DefaultEnabled: true,
+		},
+		{
+			desc:             "L3_DEFAULT rule to split rules",
+			existingRules:    []*compute.ForwardingRule{l3Rule},
+			l3DefaultEnabled: false,
+		},
+		{
+			desc:             "single protocol rule to split rules",
+			existingRules:    []*compute.ForwardingRule{legacyRule},
+			l3DefaultEnabled: false,
+		},
+		{
+			desc:             "single protocol rule to L3_DEFAULT rule",
+			existingRules:    []*compute.ForwardingRule{legacyRule},
+			l3DefaultEnabled: true,
+		},
 	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
 
-	if result.SyncStatus != l4utils.ResourceResync {
-		t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceResync)
+			// Arrange
+			fakeGCE, mgr := arrange(ports, tc.l3DefaultEnabled)
+			for _, rule := range tc.existingRules {
+				if err := fakeGCE.CreateRegionForwardingRule(rule, fakeGCE.Region()); err != nil {
+					t.Fatalf("CreateRegionForwardingRule(%v) returned error %v, want nil", rule, err)
+				}
+			}
+			var mu sync.Mutex
+			var addressInserts int
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			// arrange() fakes an existing controller address, which satisfies the
+			// reservation without an Insert. Drop it to observe the reservation.
+			mockGCE.MockAddresses.GetHook = nil
+			mockGCE.MockAddresses.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				addressInserts++
+				return false, nil
+			}
+
+			// Act
+			result, err := mgr.EnsureIPv4(bsLink)
+			// Assert
+			if err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+			if result.SyncStatus != l4utils.ResourceUpdate {
+				t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceUpdate)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if addressInserts == 0 {
+				t.Errorf("EnsureIPv4() reserved %d addresses while deleting forwarding rules, want at least 1", addressInserts)
+			}
+		})
 	}
 }
 

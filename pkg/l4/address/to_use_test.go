@@ -267,3 +267,103 @@ func arrangeIPv6(t *testing.T) *gce.Cloud {
 	}
 	return fakeCloud
 }
+
+func TestIsSameIPv6(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc             string
+		ipv6             string
+		forwardingRuleIP string
+		want             bool
+	}{
+		{
+			desc:             "same address, rule in CIDR form",
+			ipv6:             "2001:db8::1",
+			forwardingRuleIP: "2001:db8::1/96",
+			want:             true,
+		},
+		{
+			desc:             "same address, different notation",
+			ipv6:             "2001:db8:0:0:0:0:0:1",
+			forwardingRuleIP: "2001:db8::1/96",
+			want:             true,
+		},
+		{
+			desc:             "same address, no prefix",
+			ipv6:             "2001:db8::1",
+			forwardingRuleIP: "2001:db8::1",
+			want:             true,
+		},
+		{
+			desc:             "different address",
+			ipv6:             "2001:db8::1",
+			forwardingRuleIP: "2001:db8::2/96",
+			want:             false,
+		},
+		{
+			desc:             "no address selected",
+			ipv6:             "",
+			forwardingRuleIP: "2001:db8::1/96",
+			want:             false,
+		},
+		{
+			desc:             "rule without address",
+			ipv6:             "2001:db8::1",
+			forwardingRuleIP: "",
+			want:             false,
+		},
+		{
+			desc:             "invalid address",
+			ipv6:             "not-an-ip",
+			forwardingRuleIP: "2001:db8::1/96",
+			want:             false,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := address.IsSameIPv6(tc.ipv6, tc.forwardingRuleIP); got != tc.want {
+				t.Errorf("address.IsSameIPv6(%q, %q) = %v, want %v", tc.ipv6, tc.forwardingRuleIP, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestManagementTypeFromSpec(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc        string
+		svc         *apiv1.Service
+		addressName string
+		want        address.IPAddressType
+	}{
+		{
+			desc: "no address requested",
+			svc:  &apiv1.Service{},
+			want: address.IPAddrManaged,
+		},
+		{
+			desc:        "static address from annotation",
+			svc:         &apiv1.Service{},
+			addressName: reservedIPv4Name,
+			want:        address.IPAddrUnmanaged,
+		},
+		{
+			desc: "static address from spec",
+			svc:  &apiv1.Service{Spec: apiv1.ServiceSpec{LoadBalancerIP: reservedIPv4}},
+			want: address.IPAddrUnmanaged,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := address.ManagementTypeFromSpec(tc.svc, tc.addressName); got != tc.want {
+				t.Errorf("address.ManagementTypeFromSpec(_, %q) = %v, want %v", tc.addressName, got, tc.want)
+			}
+		})
+	}
+}

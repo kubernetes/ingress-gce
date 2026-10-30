@@ -203,6 +203,11 @@ func TestHoldExternalIPv4(t *testing.T) {
 			cfg := arrange(t, tC.existingRules, tC.service)
 
 			// Act
+			var err error
+			cfg.IP, cfg.AddressName, err = address.ExternalIPv4ToUse(cfg.Cloud, &record.FakeRecorder{}, cfg.Service, cfg.ExistingRules)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
 			got, err := address.HoldExternalIPv4(cfg)
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
@@ -296,7 +301,6 @@ func arrange(t *testing.T, existingRules []*composite.ForwardingRule, service *a
 
 	return address.HoldConfig{
 		Cloud:                 fakeGCE,
-		Recorder:              &record.FakeRecorder{},
 		Logger:                klog.TODO(),
 		ExistingRules:         existingRules,
 		Service:               service,
