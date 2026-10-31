@@ -41,6 +41,8 @@ var defaultCdnPolicy = composite.BackendServiceCdnPolicy{
 	SignedUrlCacheMaxAgeSec: 0,
 }
 
+var defaultCompressionMode string = "DISABLED"
+
 // EnsureCDN reads the CDN configuration specified in the ServicePort.BackendConfig
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
@@ -205,6 +207,12 @@ func renderConfig(sp utils.ServicePort) *composite.BackendService {
 	}
 	if len(bypassCacheOnRequestHeaders) > 0 {
 		be.CdnPolicy.BypassCacheOnRequestHeaders = bypassCacheOnRequestHeaders
+	}
+
+	if cdnConfig.CompressionMode != nil {
+		be.CompressionMode = *cdnConfig.CompressionMode
+	} else {
+		be.CompressionMode = defaultCompressionMode
 	}
 
 	return be
