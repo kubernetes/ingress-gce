@@ -15,6 +15,7 @@ func IsUserError(err error) bool {
 	return l4utils.IsNetworkTierError(err) ||
 		l4utils.IsIPConfigurationError(err) ||
 		l4utils.IsIPOutOfRangeError(err) ||
+		l4utils.IsIPSpaceExhaustedError(err) ||
 		l4utils.IsConflictingPortsConfigurationError(err) ||
 		l4utils.IsInvalidSubnetConfigurationError(err) ||
 		l4utils.IsInvalidLoadBalancerSourceRangesSpecError(err) ||

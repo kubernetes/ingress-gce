@@ -75,6 +75,13 @@ func TestIsUserError(t *testing.T) {
 			err:  &googleapi.Error{Code: 400, Message: "Requested internal IP address is outside the network/subnetwork range"},
 			want: true,
 		},
+		{
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "IP_SPACE_EXHAUSTED_WITH_DETAILS - IP space of 'projects/...' is exhausted. Insufficient free IP addresses in the IP range '10.0.0.0/24'.",
+			},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		tC := tC

@@ -353,7 +353,7 @@ func (m *Manager) ensureAddressReservation() (string, IPAddressType, error) {
 	// If the target IP was empty, we cannot try to find which IP caused a conflict.
 	// If the name was already used, then the next sync will attempt deletion of that address.
 	if m.targetIP == "" {
-		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", m.name, reserveErr)
+		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %w", m.name, reserveErr)
 	}
 
 	if ok := m.IsAddressInForwardingRules(); ok {
