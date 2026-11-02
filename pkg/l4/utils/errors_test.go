@@ -216,6 +216,54 @@ func TestIsIPOutOfRangeError(t *testing.T) {
 	}
 }
 
+func TestIsIPSpaceExhaustedError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "ip space exhausted with details",
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "IP_SPACE_EXHAUSTED_WITH_DETAILS - IP space of 'projects/test-project/regions/us-central1/subnetworks/default' is exhausted. Insufficient free IP addresses in the IP range '10.0.0.0/24'.",
+			},
+			want: true,
+		},
+		{
+			desc: "ip space exhausted",
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "IP_SPACE_EXHAUSTED - IP space of 'projects/test-project/regions/us-central1/subnetworks/default' is exhausted.",
+			},
+			want: true,
+		},
+		{
+			desc: "other 400 error",
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "Some other error",
+			},
+			want: false,
+		},
+		{
+			desc: "ip space exhausted text without a 400 is not an ip space exhausted error",
+			err:  fmt.Errorf("IP_SPACE_EXHAUSTED - IP space of 'projects/test-project/regions/us-central1/subnetworks/default' is exhausted."),
+			want: false,
+		},
+		{desc: "non-googleapi error", err: fmt.Errorf("some other error"), want: false},
+		{desc: "nil", err: nil, want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsIPSpaceExhaustedError(tc.err); got != tc.want {
+				t.Errorf("IsIPSpaceExhaustedError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetErrorType(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

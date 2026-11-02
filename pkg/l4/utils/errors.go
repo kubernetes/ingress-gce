@@ -136,6 +136,14 @@ func IsIPOutOfRangeError(err error) bool {
 	return gceutils.IsHTTPErrorCode(err, http.StatusBadRequest) && strings.Contains(err.Error(), "Requested internal IP address is outside the network/subnetwork range")
 }
 
+// IsIPSpaceExhaustedError checks if the error is an IP space exhausted error returned by GCP.
+func IsIPSpaceExhaustedError(err error) bool {
+	if !gceutils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+		return false
+	}
+	return strings.Contains(err.Error(), "IP_SPACE_EXHAUSTED")
+}
+
 // IsConflictingPortsConfigurationError checks if wrapped error is an conflicting ports configuration error.
 func IsConflictingPortsConfigurationError(err error) bool {
 	var portsConflictConfigError *ConflictingPortsConfigurationError
