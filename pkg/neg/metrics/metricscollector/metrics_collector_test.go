@@ -924,3 +924,25 @@ func TestDefaultGlobalTracker_DualStackLongestDurationStrategy(t *testing.T) {
 		t.Errorf("DefaultGlobalTracker strategy for longest_unfinished_duration: got %v, want max 400", gotVal)
 	}
 }
+
+func TestNilSyncerMetrics(t *testing.T) {
+	var sm *SyncerMetrics
+	stopCh := make(chan struct{})
+	close(stopCh)
+
+	sm.Run(stopCh)
+	sm.export()
+	sm.UpdateSyncerStatusInMetrics(syncerKey(1), nil, false)
+	sm.UpdateSyncerEPMetrics(syncerKey(1), nil, nil)
+	sm.SetLabelPropagationStats(syncerKey(1), LabelPropagationStats{})
+	sm.DeleteSyncer(syncerKey(1))
+	sm.CollectDualStackMigrationMetrics(syncerKey(1), nil, 0)
+	sm.UpdateSyncerNegCount(syncerKey(1), nil)
+	sm.SetNegService("svc", NegServiceState{})
+	sm.DeleteNegService("svc")
+	if _, ok := sm.GetNegService("svc"); ok {
+		t.Errorf("expected GetNegService on nil SyncerMetrics to return false")
+	}
+	sm.SetNegBindingService("svc", NegServiceState{})
+	sm.DeleteNegBindingService("svc")
+}

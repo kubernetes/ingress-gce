@@ -128,6 +128,9 @@ func FakeSyncerMetrics() *SyncerMetrics {
 }
 
 func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
+	if sm == nil {
+		return
+	}
 	sm.logger.V(3).Info("Syncer Metrics initialized.", "exportInterval", sm.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
@@ -139,6 +142,9 @@ func (sm *SyncerMetrics) Run(stopCh <-chan struct{}) {
 
 // export exports syncer metrics.
 func (sm *SyncerMetrics) export() {
+	if sm == nil {
+		return
+	}
 	lpMetrics := sm.computeLabelMetrics()
 	sm.numberOfEndpoints.WithLabelValues(totalEndpoints).Set(float64(lpMetrics.NumberOfEndpoints))
 	sm.numberOfEndpoints.WithLabelValues(epWithAnnotation).Set(float64(lpMetrics.EndpointsWithAnnotation))
@@ -196,6 +202,9 @@ func (sm *SyncerMetrics) export() {
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error
 func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, err error, inErrorState bool) {
+	if sm == nil {
+		return
+	}
 	reason := negtypes.ReasonSuccess
 	if err != nil {
 		syncErr := negtypes.ClassifyError(err)
@@ -212,6 +221,9 @@ func (sm *SyncerMetrics) UpdateSyncerStatusInMetrics(key negtypes.NegSyncerKey, 
 }
 
 func (sm *SyncerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpointCount, endpointSliceCount negtypes.StateCountMap) {
+	if sm == nil {
+		return
+	}
 	sm.logger.V(3).Info("Updating syncer endpoint", "syncerKey", key)
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -229,6 +241,9 @@ func (sm *SyncerMetrics) UpdateSyncerEPMetrics(key negtypes.NegSyncerKey, endpoi
 }
 
 func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, labelstatLabelPropagationStats LabelPropagationStats) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.syncerLabelProagationStats == nil {
@@ -241,6 +256,9 @@ func (sm *SyncerMetrics) SetLabelPropagationStats(key negtypes.NegSyncerKey, lab
 // DeleteSyncer will reset any metrics for the syncer corresponding to `key`. It
 // should be invoked when a Syncer has been stopped.
 func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	delete(sm.syncerStateMap, key)
@@ -306,6 +324,9 @@ func (sm *SyncerMetrics) computeEndpointStateMetrics() (negtypes.StateCountMap, 
 // CollectDualStackMigrationMetrics will be used by dualstack.Migrator to export
 // metrics.
 func (sm *SyncerMetrics) CollectDualStackMigrationMetrics(key negtypes.NegSyncerKey, committedEndpoints map[negtypes.NEGLocation]negtypes.NetworkEndpointSet, migrationCount int) {
+	if sm == nil {
+		return
+	}
 	sm.updateMigrationStartAndEndTime(key, migrationCount)
 	sm.updateEndpointsCountPerType(key, committedEndpoints, migrationCount)
 }
@@ -429,6 +450,9 @@ func (sm *SyncerMetrics) computeDualStackMigrationCounts() (map[string]int, int,
 }
 
 func (sm *SyncerMetrics) UpdateSyncerNegCount(key negtypes.NegSyncerKey, negsByLocation map[string]int) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -453,6 +477,9 @@ func (sm *SyncerMetrics) computeNegCounts() map[negLocTypeKey]int {
 
 // SetNegService implements NegMetricsCollector.
 func (sm *SyncerMetrics) SetNegService(svcKey string, negState NegServiceState) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -469,6 +496,9 @@ func (sm *SyncerMetrics) SetNegService(svcKey string, negState NegServiceState) 
 
 // DeleteNegService implements NegMetricsCollector.
 func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -489,6 +519,9 @@ func (sm *SyncerMetrics) DeleteNegService(svcKey string) {
 
 // GetNegService returns the NegServiceState for a given service key.
 func (sm *SyncerMetrics) GetNegService(svcKey string) (NegServiceState, bool) {
+	if sm == nil {
+		return NegServiceState{}, false
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -498,6 +531,9 @@ func (sm *SyncerMetrics) GetNegService(svcKey string) (NegServiceState, bool) {
 
 // SetNegBindingService sets or updates NegBindingNeg counts for a service key without overwriting other neg types.
 func (sm *SyncerMetrics) SetNegBindingService(svcKey string, negState NegServiceState) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -520,6 +556,9 @@ func (sm *SyncerMetrics) SetNegBindingService(svcKey string, negState NegService
 
 // DeleteNegBindingService resets NegBindingNeg for a service key and removes the service if no other NEGs exist.
 func (sm *SyncerMetrics) DeleteNegBindingService(svcKey string) {
+	if sm == nil {
+		return
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
