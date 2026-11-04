@@ -6652,3 +6652,208 @@ func TestEnsureNetworkEndpointGroupsDeterministicOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestIsTopologyChangeWithInactiveNEGs verifies that INACTIVE NEG references in
+// SvcNEG status are not treated as ensured zones:
+//   - while the zone has no nodes, the INACTIVE ref must not cause a topology change;
+//   - once nodes appear in the zone again, a topology change must be detected so
+//     that NEGs are re-ensured and the ref is flipped back to ACTIVE.
+//
+// Refs without state (written when multi-subnet cluster phase 1 is disabled) are
+// treated as active for backward compatibility.
+func TestIsTopologyChangeWithInactiveNEGs(t *testing.T) {
+	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+	}()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	flags.F.NodeTopologyCRName = "default"
+
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
+	_, ts, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	zoneGetter := ts.topologyProvider.(*zonegetter.ZoneGetter)
+	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3, negtypes.TestZone4} {
+		zonegetter.DeleteFakeNodesInZone(t, zone, zoneGetter)
+	}
+	if err := zonegetter.AddFakeNodes(zoneGetter, negtypes.TestZone1, "node-zone1"); err != nil {
+		t.Fatalf("failed to add fake node: %v", err)
+	}
+
+	// zone1: legacy ref without state (treated as ACTIVE), zone2: INACTIVE ref.
+	refs := getNegObjectReferences(createNEGs(t, ts, fakeCloud, ts.NegName, defaultTestSubnetURL, sets.NewString(negtypes.TestZone1)), "")
+	refs = append(refs, getNegObjectReferences(createNEGs(t, ts, fakeCloud, ts.NegName, defaultTestSubnetURL, sets.NewString(negtypes.TestZone2)), negv1beta1.InactiveState)...)
+
+	svcNegClient := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGClient()
+	svcNegLister := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGLister()
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Create(context.Background(), createNegCR(ts.NegName, metav1.Now(), true, true, refs), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create test NEG CR: %v", err)
+	}
+	if err := svcNegLister.Add(svcNeg); err != nil {
+		t.Fatalf("failed to add NEG CR to lister: %v", err)
+	}
+
+	defaultSubnet, err := utils.KeyName(defaultTestSubnetURL)
+	if err != nil {
+		t.Fatalf("failed to parse default subnet: %v", err)
+	}
+	gotZones, err := ts.statusHandler.SubnetToZonesMap()
+	if err != nil {
+		t.Fatalf("SubnetToZonesMap() failed: %v", err)
+	}
+	wantZones := shared.ZonesPerSubnetMap{defaultSubnet: sets.New(negtypes.TestZone1)}
+	if !gotZones.Equal(wantZones) {
+		t.Errorf("SubnetToZonesMap() = %v, want %v (INACTIVE refs must be excluded)", gotZones, wantZones)
+	}
+
+	if ts.isTopologyChange() {
+		t.Errorf("isTopologyChange() = true while zone2 has no nodes, want false (INACTIVE ref must not cause perpetual topology change)")
+	}
+
+	// Nodes appear in zone2 again.
+	if err := zonegetter.AddFakeNodes(zoneGetter, negtypes.TestZone2, "node-zone2"); err != nil {
+		t.Fatalf("failed to add fake node: %v", err)
+	}
+	if !ts.isTopologyChange() {
+		t.Errorf("isTopologyChange() = false after nodes returned to zone2 with INACTIVE NEG ref, want true (ref would be stuck INACTIVE)")
+	}
+}
+
+// TestSvcNegStatusStateTransitionsOnZoneChanges drives the transaction syncer
+// through full syncs and verifies the state of NEG refs in the SvcNEG status:
+//
+//  1. Nodes in zone1 and zone2         -> zone1=ACTIVE, zone2=ACTIVE
+//  2. All nodes in zone2 removed       -> zone1=ACTIVE, zone2=INACTIVE
+//  3. Node added back to zone2         -> zone1=ACTIVE, zone2=ACTIVE
+//
+// Step 3 is a regression test for the bug where an INACTIVE ref was counted as
+// an ensured zone, so no topology change was detected and the ref stayed
+// INACTIVE forever.
+func TestSvcNegStatusStateTransitionsOnZoneChanges(t *testing.T) {
+	prevEnableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
+	prevNodeTopologyCRName := flags.F.NodeTopologyCRName
+	defer func() {
+		flags.F.EnableMultiSubnetClusterPhase1 = prevEnableMultiSubnetClusterPhase1
+		flags.F.NodeTopologyCRName = prevNodeTopologyCRName
+	}()
+	flags.F.EnableMultiSubnetClusterPhase1 = true
+	flags.F.NodeTopologyCRName = "default"
+
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(defaultTestSubnetURL, testNetwork)
+	_, ts, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	// Mark syncer as started without starting the syncer routine.
+	(ts.syncer.(*syncer)).stopped = false
+
+	zoneGetter := ts.topologyProvider.(*zonegetter.ZoneGetter)
+	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3, negtypes.TestZone4} {
+		zonegetter.DeleteFakeNodesInZone(t, zone, zoneGetter)
+	}
+	if err := zonegetter.AddFakeNodes(zoneGetter, negtypes.TestZone1, "node-zone1"); err != nil {
+		t.Fatalf("failed to add fake node: %v", err)
+	}
+	if err := zonegetter.AddFakeNodes(zoneGetter, negtypes.TestZone2, "node-zone2"); err != nil {
+		t.Fatalf("failed to add fake node: %v", err)
+	}
+
+	svcNegClient := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGClient()
+	svcNegLister := ts.statusHandler.(*negstatushandler.TestSvcNegStatusHandler).SvcNEGLister()
+	svcNeg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Create(context.Background(), createNegCR(ts.NegName, metav1.Now(), false, false, nil), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create test NEG CR: %v", err)
+	}
+	if err := svcNegLister.Add(svcNeg); err != nil {
+		t.Fatalf("failed to add NEG CR to lister: %v", err)
+	}
+
+	// syncAndGetStates runs a full sync, propagates the patched SvcNEG into the
+	// lister (no informer is running in unit tests) and returns zone -> state.
+	syncAndGetStates := func(step string) map[string]negv1beta1.NegState {
+		t.Helper()
+		if err := ts.syncInternal(); err != nil {
+			t.Fatalf("%s: syncInternal() failed: %v", step, err)
+		}
+		cr, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(ts.Namespace).Get(context.Background(), ts.NegName, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("%s: failed to get NEG CR: %v", step, err)
+		}
+		if err := svcNegLister.Update(cr); err != nil {
+			t.Fatalf("%s: failed to update NEG CR in lister: %v", step, err)
+		}
+		states := make(map[string]negv1beta1.NegState)
+		for _, ref := range cr.Status.NetworkEndpointGroups {
+			id, err := cloud.ParseResourceURL(ref.SelfLink)
+			if err != nil {
+				t.Fatalf("%s: failed to parse NEG selfLink %q: %v", step, ref.SelfLink, err)
+			}
+			if _, dup := states[id.Key.Zone]; dup {
+				t.Errorf("%s: duplicate NEG ref for zone %q in status: %+v", step, id.Key.Zone, cr.Status.NetworkEndpointGroups)
+			}
+			states[id.Key.Zone] = ref.State
+		}
+		return states
+	}
+
+	steps := []struct {
+		desc       string
+		mutate     func(t *testing.T)
+		wantStates map[string]negv1beta1.NegState
+	}{
+		{
+			desc:   "initial sync with nodes in zone1 and zone2",
+			mutate: func(t *testing.T) {},
+			wantStates: map[string]negv1beta1.NegState{
+				negtypes.TestZone1: negv1beta1.ActiveState,
+				negtypes.TestZone2: negv1beta1.ActiveState,
+			},
+		},
+		{
+			desc: "all nodes removed from zone2",
+			mutate: func(t *testing.T) {
+				zonegetter.DeleteFakeNodesInZone(t, negtypes.TestZone2, zoneGetter)
+			},
+			wantStates: map[string]negv1beta1.NegState{
+				negtypes.TestZone1: negv1beta1.ActiveState,
+				negtypes.TestZone2: negv1beta1.InactiveState,
+			},
+		},
+		{
+			desc:   "sync again without changes keeps zone2 INACTIVE",
+			mutate: func(t *testing.T) {},
+			wantStates: map[string]negv1beta1.NegState{
+				negtypes.TestZone1: negv1beta1.ActiveState,
+				negtypes.TestZone2: negv1beta1.InactiveState,
+			},
+		},
+		{
+			desc: "node added back to zone2",
+			mutate: func(t *testing.T) {
+				if err := zonegetter.AddFakeNodes(zoneGetter, negtypes.TestZone2, "node-zone2-new"); err != nil {
+					t.Fatalf("failed to add fake node: %v", err)
+				}
+			},
+			wantStates: map[string]negv1beta1.NegState{
+				negtypes.TestZone1: negv1beta1.ActiveState,
+				negtypes.TestZone2: negv1beta1.ActiveState,
+			},
+		},
+	}
+
+	for i, step := range steps {
+		stepName := fmt.Sprintf("step %d (%s)", i+1, step.desc)
+		step.mutate(t)
+		gotStates := syncAndGetStates(stepName)
+		if diff := cmp.Diff(step.wantStates, gotStates); diff != "" {
+			t.Errorf("%s: unexpected SvcNEG NEG ref states (-want +got):\n%s", stepName, diff)
+		}
+	}
+}

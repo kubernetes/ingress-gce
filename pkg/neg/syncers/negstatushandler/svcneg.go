@@ -79,6 +79,14 @@ func NewSvcNegStatusHandler(
 
 // SubnetToZonesMap parses the stored GKE SvcNEG object references inside status,
 // and resolves their subnetwork URL names mapping to the set of their GCE zone names.
+//
+// Only active NEG references are taken into account. References in INACTIVE or
+// TO_BE_DELETED state are kept in status for bookkeeping only and do not
+// represent ensured NEGs. Including them would hide a zone (or subnet) coming
+// back from the topology change detection, leaving the reference stuck in the
+// non-active state. References without state (written when multi-subnet
+// cluster phase 1 is disabled, or by older controller versions) are treated
+// as active.
 func (h *SvcNegStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, error) {
 	svcNegCR, err := h.getSvcNegFromStore()
 	if err != nil {
@@ -86,6 +94,9 @@ func (h *SvcNegStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, erro
 	}
 	subnetZones := make(shared.ZonesPerSubnetMap)
 	for _, ref := range svcNegCR.Status.NetworkEndpointGroups {
+		if !isActiveNegRef(ref) {
+			continue
+		}
 		subnetURL := h.networkInfo.SubnetworkURL
 		if ref.SubnetURL != "" {
 			subnetURL = ref.SubnetURL
@@ -109,6 +120,12 @@ func (h *SvcNegStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, erro
 		subnetZones[subnetName].Insert(id.Key.Zone)
 	}
 	return subnetZones, nil
+}
+
+// isActiveNegRef returns true if the NEG reference represents an ensured NEG.
+// Empty state is treated as active for backward compatibility.
+func isActiveNegRef(ref negv1beta1.NegObjectReference) bool {
+	return ref.State == "" || ref.State == negv1beta1.ActiveState
 }
 
 // ReportStatus reports the updated list of successfully configured GCE NEGs inside SvcNEG status.
