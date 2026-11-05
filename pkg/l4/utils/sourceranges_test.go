@@ -2,7 +2,6 @@ package utils
 
 import (
 	"net"
-	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,14 +29,14 @@ func TestIPv4ServiceSourceRanges(t *testing.T) {
 		{
 			desc:                     "Should get IPv4 addresses only, if mixed with IPv6",
 			specRanges:               []string{"0::0/0", " 192.168.0.1/10 ", "2001:db8:3333:4444:5555:6666:7777:8888/32", " 132.8.0.1/8"},
-			expectedIPv4SourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left, space are trimmed
+			expectedIPv4SourceRanges: []string{"132.0.0.0/8", "192.128.0.0/10"}, // only significant bits are left, space are trimmed
 		},
 		{
 			desc: "Should get IPv4 addresses from annotation, if mixed with IPv6 and no spec ranges",
 			annotations: map[string]string{
 				v1.AnnotationLoadBalancerSourceRangesKey: "0::0/0, 192.168.0.1/10 ,2001:db8:3333:4444:5555:6666:7777:8888/32, 132.8.0.1/8 ",
 			},
-			expectedIPv4SourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left, spaces are trimmed
+			expectedIPv4SourceRanges: []string{"132.0.0.0/8", "192.128.0.0/10"}, // only significant bits are left, spaces are trimmed
 		},
 		{
 			desc:       "Should ignore annotation if spec is present",
@@ -45,7 +44,7 @@ func TestIPv4ServiceSourceRanges(t *testing.T) {
 			annotations: map[string]string{
 				v1.AnnotationLoadBalancerSourceRangesKey: "1.2.3 1.2.3", // should not return error, even if annotation is invalid
 			},
-			expectedIPv4SourceRanges: []string{"192.128.0.0/10", "132.0.0.0/8"}, // only significant bits are left, spaces are trimmed
+			expectedIPv4SourceRanges: []string{"132.0.0.0/8", "192.128.0.0/10"}, // only significant bits are left, spaces are trimmed
 		},
 		{
 			desc:       "Should return special error for invalid spec value",
@@ -84,8 +83,6 @@ func TestIPv4ServiceSourceRanges(t *testing.T) {
 				t.Errorf("Expected error %v, got %v, diff: %v", tc.expectError, err, errDiff)
 			}
 
-			sort.Strings(tc.expectedIPv4SourceRanges)
-			sort.Strings(ipv4Ranges)
 			diff := cmp.Diff(tc.expectedIPv4SourceRanges, ipv4Ranges)
 			if diff != "" {
 				t.Errorf("Expected IPv4 ranges: %v, got ranges %v, diff: %s", tc.expectedIPv4SourceRanges, ipv4Ranges, diff)
@@ -123,8 +120,8 @@ func TestIPv6ServiceSourceRanges(t *testing.T) {
 				"2001:0db8:0000:0000:0000:0000:0000:0001/128",
 			},
 			expectedIPv6SourceRanges: []string{
-				"fe80::/64",
 				"2001:db8::1/128",
+				"fe80::/64",
 			},
 		},
 		{
@@ -179,8 +176,6 @@ func TestIPv6ServiceSourceRanges(t *testing.T) {
 				t.Errorf("Expected error %v, got %v, diff: %v", tc.expectError, err, errDiff)
 			}
 
-			sort.Strings(tc.expectedIPv6SourceRanges)
-			sort.Strings(ipv6Ranges)
 			diff := cmp.Diff(tc.expectedIPv6SourceRanges, ipv6Ranges)
 			if diff != "" {
 				t.Errorf("Expected IPv6 ranges: %v, got ranges %v, diff: %s", tc.expectedIPv6SourceRanges, ipv6Ranges, diff)

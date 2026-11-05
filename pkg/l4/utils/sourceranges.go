@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -29,6 +30,7 @@ func IPv4ServiceSourceRanges(service *v1.Service) ([]string, error) {
 			ipv4Ranges = append(ipv4Ranges, ip.String())
 		}
 	}
+	slices.Sort(ipv4Ranges)
 	return ipv4Ranges, nil
 }
 
@@ -47,6 +49,7 @@ func IPv6ServiceSourceRanges(service *v1.Service) ([]string, error) {
 			ipv6Ranges = append(ipv6Ranges, ip.String())
 		}
 	}
+	slices.Sort(ipv6Ranges)
 	return ipv6Ranges, nil
 }
 

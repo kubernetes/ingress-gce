@@ -313,7 +313,7 @@ func TestNetLBIPv6LongFormSourceRangesNoUpdateOnResync(t *testing.T) {
 	svc.Annotations = result.Annotations
 
 	ipv6FirewallName := netLBNodesFirewallName(l4netlb, v1.IPv6Protocol)
-	verifyFirewallSourceRanges(t, l4netlb.cloud, ipv6FirewallName, []string{"fe80::/64", "2001:db8::/32"})
+	verifyFirewallSourceRanges(t, l4netlb.cloud, ipv6FirewallName, []string{"2001:db8::/32", "fe80::/64"})
 
 	// Fail if PatchFirewall is called during resync when GCE holds shortened IPv6 CIDRs
 	// and the Service spec still holds long-form IPv6 CIDRs.
@@ -356,7 +356,7 @@ func TestILBIPv6LongFormSourceRangesNoUpdateOnResync(t *testing.T) {
 	svc.Annotations = result.Annotations
 
 	ipv6FirewallName := ilbNodesFirewallName(l4, v1.IPv6Protocol)
-	verifyFirewallSourceRanges(t, l4.cloud, ipv6FirewallName, []string{"fe80::/64", "2001:db8::/32"})
+	verifyFirewallSourceRanges(t, l4.cloud, ipv6FirewallName, []string{"2001:db8::/32", "fe80::/64"})
 
 	mockGCE := l4.cloud.Compute().(*cloud.MockGCE)
 	mockGCE.MockFirewalls.PatchHook = func(ctx context.Context, key *meta.Key, obj *ga.Firewall, m *cloud.MockFirewalls, options ...cloud.Option) error {
