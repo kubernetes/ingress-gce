@@ -129,6 +129,11 @@ func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud 
 			recorder.Event(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
 			return updateStatus, nil
 		}
+		if l4utils.IsFirewallPortsLimitExceededError(err) {
+			recorder.Eventf(svc, v1.EventTypeWarning, "FirewallPortsLimitExceeded",
+				"Firewall rule %s exceeds the maximum number of ports supported by GCE. "+
+					"Reduce the number of non-contiguous ports exposed by the Service: %v", params.Name, err)
+		}
 		return updateStatus, err
 	}
 	return updateStatus, nil

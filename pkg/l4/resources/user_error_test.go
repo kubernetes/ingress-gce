@@ -82,6 +82,13 @@ func TestIsUserError(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			err: &googleapi.Error{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Value for field 'resource.allowed[0].ports' is too large: maximum size 100 element(s); actual size 120.",
+			},
+			want: true,
+		},
 	}
 	for _, tC := range testCases {
 		tC := tC

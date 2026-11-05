@@ -264,6 +264,69 @@ func TestIsIPSpaceExhaustedError(t *testing.T) {
 	}
 }
 
+func TestIsFirewallPortsLimitExceededError(t *testing.T) {
+	testCases := []struct {
+		desc string
+		err  error
+		want bool
+	}{
+		{
+			desc: "allowed ports too large",
+			err: &googleapi.Error{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Value for field 'resource.allowed[0].ports' is too large: maximum size 100 element(s); actual size 120.",
+			},
+			want: true,
+		},
+		{
+			desc: "wrapped allowed ports too large",
+			err: fmt.Errorf("wrapped: %w", &googleapi.Error{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Value for field 'resource.allowed[1].ports' is too large: maximum size 100 element(s); actual size 101.",
+			}),
+			want: true,
+		},
+		{
+			desc: "denied ports too large is not matched",
+			err: &googleapi.Error{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Value for field 'resource.denied[0].ports' is too large: maximum size 100 element(s); actual size 120.",
+			},
+			want: false,
+		},
+		{
+			desc: "other 413 error",
+			err: &googleapi.Error{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Value for field 'resource.sourceRanges' is too large.",
+			},
+			want: false,
+		},
+		{
+			desc: "allowed ports message with a different code",
+			err: &googleapi.Error{
+				Code:    http.StatusBadRequest,
+				Message: "Value for field 'resource.allowed[0].ports' is too large: maximum size 100 element(s); actual size 120.",
+			},
+			want: false,
+		},
+		{
+			desc: "allowed ports message without googleapi error",
+			err:  fmt.Errorf("Value for field 'resource.allowed[0].ports' is too large: maximum size 100 element(s); actual size 120."),
+			want: false,
+		},
+		{desc: "nil", err: nil, want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := IsFirewallPortsLimitExceededError(tc.err); got != tc.want {
+				t.Errorf("IsFirewallPortsLimitExceededError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetErrorType(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

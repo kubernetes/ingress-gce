@@ -144,6 +144,16 @@ func IsIPSpaceExhaustedError(err error) bool {
 	return strings.Contains(err.Error(), "IP_SPACE_EXHAUSTED")
 }
 
+// IsFirewallPortsLimitExceededError checks if GCE rejected a firewall rule because
+// an allowed entry has more ports than GCE supports.
+func IsFirewallPortsLimitExceededError(err error) bool {
+	if !gceutils.IsHTTPErrorCode(err, http.StatusRequestEntityTooLarge) {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "resource.allowed[") && strings.Contains(msg, ".ports' is too large")
+}
+
 // IsConflictingPortsConfigurationError checks if wrapped error is an conflicting ports configuration error.
 func IsConflictingPortsConfigurationError(err error) bool {
 	var portsConflictConfigError *ConflictingPortsConfigurationError
