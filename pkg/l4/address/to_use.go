@@ -2,6 +2,7 @@ package address
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/net"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
@@ -38,6 +40,9 @@ func IPv4ToUse(cloud *gce.Cloud, recorder record.EventRecorder, svc *v1.Service,
 		// if no value from annotation (for example, annotation has only IPv6 addresses) -- continue
 	}
 	if svc.Spec.LoadBalancerIP != "" {
+		if net.IsIPv6String(svc.Spec.LoadBalancerIP) {
+			return "", "", ipv6LoadBalancerIPError(svc.Spec.LoadBalancerIP)
+		}
 		return svc.Spec.LoadBalancerIP, "", nil
 	}
 	if fwdRule == nil {
@@ -72,6 +77,15 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 		logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from annotation", "address", addr)
 		return addr, ipNameFromAnnotation, nil
 	}
+	if lbIP := svc.Spec.LoadBalancerIP; lbIP != "" {
+		if net.IsIPv6String(lbIP) {
+			return "", "", ipv6LoadBalancerIPError(lbIP)
+		}
+		if !l4utils.NeedsIPv4(svc) {
+			return "", "", loadBalancerIPOnIPv6OnlyServiceError(lbIP)
+		}
+		// IPv4 address on a dual-stack Service: it is used by the IPv4 forwarding rule only.
+	}
 	if ipv6FwdRule == nil {
 		logger.V(2).Info("ipv6AddressToUse: use any IPv6 Address")
 		return "", "", nil
@@ -89,6 +103,19 @@ func IPv6ToUse(cloud *gce.Cloud, svc *v1.Service, ipv6FwdRule *composite.Forward
 	addr := ipv6AddressWithoutRange(ipv6FwdRule.IPAddress)
 	logger.V(2).Info("ipv6AddressToUse: using IPv6 Address from existing forwarding rule", "forwardingRuleName", ipv6FwdRule.Name, "address", addr)
 	return addr, "", nil
+}
+
+// ipv6LoadBalancerIPError is returned when spec.loadBalancerIP contains an IPv6 address.
+// spec.loadBalancerIP supports only IPv4 addresses.
+func ipv6LoadBalancerIPError(lbIP string) error {
+	return l4utils.NewIPConfigurationError(lbIP, fmt.Sprintf("spec.loadBalancerIP does not support IPv6 addresses; reserve a static IPv6 address and set its name in the %q annotation instead", annotations.StaticL4AddressesAnnotationKey))
+}
+
+// loadBalancerIPOnIPv6OnlyServiceError is returned when spec.loadBalancerIP is set on an
+// IPv6-only Service (spec.ipFamilies: [IPv6], the default on IPv6-only clusters).
+// spec.loadBalancerIP can only specify an IPv4 address, which an IPv6-only Service doesn't have.
+func loadBalancerIPOnIPv6OnlyServiceError(lbIP string) error {
+	return l4utils.NewIPConfigurationError(lbIP, fmt.Sprintf("spec.loadBalancerIP is not supported on IPv6-only Services (spec.ipFamilies: [IPv6]) because it can only specify an IPv4 address; remove spec.loadBalancerIP, or reserve a static IPv6 address and set its name in the %q annotation", annotations.StaticL4AddressesAnnotationKey))
 }
 
 func ipv6AddressWithoutRange(ipv6Address string) string {
