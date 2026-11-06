@@ -345,6 +345,9 @@ func NewNegMetricsWithFactory(factory mtmetrics.MetricFactory) (*NegMetrics, err
 
 // PublishNegOperationMetrics publishes collected metrics for neg operations
 func (m *NegMetrics) PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
+	if m == nil {
+		return
+	}
 	result := getResult(err)
 
 	m.negOperationLatency.WithLabelValues(operation, negType, apiVersion, result).Observe(time.Since(start).Seconds())
@@ -353,6 +356,9 @@ func (m *NegMetrics) PublishNegOperationMetrics(operation, negType, apiVersion s
 
 // PublishNegSyncMetrics publishes collected metrics for the sync of NEG
 func (m *NegMetrics) PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
+	if m == nil {
+		return
+	}
 	result := getResult(err)
 
 	m.syncerSyncLatency.WithLabelValues(negType, endpointCalculator, result).Observe(time.Since(start).Seconds())
@@ -360,33 +366,48 @@ func (m *NegMetrics) PublishNegSyncMetrics(negType, endpointCalculator string, e
 
 // PublishNegManagerProcessMetrics publishes collected metrics for the neg manager loops
 func (m *NegMetrics) PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
+	if m == nil {
+		return
+	}
 	result := getResult(err)
 	m.managerProcessLatency.WithLabelValues(process, result).Observe(time.Since(start).Seconds())
 }
 
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func (m *NegMetrics) PublishNegInitializationMetrics(latency time.Duration) {
+	if m == nil {
+		return
+	}
 	m.initializationLatency.Observe(latency.Seconds())
 }
 
 func (m *NegMetrics) PublishNegSyncerStalenessMetrics(syncerStaleness time.Duration) {
+	if m == nil {
+		return
+	}
 	m.syncerStaleness.Observe(syncerStaleness.Seconds())
 }
 
 func (m *NegMetrics) PublishNegEPSStalenessMetrics(epsStaleness time.Duration) {
+	if m == nil {
+		return
+	}
 	m.epsStaleness.Observe(epsStaleness.Seconds())
 }
 
 // PublishDegradedModeCorrectnessMetrics publishes collected metrics
 // of the correctness of degraded mode calculations compared with the current one
 func (m *NegMetrics) PublishDegradedModeCorrectnessMetrics(count int, endpointType string, negType string) {
+	if m == nil {
+		return
+	}
 	m.degradeModeCorrectness.WithLabelValues(negType, endpointType).Observe(float64(count))
 }
 
 // PublishNegControllerErrorCountMetrics publishes collected metrics
 // for neg controller errors.
 func (m *NegMetrics) PublishNegControllerErrorCountMetrics(err error, isIgnored bool) {
-	if err == nil {
+	if m == nil || err == nil {
 		return
 	}
 	m.negControllerErrorCount.WithLabelValues(totalNegError).Inc()
@@ -395,17 +416,26 @@ func (m *NegMetrics) PublishNegControllerErrorCountMetrics(err error, isIgnored 
 
 // PublishLabelPropagationError publishes error occurred during label propagation.
 func (m *NegMetrics) PublishLabelPropagationError(errType string) {
+	if m == nil {
+		return
+	}
 	m.labelPropagationError.WithLabelValues(errType).Inc()
 }
 
 // PublishAnnotationMetrics publishes collected metrics for endpoint annotations.
 func (m *NegMetrics) PublishAnnotationMetrics(annotationSize int, labelNumber int) {
+	if m == nil {
+		return
+	}
 	m.annotationSize.Observe(float64(annotationSize))
 	m.labelNumber.Observe(float64(labelNumber))
 }
 
 // PublishGCERequestCountMetrics publishes collected metrics for GCE Request Counts
 func (m *NegMetrics) PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
+	if m == nil {
+		return
+	}
 	var result string
 	if err == nil {
 		result = resultSuccess
@@ -422,6 +452,9 @@ func (m *NegMetrics) PublishGCERequestCountMetrics(start time.Time, requestType 
 
 // PublishK8sRequestCountMetrics publishes collected metrics for K8s Request Counts
 func (m *NegMetrics) PublishK8sRequestCountMetrics(start time.Time, requestType string, err error) {
+	if m == nil {
+		return
+	}
 	var result string
 	if err == nil {
 		result = resultSuccess
@@ -437,6 +470,9 @@ func (m *NegMetrics) PublishK8sRequestCountMetrics(start time.Time, requestType 
 }
 
 func (m *NegMetrics) PublishLastSyncTimestamp(t time.Time) {
+	if m == nil {
+		return
+	}
 	m.lastSyncTimestamp.Set(float64(t.UTC().UnixNano()))
 }
 

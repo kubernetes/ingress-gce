@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -247,4 +248,22 @@ func TestDefaultGlobalTracker_SyncTimestampStrategy(t *testing.T) {
 	if gotVal != wantVal {
 		t.Errorf("DefaultGlobalTracker strategy for sync_timestamp: got %v, want max %v", gotVal, wantVal)
 	}
+}
+
+func TestNilNegMetrics(t *testing.T) {
+	var m *NegMetrics
+	now := time.Now()
+	m.PublishNegOperationMetrics("op", "type", "v1", nil, 1, now)
+	m.PublishNegSyncMetrics("type", "calc", nil, now)
+	m.PublishNegManagerProcessMetrics("proc", nil, now)
+	m.PublishNegInitializationMetrics(time.Second)
+	m.PublishNegSyncerStalenessMetrics(time.Second)
+	m.PublishNegEPSStalenessMetrics(time.Second)
+	m.PublishDegradedModeCorrectnessMetrics(1, "ep", "neg")
+	m.PublishNegControllerErrorCountMetrics(fmt.Errorf("err"), false)
+	m.PublishLabelPropagationError("err")
+	m.PublishAnnotationMetrics(1, 1)
+	m.PublishGCERequestCountMetrics(now, "req", nil)
+	m.PublishK8sRequestCountMetrics(now, "req", nil)
+	m.PublishLastSyncTimestamp(now)
 }
