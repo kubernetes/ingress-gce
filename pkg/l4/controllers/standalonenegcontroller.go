@@ -382,17 +382,6 @@ func (lc *StandaloneNEGLBController) backendService(fr *composite.ForwardingRule
 	return bs, nil
 }
 
-// parseHCURL parses the name and region of a health check from its SelfLink, e.g.
-// https://www.googleapis.com/compute/VERSION/projects/PROJECT/regions/REGION/healthChecks/NAME
-func parseHCURL(hcPath string) (string, string, error) {
-	parts := strings.Split(hcPath, "/")
-	n := len(parts)
-	if n < 4 || parts[n-2] != "healthChecks" || parts[n-1] == "" || parts[n-4] != "regions" || parts[n-3] == "" {
-		return "", "", fmt.Errorf("invalid health check SelfLink %s", hcPath)
-	}
-	return parts[n-1], parts[n-3], nil
-}
-
 // healthCheckPort returns the port of the HTTP health check of the backend service.
 // ok is false if the backend service has no HTTP health check with a fixed port.
 func (lc *StandaloneNEGLBController) healthCheckPort(bs *composite.BackendService, svc *v1.Service, svcLogger klog.Logger) (port int64, ok bool, err error) {
@@ -401,12 +390,12 @@ func (lc *StandaloneNEGLBController) healthCheckPort(bs *composite.BackendServic
 	if len(hcs) == 0 {
 		return 0, false, nil
 	}
-	hcName, hcRegion, err := parseHCURL(hcs[0])
-	if err != nil {
-		return 0, false, err
+	hcID, err := cloud.ParseResourceURL(hcs[0])
+	if err != nil || hcID.Key == nil || hcID.Resource != "healthChecks" {
+		return 0, false, fmt.Errorf("invalid health check URL %q of backend service %s", hcs[0], bs.Name)
 	}
 
-	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, hcRegion), meta.VersionBeta, svcLogger)
+	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, hcID.Key, meta.VersionBeta, svcLogger)
 	switch {
 	case utils.IsNotFoundError(err):
 		lc.recordNoHTTPHealthCheck(svc, bs, fmt.Sprintf("health check %s not found", hcs[0]), svcLogger)

@@ -2887,7 +2887,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 				}
 			}
 
-			got, err := lc.getServiceNEGLinks(tc.svc)
+			got, err := lc.serviceNEGLinks(tc.svc)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("getServiceNEGLinks() error = %v, wantErr = %v", err, tc.wantErr)
 			}
@@ -3034,11 +3034,15 @@ func globalBS(name, hc string) *composite.BackendService {
 }
 
 func testBS(name string, scope meta.KeyType, hc string) *composite.BackendService {
+	hcURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/healthChecks/%s", snegTestProject, snegTestRegion, hc)
+	if scope == meta.Global {
+		hcURL = fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/healthChecks/%s", snegTestProject, hc)
+	}
 	return &composite.BackendService{
 		Name:         name,
 		Scope:        scope,
 		Version:      meta.VersionBeta,
-		HealthChecks: []string{hc},
+		HealthChecks: []string{hcURL},
 		Backends:     []*composite.Backend{{Group: negSelfLink(snegTestProject, snegTestZone, snegTestNEG)}},
 	}
 }
