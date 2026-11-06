@@ -1019,6 +1019,16 @@ func TestEnsureInternalLoadBalancerClass(t *testing.T) {
 }
 
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (*L4Controller, chan struct{}) {
+	ctx, stopCh := newServiceControllerContext(t, fakeGCE, readOnlyMode)
+	l4c := NewILBController(ctx, stopCh, klog.TODO())
+	l4c.hasSynced = func() bool { return true }
+	return l4c, stopCh
+}
+
+// newServiceControllerContext returns the controller context used by newServiceController,
+// so that tests can adjust it before creating the controller.
+func newServiceControllerContext(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (*context.ControllerContext, chan struct{}) {
+	t.Helper()
 	kubeClient := fake.NewSimpleClientset()
 	svcNegClient := svcnegclient.NewSimpleClientset()
 
@@ -1050,9 +1060,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud, readOnlyMode bool) (
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	l4c := NewILBController(ctx, stopCh, klog.TODO())
-	l4c.hasSynced = func() bool { return true }
-	return l4c, stopCh
+	return ctx, stopCh
 }
 
 func newFakeGCE() *gce.Cloud {

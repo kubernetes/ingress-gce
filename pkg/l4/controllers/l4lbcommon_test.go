@@ -1,13 +1,319 @@
 package controllers
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/klog/v2"
 )
+
+func TestPeriodicEnqueuerOffset(t *testing.T) {
+	const (
+		period = 10 * time.Minute
+		keys   = 1000
+	)
+	testCases := []struct {
+		desc         string
+		resyncPeriod time.Duration
+		spreadFactor float64
+		// Every offset must be within [0, wantMax).
+		wantMax time.Duration
+		// wantSpread requires offsets to be spread over the window: both
+		// halves of [0, wantMax) must be hit. With 1000 keys hashed into the
+		// window, the probability of a spurious failure is 2 * 0.5^1000.
+		wantSpread bool
+	}{
+		{
+			desc:         "spreading disabled",
+			resyncPeriod: period,
+			spreadFactor: 0,
+			wantMax:      1,
+		},
+		{
+			desc:         "negative factor is treated as disabled",
+			resyncPeriod: period,
+			spreadFactor: -0.5,
+			wantMax:      1,
+		},
+		{
+			desc:         "zero resync period disables spreading",
+			resyncPeriod: 0,
+			spreadFactor: 1,
+			wantMax:      1,
+		},
+		{
+			desc:         "spread over half of the period",
+			resyncPeriod: period,
+			spreadFactor: 0.5,
+			wantMax:      5 * time.Minute,
+			wantSpread:   true,
+		},
+		{
+			desc:         "spread over the whole period",
+			resyncPeriod: period,
+			spreadFactor: 1,
+			wantMax:      period,
+			wantSpread:   true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			p := newPeriodicEnqueuer(tc.resyncPeriod, tc.spreadFactor)
+			mid := tc.wantMax / 2
+			var belowMid, fromMid int
+			for i := 0; i < keys; i++ {
+				key := fmt.Sprintf("namespace/service-%d", i)
+				got := p.offset(key)
+				if got < 0 || got >= tc.wantMax {
+					t.Fatalf("offset(%q) = %v, want in [0, %v)", key, got, tc.wantMax)
+				}
+				if again := p.offset(key); again != got {
+					t.Fatalf("offset(%q) = %v on the second call, want the stable value %v", key, again, got)
+				}
+				if got < mid {
+					belowMid++
+				} else {
+					fromMid++
+				}
+			}
+			if tc.wantSpread && (belowMid == 0 || fromMid == 0) {
+				t.Errorf("offset(): %d of %d keys below %v and %d from %v on, want both halves of [0, %v) to be hit", belowMid, keys, mid, fromMid, mid, tc.wantMax)
+			}
+		})
+	}
+}
+
+func TestPeriodicEnqueuerOffsetIsSalted(t *testing.T) {
+	const keys = 100
+	a := newPeriodicEnqueuer(10*time.Minute, 1)
+	b := newPeriodicEnqueuer(10*time.Minute, 1)
+	if a.salt == b.salt {
+		t.Fatalf("two periodicEnqueuers got the same salt %d", a.salt)
+	}
+	for i := 0; i < keys; i++ {
+		key := fmt.Sprintf("namespace/service-%d", i)
+		if a.offset(key) != b.offset(key) {
+			return
+		}
+	}
+	t.Errorf("offset() returned the same values for %d keys in two differently salted periodicEnqueuers, want them to differ", keys)
+}
+
+func TestPeriodicEnqueuerEnqueue(t *testing.T) {
+	const period = 10 * time.Minute
+	svc := &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "namespace", Name: "service"}}
+	key := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+
+	testCases := []struct {
+		desc         string
+		spreadFactor float64
+		wantDelayed  bool
+	}{
+		{
+			desc:         "spreading disabled enqueues immediately",
+			spreadFactor: 0,
+			wantDelayed:  false,
+		},
+		{
+			desc:         "spreading enabled enqueues after the offset",
+			spreadFactor: 1,
+			wantDelayed:  true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			p := newPeriodicEnqueuer(period, tc.spreadFactor)
+			// Make the offset deterministic and non-zero for the delayed case:
+			// with this salt, the test key hashes to a positive offset.
+			p.salt = 42
+			if got := p.offset(key); tc.wantDelayed && got <= 0 {
+				t.Fatalf("offset(%q) = %v with salt %d, want > 0 for this test case", key, got, p.salt)
+			}
+			var scheduled []func()
+			var scheduledDelay time.Duration
+			p.afterFunc = func(d time.Duration, f func()) *time.Timer {
+				scheduledDelay = d
+				scheduled = append(scheduled, f)
+				return nil
+			}
+			queue := utils.NewPeriodicTaskQueue("", "test", func(string) error { return nil }, klog.TODO())
+			// Zero value, so that an update is distinguishable from the initial timestamp.
+			var tracker utils.TimeTracker
+			before := time.Now()
+
+			p.enqueue(queue, &tracker, svc, klog.TODO())
+
+			if !tc.wantDelayed {
+				if len(scheduled) != 0 {
+					t.Fatalf("enqueue() scheduled %d delayed enqueues, want 0", len(scheduled))
+				}
+				if queue.Len() != 1 {
+					t.Fatalf("queue.Len() = %d after enqueue(), want 1", queue.Len())
+				}
+				if tracker.Get().Before(before) {
+					t.Errorf("enqueue tracker was not updated by enqueue()")
+				}
+				return
+			}
+
+			if len(scheduled) != 1 {
+				t.Fatalf("enqueue() scheduled %d delayed enqueues, want 1", len(scheduled))
+			}
+			if want := p.offset(key); scheduledDelay != want {
+				t.Errorf("enqueue() scheduled the enqueue after %v, want the key's offset %v", scheduledDelay, want)
+			}
+			if queue.Len() != 0 {
+				t.Fatalf("queue.Len() = %d right after enqueue(), want 0 until the delay elapses", queue.Len())
+			}
+			if !tracker.Get().IsZero() {
+				t.Errorf("enqueue tracker was updated when the enqueue was scheduled, want it updated only when the service is enqueued")
+			}
+
+			scheduled[0]()
+
+			if queue.Len() != 1 {
+				t.Fatalf("queue.Len() = %d after the delay elapsed, want 1", queue.Len())
+			}
+			if tracker.Get().Before(before) {
+				t.Errorf("enqueue tracker was not updated when the service was enqueued")
+			}
+		})
+	}
+}
+
+func TestPeriodicEnqueuerCancelAndStop(t *testing.T) {
+	const period = 10 * time.Minute
+	svc := &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "namespace", Name: "service"}}
+	key := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+
+	newTestEnqueuer := func(t *testing.T) (*periodicEnqueuer, *[]func()) {
+		t.Helper()
+		p := newPeriodicEnqueuer(period, 1)
+		p.salt = 42
+		if got := p.offset(key); got <= 0 {
+			t.Fatalf("offset(%q) = %v with salt %d, want > 0", key, got, p.salt)
+		}
+		var scheduled []func()
+		p.afterFunc = func(_ time.Duration, f func()) *time.Timer {
+			scheduled = append(scheduled, f)
+			return time.NewTimer(time.Hour)
+		}
+		return p, &scheduled
+	}
+
+	t.Run("cancel prevents pending timer from enqueueing", func(t *testing.T) {
+		p, scheduled := newTestEnqueuer(t)
+		queue := utils.NewPeriodicTaskQueue("", "test", func(string) error { return nil }, klog.TODO())
+		var tracker utils.TimeTracker
+
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+		p.cancel(key)
+		(*scheduled)[0]()
+
+		if queue.Len() != 0 {
+			t.Errorf("queue.Len() = %d after cancelled timer fired, want 0", queue.Len())
+		}
+		if !tracker.Get().IsZero() {
+			t.Errorf("enqueue tracker was updated by a cancelled timer")
+		}
+	})
+
+	t.Run("cancelObj handles Service and DeletedFinalStateUnknown tombstone", func(t *testing.T) {
+		for _, obj := range []interface{}{
+			svc,
+			cache.DeletedFinalStateUnknown{Key: key, Obj: svc},
+		} {
+			p, scheduled := newTestEnqueuer(t)
+			queue := utils.NewPeriodicTaskQueue("", "test", func(string) error { return nil }, klog.TODO())
+			var tracker utils.TimeTracker
+
+			p.enqueue(queue, &tracker, svc, klog.TODO())
+			p.cancelObj(obj)
+			(*scheduled)[0]()
+
+			if queue.Len() != 0 {
+				t.Errorf("queue.Len() = %d after cancelObj(%T), want 0", queue.Len(), obj)
+			}
+		}
+	})
+
+	t.Run("re-enqueue replaces previous pending timer", func(t *testing.T) {
+		p, scheduled := newTestEnqueuer(t)
+		queue := utils.NewPeriodicTaskQueue("", "test", func(string) error { return nil }, klog.TODO())
+		var tracker utils.TimeTracker
+
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+		if len(*scheduled) != 2 {
+			t.Fatalf("scheduled %d timers, want 2", len(*scheduled))
+		}
+
+		// Stale first timer must be a no-op.
+		(*scheduled)[0]()
+		if queue.Len() != 0 {
+			t.Fatalf("queue.Len() = %d after replaced first timer fired, want 0", queue.Len())
+		}
+
+		// Latest second timer must enqueue.
+		(*scheduled)[1]()
+		if queue.Len() != 1 {
+			t.Errorf("queue.Len() = %d after second timer fired, want 1", queue.Len())
+		}
+	})
+
+	t.Run("stop cancels pending timers and ignores subsequent enqueues", func(t *testing.T) {
+		p, scheduled := newTestEnqueuer(t)
+		queue := utils.NewPeriodicTaskQueue("", "test", func(string) error { return nil }, klog.TODO())
+		var tracker utils.TimeTracker
+
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+		p.stop()
+		(*scheduled)[0]()
+
+		if queue.Len() != 0 {
+			t.Errorf("queue.Len() = %d after stop(), want 0", queue.Len())
+		}
+
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+		if len(*scheduled) != 1 {
+			t.Errorf("enqueue() after stop() scheduled a new timer, want no-op")
+		}
+	})
+
+	t.Run("skips delayed enqueue when service is in rate-limited retry", func(t *testing.T) {
+		p, scheduled := newTestEnqueuer(t)
+		queue := utils.NewPeriodicTaskQueueWithMultipleWorkers("", "test", 1, func(string) error {
+			return fmt.Errorf("transient GCE error")
+		}, klog.TODO())
+		var tracker utils.TimeTracker
+
+		p.enqueue(queue, &tracker, svc, klog.TODO())
+
+		// Simulate the service failing a sync during the delay window and
+		// entering exponential backoff (NumRequeues > 0).
+		queue.Run()
+		defer queue.Shutdown()
+		queue.Enqueue(svc)
+		deadline := time.Now().Add(2 * time.Second)
+		for queue.NumRequeues(svc) == 0 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if queue.NumRequeues(svc) == 0 {
+			t.Fatalf("expected service to have NumRequeues > 0 after failing sync")
+		}
+
+		(*scheduled)[0]()
+		if !tracker.Get().IsZero() {
+			t.Errorf("delayed periodic timer enqueued service while in rate-limited retry")
+		}
+	})
+}
 
 func TestFinalizerWasRemovedUnexpectedly(t *testing.T) {
 	testCases := []struct {
