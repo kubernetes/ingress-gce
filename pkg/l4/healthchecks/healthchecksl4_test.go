@@ -18,9 +18,12 @@ package healthchecks
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"k8s.io/ingress-gce/pkg/flags"
@@ -38,6 +41,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
@@ -513,7 +517,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
@@ -731,7 +735,7 @@ func TestEnsureHealthCheckWithDualStackFirewalls(t *testing.T) {
 			if svcNetwork == nil {
 				svcNetwork = network.DefaultNetwork(fakeGCE)
 			}
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
 				if err != nil {
@@ -896,7 +900,7 @@ func TestEnsureHealthCheckWithIPv6OnlyFirewalls(t *testing.T) {
 			createVMInstanceWithTag(t, fakeGCE, "k8s-test")
 			svcNetwork := network.DefaultNetwork(fakeGCE)
 
-			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
 			if tc.existingHC != nil {
 				err := hcs.hcProvider.Create(tc.existingHC)
 				if err != nil {
@@ -1179,4 +1183,585 @@ func TestGetHCFirewallSourceRangesWithFlags(t *testing.T) {
 	// Reset flags
 	flags.F.OverrideL4ILBHealthCheckSourceCIDRs = ""
 	flags.F.OverrideL4NetLBHealthCheckSourceCIDRs = ""
+}
+
+// longIPv6HCSvcName is a Service name long enough for the truncated and hashed IPv6 health
+// check firewall names to differ (the truncated name loses the namespace/name hash).
+const longIPv6HCSvcName = "extremely-long-name-that-has-a-different-ending-that-gets-truncated"
+
+// newIPv6HCFirewallTestEnv returns a fake GCE cloud and a long-named ILB Service with
+// ETP=Local, for which the truncated and hashed IPv6 health check firewall names differ.
+func newIPv6HCFirewallTestEnv(t *testing.T, vals gce.TestClusterValues) (*gce.Cloud, *corev1.Service) {
+	t.Helper()
+	fakeGCE := gce.NewFakeGCECloud(vals)
+	createVMInstanceWithTag(t, fakeGCE, "k8s-test")
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockFirewalls.PatchHook = mock.UpdateFirewallHook
+	ilbClass := annotations.RegionalInternalLoadBalancerClass
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: longIPv6HCSvcName, Namespace: "default", UID: types.UID("1")},
+		Spec: corev1.ServiceSpec{
+			Ports:                 []corev1.ServicePort{{Port: 80, Protocol: corev1.ProtocolTCP}},
+			Type:                  "LoadBalancer",
+			LoadBalancerClass:     &ilbClass,
+			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+			HealthCheckNodePort:   1234,
+		},
+	}
+	return fakeGCE, svc
+}
+
+// ipv6HCFirewallNames returns the truncated and hashed IPv6 health check firewall names of
+// svc, failing the test if they are equal.
+func ipv6HCFirewallNames(t *testing.T, l4Namer namer.L4ResourcesNamer, svc *corev1.Service) (truncated, hashed string) {
+	t.Helper()
+	truncated = l4Namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	hashed = l4Namer.L4IPv6HealthCheckFirewallWithHash(svc.Namespace, svc.Name, false)
+	if truncated == hashed {
+		t.Fatalf("test requires different truncated and hashed names, got %q for both", truncated)
+	}
+	return truncated, hashed
+}
+
+// ipv6HCFirewallNamesInUse returns the IPv6 health check firewall name of svc in the naming
+// schema selected by useHashedNames, and the name in the other schema.
+func ipv6HCFirewallNamesInUse(t *testing.T, l4Namer namer.L4ResourcesNamer, svc *corev1.Service, useHashedNames bool) (current, other string) {
+	t.Helper()
+	truncated, hashed := ipv6HCFirewallNames(t, l4Namer, svc)
+	if useHashedNames {
+		return hashed, truncated
+	}
+	return truncated, hashed
+}
+
+func createIPv6HCFirewall(t *testing.T, fakeGCE *gce.Cloud, name, port string) {
+	t.Helper()
+	err := fakeGCE.CreateFirewall(&compute.Firewall{
+		Name:         name,
+		Network:      gce.DefaultTestClusterValues().NetworkURL,
+		SourceRanges: []string{L4ILBIPv6HCRange},
+		TargetTags:   []string{"k8s-test"},
+		Allowed:      []*compute.FirewallAllowed{{IPProtocol: "TCP", Ports: []string{port}}},
+	})
+	if err != nil {
+		t.Fatalf("fakeGCE.CreateFirewall(%q) err=%v", name, err)
+	}
+}
+
+// firewallExists reports whether the firewall rule name exists, failing the test on
+// lookup errors.
+func firewallExists(t *testing.T, hcs *l4HealthChecks, name string) bool {
+	t.Helper()
+	exists, err := hcs.firewallExists(name)
+	if err != nil {
+		t.Fatalf("firewallExists(%q) err=%v", name, err)
+	}
+	return exists
+}
+
+// firewallDeleteRecorder records the names of all firewall DELETE calls on the fake cloud.
+type firewallDeleteRecorder struct {
+	names []string
+	// failWith, if set, makes the DELETE of the named rule fail with the returned error.
+	failWith func(name string) error
+}
+
+func (r *firewallDeleteRecorder) hook(_ context.Context, key *meta.Key, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, error) {
+	r.names = append(r.names, key.Name)
+	if r.failWith != nil {
+		if err := r.failWith(key.Name); err != nil {
+			return true, err
+		}
+	}
+	return false, nil
+}
+
+func recordFirewallDeletes(fakeGCE *gce.Cloud) *firewallDeleteRecorder {
+	r := &firewallDeleteRecorder{}
+	fakeGCE.Compute().(*cloud.MockGCE).MockFirewalls.DeleteHook = r.hook
+	return r
+}
+
+// drainEvents returns all events emitted to recorder so far.
+func drainEvents(recorder *record.FakeRecorder) []string {
+	var events []string
+	for {
+		select {
+		case e := <-recorder.Events:
+			events = append(events, e)
+		default:
+			return events
+		}
+	}
+}
+
+func ensureIPv6OnlyHC(hcs *l4HealthChecks, l4Namer namer.L4ResourcesNamer, svc *corev1.Service, fakeGCE *gce.Cloud) *EnsureHealthCheckResult {
+	svcNetwork := network.DefaultNetwork(fakeGCE)
+	return hcs.EnsureHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.ILB, []string{"k8s-test-node"}, false, true, *svcNetwork, klog.TODO())
+}
+
+// TestEnsureHealthCheckIPv6FirewallNoOtherRule verifies that when no rule with the other
+// naming schema exists, the sync ensures the rule in use and issues no DELETE (the other
+// rule is looked up with a GET first).
+func TestEnsureHealthCheckIPv6FirewallNoOtherRule(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	for _, tc := range []struct {
+		desc           string
+		useHashedNames bool
+	}{
+		{desc: "truncated names"},
+		{desc: "hashed names", useHashedNames: true},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+			wantFwName, otherFwName := ipv6HCFirewallNamesInUse(t, l4Namer, svc, tc.useHashedNames)
+			deletes := recordFirewallDeletes(fakeGCE)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, tc.useHashedNames)
+
+			result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+			if result.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+			}
+			if result.HCFirewallRuleIPv6Name != wantFwName {
+				t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, wantFwName)
+			}
+			if !firewallExists(t, hcs, wantFwName) {
+				t.Errorf("rule %q doesn't exist after sync", wantFwName)
+			}
+			if firewallExists(t, hcs, otherFwName) {
+				t.Errorf("rule %q with the other naming schema exists after sync", otherFwName)
+			}
+			if len(deletes.names) != 0 {
+				t.Errorf("deleted firewalls %v, want none", deletes.names)
+			}
+		})
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallMigratesToHashedName verifies that enabling hashed names
+// migrates the rule in a single sync: the hashed rule is ensured, then the truncated rule is
+// deleted. A second sync issues no DELETE.
+func TestEnsureHealthCheckIPv6FirewallMigratesToHashedName(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+	deletes := recordFirewallDeletes(fakeGCE)
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if result.HCFirewallRuleIPv6Name != hashedFwName {
+		t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, hashedFwName)
+	}
+	if !firewallExists(t, hcs, hashedFwName) {
+		t.Errorf("hashed rule %q doesn't exist after sync", hashedFwName)
+	}
+	if firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q exists after sync", truncatedFwName)
+	}
+	if diff := cmp.Diff([]string{truncatedFwName}, deletes.names); diff != "" {
+		t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+	}
+
+	deletes.names = nil
+	if result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE); result.Err != nil {
+		t.Fatalf("second EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if len(deletes.names) != 0 {
+		t.Errorf("second sync deleted firewalls %v, want none", deletes.names)
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallRollsBackToTruncatedName verifies that disabling hashed
+// names rolls the rule back in a single sync: the truncated rule is ensured, then the hashed
+// rule is deleted. A second sync issues no DELETE.
+func TestEnsureHealthCheckIPv6FirewallRollsBackToTruncatedName(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, hashedFwName, "1234")
+	deletes := recordFirewallDeletes(fakeGCE)
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, false)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if result.HCFirewallRuleIPv6Name != truncatedFwName {
+		t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, truncatedFwName)
+	}
+	if !firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q doesn't exist after sync", truncatedFwName)
+	}
+	if firewallExists(t, hcs, hashedFwName) {
+		t.Errorf("hashed rule %q exists after sync", hashedFwName)
+	}
+	if diff := cmp.Diff([]string{hashedFwName}, deletes.names); diff != "" {
+		t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+	}
+
+	deletes.names = nil
+	if result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE); result.Err != nil {
+		t.Fatalf("second EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if len(deletes.names) != 0 {
+		t.Errorf("second sync deleted firewalls %v, want none", deletes.names)
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallCollidingServices verifies that two Services whose
+// truncated IPv6 health check firewall names collide get distinct hashed firewall rules
+// allowing their respective HealthCheckNodePorts, and that the colliding rule is deleted.
+func TestEnsureHealthCheckIPv6FirewallCollidingServices(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svcA := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	svcB := svcA.DeepCopy()
+	svcB.Name = "extremely-long-name-that-has-a-different-ending-that-gets-shortened"
+	svcB.UID = types.UID("2")
+	svcB.Spec.HealthCheckNodePort = 5678
+
+	truncatedFwName, hashedFwNameA := ipv6HCFirewallNames(t, l4Namer, svcA)
+	if got := l4Namer.L4IPv6HealthCheckFirewall(svcB.Namespace, svcB.Name, false); got != truncatedFwName {
+		t.Fatalf("expected svcA and svcB to collide on truncated firewall name %q, got %q", truncatedFwName, got)
+	}
+	hashedFwNameB := l4Namer.L4IPv6HealthCheckFirewallWithHash(svcB.Namespace, svcB.Name, false)
+	if hashedFwNameA == hashedFwNameB {
+		t.Fatalf("expected distinct hashed names for svcA and svcB, got %q", hashedFwNameA)
+	}
+	// The colliding rule allows the port of whichever Service synced last.
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "5678")
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	for _, svc := range []*corev1.Service{svcA, svcB} {
+		if res := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE); res.Err != nil {
+			t.Fatalf("sync of %s err=%v", svc.Name, res.Err)
+		}
+	}
+
+	if firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("colliding rule %q still exists after both Services migrated", truncatedFwName)
+	}
+	for _, want := range []struct {
+		fwName string
+		port   string
+	}{
+		{fwName: hashedFwNameA, port: "1234"},
+		{fwName: hashedFwNameB, port: "5678"},
+	} {
+		fw, err := fakeGCE.GetFirewall(want.fwName)
+		if err != nil {
+			t.Fatalf("GetFirewall(%q) err=%v", want.fwName, err)
+		}
+		if len(fw.Allowed) != 1 || len(fw.Allowed[0].Ports) != 1 || fw.Allowed[0].Ports[0] != want.port {
+			t.Errorf("firewall %q Allowed = %+v, want port %s", want.fwName, fw.Allowed, want.port)
+		}
+	}
+}
+
+// TestEnsureHealthCheckIPv6FirewallCleanupRetriesAfterGetError verifies that a failing GET
+// of the truncated rule fails the sync after the hashed rule has been ensured, and that the
+// next sync completes the migration.
+func TestEnsureHealthCheckIPv6FirewallCleanupRetriesAfterGetError(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+
+	failOnce := true
+	fakeGCE.Compute().(*cloud.MockGCE).MockFirewalls.GetHook = func(_ context.Context, key *meta.Key, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, *compute.Firewall, error) {
+		if failOnce && key.Name == truncatedFwName {
+			failOnce = false
+			return true, nil, &googleapi.Error{Code: http.StatusInternalServerError, Message: "injected error"}
+		}
+		return false, nil, nil
+	}
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	assertIPv6HCFirewallCleanupRetried(t, hcs, l4Namer, svc, fakeGCE, truncatedFwName, hashedFwName)
+}
+
+// TestEnsureHealthCheckIPv6FirewallCleanupRetriesAfterDeleteError verifies that a failing
+// DELETE of the truncated rule fails the sync after the hashed rule has been ensured, and
+// that the next sync completes the migration.
+func TestEnsureHealthCheckIPv6FirewallCleanupRetriesAfterDeleteError(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+
+	failOnce := true
+	deletes := recordFirewallDeletes(fakeGCE)
+	deletes.failWith = func(name string) error {
+		if failOnce && name == truncatedFwName {
+			failOnce = false
+			return &googleapi.Error{Code: http.StatusInternalServerError, Message: "injected error"}
+		}
+		return nil
+	}
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+
+	assertIPv6HCFirewallCleanupRetried(t, hcs, l4Namer, svc, fakeGCE, truncatedFwName, hashedFwName)
+}
+
+// assertIPv6HCFirewallCleanupRetried syncs svc twice with hashed names enabled while the
+// first cleanup of the truncated rule is set up to fail: the first sync must fail with the
+// IPv6 health check firewall as the resource in error after ensuring the hashed rule, and
+// the second sync must delete the truncated rule.
+func assertIPv6HCFirewallCleanupRetried(t *testing.T, hcs *l4HealthChecks, l4Namer namer.L4ResourcesNamer, svc *corev1.Service, fakeGCE *gce.Cloud, truncatedFwName, hashedFwName string) {
+	t.Helper()
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err == nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=nil, want error")
+	}
+	if result.GceResourceInError != annotations.FirewallForHealthcheckIPv6Resource {
+		t.Errorf("GceResourceInError = %q, want %q", result.GceResourceInError, annotations.FirewallForHealthcheckIPv6Resource)
+	}
+	if !firewallExists(t, hcs, hashedFwName) {
+		t.Errorf("hashed rule %q wasn't ensured before the cleanup", hashedFwName)
+	}
+	if !firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q was deleted although the cleanup failed", truncatedFwName)
+	}
+
+	result = ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("retry EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if result.HCFirewallRuleIPv6Name != hashedFwName {
+		t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, hashedFwName)
+	}
+	if firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q still exists after the retry", truncatedFwName)
+	}
+}
+
+// TestDeleteHealthCheckWithDualStackFirewallsDeletesOtherIPv6Rule verifies that on Service
+// deletion a left-behind IPv6 health check firewall rule with the other naming schema is
+// deleted too, e.g. when the Service is deleted after the naming flag was flipped and before
+// a resync, or after the Service was switched to IPv4 only.
+func TestDeleteHealthCheckWithDualStackFirewallsDeletesOtherIPv6Rule(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+
+	for _, tc := range []struct {
+		desc           string
+		useHashedNames bool
+	}{
+		{desc: "hashed names, truncated rule left behind", useHashedNames: true},
+		{desc: "truncated names, hashed rule left behind", useHashedNames: false},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+			currentFwName, otherFwName := ipv6HCFirewallNamesInUse(t, l4Namer, svc, tc.useHashedNames)
+			hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, tc.useHashedNames)
+			if res := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE); res.Err != nil {
+				t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", res.Err)
+			}
+			createIPv6HCFirewall(t, fakeGCE, otherFwName, "1234")
+			deletes := recordFirewallDeletes(fakeGCE)
+
+			if _, err := hcs.DeleteHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.ILB, klog.TODO()); err != nil {
+				t.Fatalf("DeleteHealthCheckWithDualStackFirewalls() err=%v", err)
+			}
+			for _, fwName := range []string{currentFwName, otherFwName} {
+				if firewallExists(t, hcs, fwName) {
+					t.Errorf("rule %q exists after Service deletion", fwName)
+				}
+			}
+			ipv4FwName := l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false)
+			if diff := cmp.Diff([]string{ipv4FwName, currentFwName, otherFwName}, deletes.names); diff != "" {
+				t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestDeleteHealthCheckWithDualStackFirewallsSkipsMissingOtherIPv6Rule verifies that on
+// Service deletion no DELETE is issued for the rule with the other naming schema when it
+// doesn't exist (it is looked up with a GET first).
+func TestDeleteHealthCheckWithDualStackFirewallsSkipsMissingOtherIPv6Rule(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newIPv6HCFirewallTestEnv(t, gce.DefaultTestClusterValues())
+	_, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	hcs := NewL4HealthChecks(fakeGCE, &record.FakeRecorder{}, klog.TODO(), true, true)
+	if res := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE); res.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", res.Err)
+	}
+	deletes := recordFirewallDeletes(fakeGCE)
+
+	if _, err := hcs.DeleteHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.ILB, klog.TODO()); err != nil {
+		t.Fatalf("DeleteHealthCheckWithDualStackFirewalls() err=%v", err)
+	}
+	ipv4FwName := l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	if diff := cmp.Diff([]string{ipv4FwName, hashedFwName}, deletes.names); diff != "" {
+		t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+	}
+}
+
+// xpnFirewallError returns the error GCE returns for firewall call (insert, patch or
+// delete) on name on a Shared VPC cluster without firewall permissions, which the
+// controller turns into an XPN event instead of failing the sync.
+func xpnFirewallError(call, name string) *googleapi.Error {
+	return &googleapi.Error{
+		Code:    http.StatusForbidden,
+		Message: fmt.Sprintf("Required 'compute.firewalls.%s' permission for 'projects/something/global/firewalls/%s'.", call, name),
+	}
+}
+
+// forbidFirewallInsertAndPatch makes firewall INSERT and PATCH calls on the fake cloud
+// fail with the Shared VPC permission error.
+func forbidFirewallInsertAndPatch(fakeGCE *gce.Cloud) {
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockFirewalls.InsertHook = func(_ context.Context, key *meta.Key, _ *compute.Firewall, _ *cloud.MockFirewalls, _ ...cloud.Option) (bool, error) {
+		return true, xpnFirewallError("insert", key.Name)
+	}
+	mockGCE.MockFirewalls.PatchHook = func(_ context.Context, key *meta.Key, _ *compute.Firewall, _ *cloud.MockFirewalls, _ ...cloud.Option) error {
+		return xpnFirewallError("patch", key.Name)
+	}
+	mockGCE.MockFirewalls.UpdateHook = mockGCE.MockFirewalls.PatchHook
+}
+
+// forbidFirewallDeletes makes firewall DELETE calls recorded by deletes fail with the
+// Shared VPC permission error.
+func forbidFirewallDeletes(deletes *firewallDeleteRecorder) {
+	deletes.failWith = func(name string) error { return xpnFirewallError("delete", name) }
+}
+
+// newXPNIPv6HCFirewallTestEnv is newIPv6HCFirewallTestEnv on a Shared VPC (XPN) cluster.
+func newXPNIPv6HCFirewallTestEnv(t *testing.T) (*gce.Cloud, *corev1.Service) {
+	t.Helper()
+	vals := gce.DefaultTestClusterValues()
+	vals.OnXPN = true
+	return newIPv6HCFirewallTestEnv(t, vals)
+}
+
+// TestEnsureHealthCheckIPv6FirewallOnXPNKeepsTruncatedRuleUntilHashedRuleExists verifies
+// that on a Shared VPC cluster without firewall permissions the migration never deletes the
+// truncated rule while the hashed rule doesn't exist: the sync succeeds, raises an XPN event
+// asking the security admin to create the hashed rule, and issues no DELETE. On Service
+// deletion an XPN event is raised for each of the rules.
+func TestEnsureHealthCheckIPv6FirewallOnXPNKeepsTruncatedRuleUntilHashedRuleExists(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newXPNIPv6HCFirewallTestEnv(t)
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+	forbidFirewallInsertAndPatch(fakeGCE)
+	deletes := recordFirewallDeletes(fakeGCE)
+	forbidFirewallDeletes(deletes)
+	recorder := record.NewFakeRecorder(100)
+	hcs := NewL4HealthChecks(fakeGCE, recorder, klog.TODO(), true, true)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if result.HCFirewallRuleIPv6Name != hashedFwName {
+		t.Errorf("HCFirewallRuleIPv6Name = %q, want %q", result.HCFirewallRuleIPv6Name, hashedFwName)
+	}
+	if firewallExists(t, hcs, hashedFwName) {
+		t.Errorf("hashed rule %q exists although INSERT is forbidden", hashedFwName)
+	}
+	if !firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q was deleted while the hashed rule doesn't exist", truncatedFwName)
+	}
+	if len(deletes.names) != 0 {
+		t.Errorf("DELETE issued for %v, want none", deletes.names)
+	}
+	assertXPNEvents(t, drainEvents(recorder), []string{"create " + hashedFwName})
+
+	if _, err := hcs.DeleteHealthCheckWithDualStackFirewalls(svc, l4Namer, false, meta.Global, utils.ILB, klog.TODO()); err != nil {
+		t.Fatalf("DeleteHealthCheckWithDualStackFirewalls() err=%v", err)
+	}
+	ipv4FwName := l4Namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, false)
+	assertXPNEvents(t, drainEvents(recorder), []string{"delete " + ipv4FwName, "delete " + hashedFwName, "delete " + truncatedFwName})
+}
+
+// TestEnsureHealthCheckIPv6FirewallOnXPNDeletesTruncatedRuleOnceHashedRuleExists verifies
+// that once the security admin has created the hashed rule, the sync deletes the truncated
+// rule even though it can't patch the hashed rule itself (an XPN event asks for the update).
+func TestEnsureHealthCheckIPv6FirewallOnXPNDeletesTruncatedRuleOnceHashedRuleExists(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newXPNIPv6HCFirewallTestEnv(t)
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+	// The hashed rule created by the admin allows a stale port, so the sync needs to patch it.
+	createIPv6HCFirewall(t, fakeGCE, hashedFwName, "9999")
+	forbidFirewallInsertAndPatch(fakeGCE)
+	deletes := recordFirewallDeletes(fakeGCE)
+	recorder := record.NewFakeRecorder(100)
+	hcs := NewL4HealthChecks(fakeGCE, recorder, klog.TODO(), true, true)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q exists although the hashed rule exists", truncatedFwName)
+	}
+	if diff := cmp.Diff([]string{truncatedFwName}, deletes.names); diff != "" {
+		t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+	}
+	assertXPNEvents(t, drainEvents(recorder), []string{"update " + hashedFwName})
+}
+
+// TestEnsureHealthCheckIPv6FirewallOnXPNRaisesEventForForbiddenTruncatedRuleDelete verifies
+// that when the hashed rule exists but DELETE is forbidden, the sync still succeeds and
+// raises an XPN event asking the security admin to delete the truncated rule.
+func TestEnsureHealthCheckIPv6FirewallOnXPNRaisesEventForForbiddenTruncatedRuleDelete(t *testing.T) {
+	t.Parallel()
+	l4Namer := namer.NewL4Namer("test", namer.NewNamer("testCluster", "testFirewall", klog.TODO()))
+	fakeGCE, svc := newXPNIPv6HCFirewallTestEnv(t)
+	truncatedFwName, hashedFwName := ipv6HCFirewallNames(t, l4Namer, svc)
+	createIPv6HCFirewall(t, fakeGCE, truncatedFwName, "1234")
+	// The hashed rule created by the admin allows a stale port, so the sync needs to patch it.
+	createIPv6HCFirewall(t, fakeGCE, hashedFwName, "9999")
+	forbidFirewallInsertAndPatch(fakeGCE)
+	deletes := recordFirewallDeletes(fakeGCE)
+	forbidFirewallDeletes(deletes)
+	recorder := record.NewFakeRecorder(100)
+	hcs := NewL4HealthChecks(fakeGCE, recorder, klog.TODO(), true, true)
+
+	result := ensureIPv6OnlyHC(hcs, l4Namer, svc, fakeGCE)
+	if result.Err != nil {
+		t.Fatalf("EnsureHealthCheckWithDualStackFirewalls() err=%v", result.Err)
+	}
+	if !firewallExists(t, hcs, truncatedFwName) {
+		t.Errorf("truncated rule %q doesn't exist although DELETE is forbidden", truncatedFwName)
+	}
+	if diff := cmp.Diff([]string{truncatedFwName}, deletes.names); diff != "" {
+		t.Errorf("deleted firewalls diff (-want +got):\n%s", diff)
+	}
+	assertXPNEvents(t, drainEvents(recorder), []string{"update " + hashedFwName, "delete " + truncatedFwName})
+}
+
+// assertXPNEvents checks that events are exactly XPN events asking the security admin to
+// run `gcloud compute firewall-rules <cmd>` for each of wantCmds ("<verb> <rule name>"), in
+// order.
+func assertXPNEvents(t *testing.T, events []string, wantCmds []string) {
+	t.Helper()
+	if len(events) != len(wantCmds) {
+		t.Errorf("got %d events %v, want %d XPN events for %v", len(events), events, len(wantCmds), wantCmds)
+		return
+	}
+	for i, e := range events {
+		want := corev1.EventTypeNormal + " XPN Firewall change required by security admin: `gcloud compute firewall-rules " + wantCmds[i] + " "
+		if !strings.HasPrefix(e, want) {
+			t.Errorf("event[%d] = %q, want prefix %q", i, e, want)
+		}
+	}
 }
