@@ -183,7 +183,7 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceObjectMetadata(coreClient, tc.svc, expectSvc.ObjectMeta)
+			returnedSvc, err := PatchServiceObjectMetadata(coreClient, tc.svc, expectSvc.ObjectMeta)
 			if err != nil {
 				t.Fatalf("PatchServiceObjectMetadata(%s) = %v, want nil", svcKey, err)
 			}
@@ -194,6 +194,9 @@ func TestPatchServiceObjectMetadata(t *testing.T) {
 			}
 			if diff := cmp.Diff(expectSvc, gotSvc); diff != "" {
 				t.Errorf("Got mismatch for Service (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotSvc, returnedSvc); diff != "" {
+				t.Errorf("PatchServiceObjectMetadata(%s) returned service does not match stored service (-want +got):\n%s", svcKey, diff)
 			}
 		})
 	}
@@ -237,7 +240,7 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
 			}
 			expectSvc := tc.newMetaFunc(tc.svc)
-			err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
+			returnedSvc, err := PatchServiceLoadBalancerStatus(coreClient, tc.svc, expectSvc.Status.LoadBalancer)
 			if err != nil {
 				t.Fatalf("PatchServiceLoadBalancerStatus(%s) = %v, want nil", svcKey, err)
 			}
@@ -248,6 +251,73 @@ func TestPatchServiceLoadBalancerStatus(t *testing.T) {
 			}
 			if diff := cmp.Diff(expectSvc, gotSvc); diff != "" {
 				t.Errorf("Got mismatch for Service (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotSvc, returnedSvc); diff != "" {
+				t.Errorf("PatchServiceLoadBalancerStatus(%s) returned service does not match stored service (-want +got):\n%s", svcKey, diff)
+			}
+		})
+	}
+}
+
+func TestPatchServiceStatus(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		svc           *apiv1.Service
+		newStatusFunc func(*apiv1.Service) *apiv1.Service
+	}{
+		{
+			desc: "update load balancer status and conditions",
+			svc:  newTestService("ns1", "update-status-svc"),
+			newStatusFunc: func(svc *apiv1.Service) *apiv1.Service {
+				ret := svc.DeepCopy()
+				ret.Status = apiv1.ServiceStatus{
+					LoadBalancer: apiv1.LoadBalancerStatus{
+						Ingress: []apiv1.LoadBalancerIngress{
+							{IP: "10.0.0.1"},
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   "ExternalIPProgrammed",
+							Status: metav1.ConditionTrue,
+							Reason: "Programmed",
+						},
+					},
+				}
+				return ret
+			},
+		},
+		{
+			desc: "clear status",
+			svc:  newTestService("ns2", "clear-status-svc"),
+			newStatusFunc: func(svc *apiv1.Service) *apiv1.Service {
+				ret := svc.DeepCopy()
+				ret.Status = apiv1.ServiceStatus{}
+				return ret
+			},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			svcKey := fmt.Sprintf("%s/%s", tc.svc.Namespace, tc.svc.Name)
+			coreClient := fake.NewSimpleClientset().CoreV1()
+			if _, err := coreClient.Services(tc.svc.Namespace).Create(context.TODO(), tc.svc, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("Create(%s) = %v, want nil", svcKey, err)
+			}
+			expectSvc := tc.newStatusFunc(tc.svc)
+			returnedSvc, err := PatchServiceStatus(coreClient, tc.svc, expectSvc.Status)
+			if err != nil {
+				t.Fatalf("PatchServiceStatus(%s) = %v, want nil", svcKey, err)
+			}
+
+			gotSvc, err := coreClient.Services(tc.svc.Namespace).Get(context.TODO(), tc.svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Get(%s) = %v, want nil", svcKey, err)
+			}
+			if diff := cmp.Diff(expectSvc, gotSvc); diff != "" {
+				t.Errorf("Got mismatch for Service (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotSvc, returnedSvc); diff != "" {
+				t.Errorf("PatchServiceStatus(%s) returned service does not match stored service (-want +got):\n%s", svcKey, diff)
 			}
 		})
 	}
@@ -378,5 +448,55 @@ func newTestService(namespace, name string) *apiv1.Service {
 				},
 			},
 		},
+	}
+}
+
+// TestAddResourceVersionPrecondition checks that the observed resourceVersion
+// lands in the patch body - where the API server treats it as a precondition
+// and rejects the patch with a Conflict on mismatch - and that an empty
+// version leaves the patch unconditional.
+func TestAddResourceVersionPrecondition(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc            string
+		patch           string
+		resourceVersion string
+		want            string
+	}{
+		{
+			desc:            "patch without metadata gains the precondition",
+			patch:           `{"status":{"conditions":[]}}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"resourceVersion":"42"},"status":{"conditions":[]}}`,
+		},
+		{
+			desc:            "existing metadata fields are preserved",
+			patch:           `{"metadata":{"finalizers":[]}}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"finalizers":[],"resourceVersion":"42"}}`,
+		},
+		{
+			desc:            "empty patch gains the precondition",
+			patch:           `{}`,
+			resourceVersion: "42",
+			want:            `{"metadata":{"resourceVersion":"42"}}`,
+		},
+		{
+			desc:            "empty resourceVersion leaves the patch unconditional",
+			patch:           `{"status":{}}`,
+			resourceVersion: "",
+			want:            `{"status":{}}`,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := AddResourceVersionPrecondition([]byte(tc.patch), tc.resourceVersion)
+			if err != nil {
+				t.Fatalf("AddResourceVersionPrecondition(%q, %q) returned error: %v", tc.patch, tc.resourceVersion, err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("AddResourceVersionPrecondition(%q, %q) = %s, want %s", tc.patch, tc.resourceVersion, got, tc.want)
+			}
+		})
 	}
 }
