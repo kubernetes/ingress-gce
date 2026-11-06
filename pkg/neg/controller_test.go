@@ -1630,6 +1630,37 @@ func TestEnqueueEndpoints(t *testing.T) {
 	}
 }
 
+func TestEnqueueEndpointSliceCoalescing(t *testing.T) {
+	t.Parallel()
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller, err := newTestControllerWithParamsAndContext(kubeClient, testContext, false, false)
+	if err != nil {
+		t.Fatalf("failed to create test controller: %v", err)
+	}
+	defer controller.stop()
+
+	controller.endpointSyncBatchPeriod = 100 * time.Millisecond
+	for i := 0; i < 5; i++ {
+		controller.enqueueEndpointSlice(&discovery.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("svc-%d", i),
+				Namespace: "default",
+				Labels:    map[string]string{discovery.LabelServiceName: "svc"},
+			},
+		})
+	}
+
+	if got := controller.endpointQueue.Len(); got != 0 {
+		t.Fatalf("endpointQueue.Len() immediately after enqueue = %d, want 0 (delayed for coalescing)", got)
+	}
+
+	ensureEndpointEnqueue(t, "default/svc", controller)
+	if got := controller.endpointQueue.Len(); got != 0 {
+		t.Errorf("endpointQueue.Len() after popping coalesced item = %d, want 0", got)
+	}
+}
+
 func TestServiceIPFamilies(t *testing.T) {
 	t.Parallel()
 	singleStack := apiv1.IPFamilyPolicySingleStack
