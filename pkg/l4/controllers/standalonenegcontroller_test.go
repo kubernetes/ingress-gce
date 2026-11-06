@@ -1495,10 +1495,12 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			},
 			bss: map[string]*composite.BackendService{
 				"bs": {
-					Name:         "bs",
-					Scope:        meta.Regional,
-					Version:      meta.VersionBeta,
-					HealthChecks: []string{"hc"},
+					Name:    "bs",
+					Scope:   meta.Regional,
+					Version: meta.VersionBeta,
+					HealthChecks: []string{
+						fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/us-central1/healthChecks/hc", project),
+					},
 					Backends: []*composite.Backend{
 						{
 							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
@@ -1593,7 +1595,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Name:         "bs1",
 					Scope:        meta.Regional,
 					Version:      meta.VersionBeta,
-					HealthChecks: []string{"hc"},
+					HealthChecks: []string{fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/us-central1/healthChecks/hc", project)},
 					Backends: []*composite.Backend{
 						{
 							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
@@ -1604,7 +1606,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Name:         "bs2",
 					Scope:        meta.Regional,
 					Version:      meta.VersionBeta,
-					HealthChecks: []string{"hc2"},
+					HealthChecks: []string{fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/us-central1/healthChecks/hc2", project)},
 					Backends: []*composite.Backend{
 						{
 							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-2", project),
@@ -1615,7 +1617,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Name:         "bs3",
 					Scope:        meta.Global,
 					Version:      meta.VersionBeta,
-					HealthChecks: []string{"hc3"},
+					HealthChecks: []string{fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/healthChecks/hc3", project)},
 					Backends: []*composite.Backend{
 						{
 							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-3", project),
@@ -1713,7 +1715,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Scope:        meta.Regional,
 					Version:      meta.VersionBeta,
 					PortName:     "12345",
-					HealthChecks: []string{"hc"},
+					HealthChecks: []string{fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/us-central1/healthChecks/hc", project)},
 					Backends: []*composite.Backend{
 						{
 							Group: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project),
@@ -2858,7 +2860,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 				}
 			}
 
-			got, err := lc.getServiceNEGLinks(tc.svc)
+			got, err := lc.serviceNEGLinks(tc.svc)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("getServiceNEGLinks() error = %v, wantErr = %v", err, tc.wantErr)
 			}

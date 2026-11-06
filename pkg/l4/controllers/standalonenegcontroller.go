@@ -371,15 +371,27 @@ func (lc *StandaloneNEGLBController) backendService(fr *composite.ForwardingRule
 	return bs, resourceID, nil
 }
 
-// parseHCURL parses the name and region of a health check from its SelfLink, e.g.
-// https://www.googleapis.com/compute/VERSION/projects/PROJECT/regions/REGION/healthChecks/NAME
-func parseHCURL(hcPath string) (string, string, error) {
+// parseHcUrl parses the name and scope (region name or "global") of a health check from its SelfLink, e.g.:
+// - https://www.googleapis.com/compute/VERSION/projects/PROJECT/regions/REGION/healthChecks/NAME
+// - https://www.googleapis.com/compute/VERSION/projects/PROJECT/global/healthChecks/NAME
+func parseHcUrl(hcPath string) (string, string, error) {
 	parts := strings.Split(hcPath, "/")
 	n := len(parts)
-	if n < 4 || parts[n-2] != "healthChecks" || parts[n-1] == "" || parts[n-4] != "regions" || parts[n-3] == "" {
-		return "", "", fmt.Errorf("invalid health check SelfLink %s", hcPath)
+	if n < 3 || parts[n-2] != "healthChecks" || parts[n-1] == "" {
+		return "", "", fmt.Errorf("invalid health check SelfLink %q", hcPath)
 	}
-	return parts[n-1], parts[n-3], nil
+
+	hcName := parts[n-1]
+	scopeOrRegion := parts[n-3]
+
+	switch {
+	case scopeOrRegion == "global":
+		return hcName, "global", nil
+	case n >= 4 && parts[n-4] == "regions" && scopeOrRegion != "":
+		return hcName, scopeOrRegion, nil
+	default:
+		return "", "", fmt.Errorf("invalid health check SelfLink %q", hcPath)
+	}
 }
 
 func (lc *StandaloneNEGLBController) validateBackendService(bs *composite.BackendService, resourceID *cloud.ResourceID, targetNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) error {
@@ -396,12 +408,16 @@ func (lc *StandaloneNEGLBController) healthCheckPort(bs *composite.BackendServic
 	if len(hcs) == 0 {
 		return "", nil
 	}
-	hcName, hcRegion, err := parseHCURL(hcs[0])
+	hcName, hcRegion, err := parseHcUrl(hcs[0])
 	if err != nil {
 		return "", err
 	}
 
-	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, hcRegion), meta.VersionBeta, svcLogger)
+	hcKey := meta.RegionalKey(hcName, hcRegion)
+	if hcRegion == "global" {
+		hcKey = meta.GlobalKey(hcName)
+	}
+	hc, err := composite.GetHealthCheck(lc.ctx.Cloud, hcKey, meta.VersionBeta, svcLogger)
 	if err != nil || hc.Type != "HTTP" {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoHTTPHealthChecks", "Backend service has no HTTP health checks")
 		svcLogger.V(4).Info(fmt.Sprintf("Backend Service %s has no HTTP health checks", bs.Name))
