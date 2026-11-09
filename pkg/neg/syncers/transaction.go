@@ -419,6 +419,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
+	if s.NegType == negtypes.VmIpEndpointType {
+		s.syncMetricsCollector.UpdateL4BackendPods(s.NegSyncerKey, l4BackendPods(s.EpCalculatorMode, endpointsData, targetMap))
+	}
+
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
 	// Calculate Pods that are already in the NEG
