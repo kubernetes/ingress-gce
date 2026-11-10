@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -181,5 +182,98 @@ func TestRetryOnSyncError(t *testing.T) {
 	syncerTester.mu.Unlock()
 	if syncCount != maxRetry+1 {
 		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncCount)
+	}
+}
+
+// TestSyncerConcurrentStopAndSync verifies that calling Stop() and Sync()
+// concurrently on a running syncer does not trigger a TOCTOU race condition or
+// panic with "send on closed channel".
+//
+// Background:
+// In production, background goroutines (e.g., attach/detach endpoint workers in
+// commitTransaction, backoffRetryHandler timers, or dualstack.Migrator timers)
+// call s.Sync() without holding syncerManager.mu while controller workers may
+// concurrently call s.Stop(). If Sync() checks IsStopped() and releases
+// stateLock before sending to s.syncCh, Stop() can close s.syncCh in the window
+// between the check and the channel send.
+func TestSyncerConcurrentStopAndSync(t *testing.T) {
+	for i := 0; i < 100000; i++ {
+		// Step 1: Initialize a syncer in the running state (stopped=false, open syncCh).
+		s := &syncer{}
+		s.init()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Step 2: Concurrently stop the syncer, which transitions stopped=true
+		// and closes s.syncCh under stateLock.
+		go func() {
+			defer wg.Done()
+			s.Stop()
+		}()
+
+		// Step 3: Concurrently signal Sync() to attempt a non-blocking send on
+		// s.syncCh. Yield the processor first to increase overlap with Stop()
+		// right at the check-then-send boundary, and recover any panic so the
+		// test reports a clear failure instead of crashing the test binary.
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("unexpected panic on iteration %d: %v", i, r)
+				}
+			}()
+			runtime.Gosched()
+			s.Sync()
+		}()
+
+		// Step 4: Wait for both goroutines to finish before the next iteration.
+		wg.Wait()
+	}
+}
+
+// TestSyncerConcurrentStartTOCTOU verifies that concurrent Start() calls on a
+// stopped syncer are serialized atomically so that:
+//  1. Exactly one Start() call succeeds and the other returns an "already running"
+//     error (no TOCTOU window between checking IsStopped()/IsShuttingDown() and
+//     initializing syncer state).
+//  2. Re-initializing s.syncCh in Start() does not race with the syncer loop
+//     goroutine reading from s.syncCh.
+func TestSyncerConcurrentStartTOCTOU(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		// Step 1: Create a new syncer in its initial stopped state.
+		syncerTester := newSyncerTester()
+
+		// Step 2: Use a barrier channel so both goroutines invoke Start() at the
+		// exact same instant, maximizing contention on the IsStopped() -> init()
+		// transition.
+		startBarrier := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		var err1, err2 error
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+			err1 = syncerTester.syncer.Start()
+		}()
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+			err2 = syncerTester.syncer.Start()
+		}()
+
+		// Step 3: Release both goroutines simultaneously and wait for both Start()
+		// calls to return, then stop the syncer to clean up its loop goroutine.
+		close(startBarrier)
+		wg.Wait()
+		syncerTester.syncer.Stop()
+
+		// Step 4: Assert mutual exclusion: one Start() must succeed (nil) and the
+		// concurrent Start() must fail (non-nil error). If both succeed, the
+		// TOCTOU window allowed two loop goroutines to start and leaked the first.
+		if (err1 == nil && err2 == nil) || (err1 != nil && err2 != nil) {
+			t.Fatalf("iteration %d: expected exactly one Start() to succeed and one to fail, got err1=%v, err2=%v", i, err1, err2)
+		}
 	}
 }
