@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -127,6 +128,7 @@ var (
 
 func TestMain(m *testing.M) {
 	flags.F.GKEClusterName = gce.DefaultTestClusterValues().ClusterName
+	os.Exit(m.Run())
 }
 
 func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool, readOnlyMode bool) (*Controller, error) {
