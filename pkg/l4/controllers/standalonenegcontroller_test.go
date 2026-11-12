@@ -63,15 +63,19 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 	globalBsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/backendServices/bs1", project)
 
 	testCases := []struct {
-		desc                string
-		svc                 *v1.Service
-		frs                 map[string]*composite.ForwardingRule
-		bss                 map[string]*composite.BackendService
-		hcs                 map[string]*composite.HealthCheck
-		svcNegs             []*negv1beta1.ServiceNetworkEndpointGroup
-		getBSErr            error
-		getHCErr            error
-		getHCErrName        string
+		desc         string
+		svc          *v1.Service
+		frs          map[string]*composite.ForwardingRule
+		bss          map[string]*composite.BackendService
+		hcs          map[string]*composite.HealthCheck
+		svcNegs      []*negv1beta1.ServiceNetworkEndpointGroup
+		getBSErr     error
+		getHCErr     error
+		getHCErrName string
+		// expect*Gets map a resource name to the expected number of GCE Get calls.
+		expectFRGets        map[string]int
+		expectBSGets        map[string]int
+		expectHCGets        map[string]int
 		expectIPs           []string
 		expectedAnnotations map[string]string
 		absentAnnotations   []string
@@ -1408,8 +1412,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					},
 				},
 			},
-			expectIPs:   []string{"10.0.0.1", "10.0.0.2"},
-			expectError: false,
+			expectBSGets: map[string]int{"bs-dedup": 1},
+			expectIPs:    []string{"10.0.0.1", "10.0.0.2"},
+			expectError:  false,
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionTrue,
@@ -1477,6 +1482,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					},
 				},
 			},
+			expectBSGets:       map[string]int{"bs-dedup-failing": 1},
 			expectIPs:          nil,
 			expectError:        true,
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
@@ -1715,6 +1721,68 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			},
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
 		},
+		{
+			desc:                "Shared backend services and health checks are retrieved once",
+			svc:                 standaloneSvc("fr1,fr2,fr3"),
+			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs1"), regionalFR("fr3", "10.0.0.102", "bs2")),
+			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc")),
+			hcs:                 hcsByName(httpHC("hc", 12345)),
+			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			expectFRGets:        map[string]int{"fr1": 1, "fr2": 1, "fr3": 1},
+			expectBSGets:        map[string]int{"bs1": 1, "bs2": 1},
+			expectHCGets:        map[string]int{"hc": 1},
+			expectIPs:           []string{"10.0.0.100", "10.0.0.101", "10.0.0.102"},
+			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
+			expectCondition:     ipProgrammedCondition("10.0.0.100", "10.0.0.101", "10.0.0.102"),
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345,10.0.0.101:12345,10.0.0.102:12345"},
+		},
+		{
+			desc:               "Shared backend service failing with a provider error is retrieved once",
+			svc:                standaloneSvc("fr1,fr2", withExternalHCAnnotation("10.0.0.100:12345,10.0.0.101:12345")),
+			frs:                frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
+			bss:                bssByName(regionalBS("bs", "hc")),
+			hcs:                hcsByName(httpHC("hc", 12345)),
+			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
+			expectBSGets:       map[string]int{"bs": 1},
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionFalse,
+				Reason:  "ProviderError",
+				Message: "GCE provider error encountered while retrieving forwarding rules",
+			},
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345,10.0.0.101:12345"},
+		},
+		{
+			desc:                "Shared health check failing with a provider error is retrieved once",
+			svc:                 standaloneSvc("fr1,fr2", withExternalHCAnnotation("10.0.0.100:12345,10.0.0.101:12345")),
+			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
+			bss:                 bssByName(regionalBS("bs", "hc")),
+			hcs:                 hcsByName(httpHC("hc", 12345)),
+			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			getHCErr:            &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
+			expectHCGets:        map[string]int{"hc": 1},
+			expectIPs:           []string{"10.0.0.100", "10.0.0.101"},
+			expectError:         true,
+			expectEventReasons:  []string{"ExternalHealthCheckFailed"},
+			expectCondition:     ipProgrammedCondition("10.0.0.100", "10.0.0.101"),
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345,10.0.0.101:12345"},
+		},
+		{
+			desc:                "Duplicate forwarding rule references are de-duplicated",
+			svc:                 standaloneSvc(fmt.Sprintf("fr1, fr1,https://www.googleapis.com/compute/v1/projects/%s/regions/%s/forwardingRules/fr1", project, region)),
+			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs")),
+			bss:                 bssByName(regionalBS("bs", "hc")),
+			hcs:                 hcsByName(httpHC("hc", 12345)),
+			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			expectFRGets:        map[string]int{"fr1": 1},
+			expectIPs:           []string{"10.0.0.100"},
+			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
+			expectCondition:     ipProgrammedCondition("10.0.0.100"),
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1793,21 +1861,38 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				}
 			}
 
-			bsGetCount := 0
+			frGets := make(map[string]int)
+			bsGets := make(map[string]int)
+			hcGets := make(map[string]int)
 			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockBetaForwardingRules.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaForwardingRules, options ...cloud.Option) (bool, *computebeta.ForwardingRule, error) {
+				frGets[key.Name]++
+				return false, nil, nil
+			}
+			mockGCE.MockBetaGlobalForwardingRules.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaGlobalForwardingRules, options ...cloud.Option) (bool, *computebeta.ForwardingRule, error) {
+				frGets[key.Name]++
+				return false, nil, nil
+			}
 			mockGCE.MockBetaRegionBackendServices.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaRegionBackendServices, options ...cloud.Option) (bool, *computebeta.BackendService, error) {
+				bsGets[key.Name]++
 				if tc.getBSErr != nil {
 					return true, nil, tc.getBSErr
 				}
-				if strings.HasPrefix(key.Name, "bs-dedup") {
-					bsGetCount++
-				}
+				return false, nil, nil
+			}
+			mockGCE.MockBetaBackendServices.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaBackendServices, options ...cloud.Option) (bool, *computebeta.BackendService, error) {
+				bsGets[key.Name]++
 				return false, nil, nil
 			}
 			mockGCE.MockBetaRegionHealthChecks.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaRegionHealthChecks, options ...cloud.Option) (bool, *computebeta.HealthCheck, error) {
+				hcGets[key.Name]++
 				if tc.getHCErr != nil && (tc.getHCErrName == "" || tc.getHCErrName == key.Name) {
 					return true, nil, tc.getHCErr
 				}
+				return false, nil, nil
+			}
+			mockGCE.MockBetaHealthChecks.GetHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBetaHealthChecks, options ...cloud.Option) (bool, *computebeta.HealthCheck, error) {
+				hcGets[key.Name]++
 				return false, nil, nil
 			}
 
@@ -1841,9 +1926,19 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				t.Errorf("sync() error = %v, expectError %v", err, tc.expectError)
 			}
 
-			if strings.Contains(tc.desc, "verify deduplication") {
-				if bsGetCount != 1 {
-					t.Errorf("Expected BackendService bs-dedup to be fetched 1 time, got %d", bsGetCount)
+			for name, want := range tc.expectFRGets {
+				if got := frGets[name]; got != want {
+					t.Errorf("Expected forwarding rule %s to be fetched %d time(s), got %d", name, want, got)
+				}
+			}
+			for name, want := range tc.expectBSGets {
+				if got := bsGets[name]; got != want {
+					t.Errorf("Expected backend service %s to be fetched %d time(s), got %d", name, want, got)
+				}
+			}
+			for name, want := range tc.expectHCGets {
+				if got := hcGets[name]; got != want {
+					t.Errorf("Expected health check %s to be fetched %d time(s), got %d", name, want, got)
 				}
 			}
 
