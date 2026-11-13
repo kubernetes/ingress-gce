@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -1455,6 +1456,39 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 				t.Fatalf("Wrong services PortInfoMap, got %+v, want %+v", portInfoMap, tc.wantSvcPortMap)
 			}
 		})
+	}
+}
+
+// TestMergeVmIpNEGsPortInfoILBWithoutFinalizer verifies that an ILB Service
+// without the ILBFinalizerV2 finalizer gets no NEG ports and a Normal event.
+func TestMergeVmIpNEGsPortInfoILBWithoutFinalizer(t *testing.T) {
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	defer controller.stop()
+	controller.runL4ForILB = true
+	recorder := record.NewFakeRecorder(10)
+	controller.recorder = recorder
+	svc := newTestILBService(controller, false, 80)
+
+	portInfoMap := make(negtypes.PortInfoMap)
+	negUsage := metricscollector.NegServiceState{}
+	if err := controller.mergeVmIpNEGsPortInfo(svc, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, portInfoMap, &negUsage, defaultNetwork); err != nil {
+		t.Fatalf("mergeVmIpNEGsPortInfo() returned error: %v", err)
+	}
+
+	if len(portInfoMap) != 0 {
+		t.Errorf("mergeVmIpNEGsPortInfo() added ports %+v, want none", portInfoMap)
+	}
+	wantPrefix := apiv1.EventTypeNormal + " ProcessServiceSkipped "
+	select {
+	case got := <-recorder.Events:
+		if !strings.HasPrefix(got, wantPrefix) {
+			t.Errorf("mergeVmIpNEGsPortInfo() recorded event %q, want prefix %q", got, wantPrefix)
+		}
+	default:
+		t.Errorf("mergeVmIpNEGsPortInfo() recorded no event, want one with prefix %q", wantPrefix)
 	}
 }
 
