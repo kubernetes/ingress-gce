@@ -22,6 +22,9 @@ type Manager struct {
 	recorders      map[Namespace]record.EventRecorder
 	lock           sync.Mutex
 	logger         klog.Logger
+	// scheme is shared by all recorders. It is not modified after NewManager
+	// returns, so the recorders can read it concurrently.
+	scheme *runtime.Scheme
 }
 
 func NewManager(recorderClient kubernetes.Interface, logger klog.Logger) *Manager {
@@ -30,6 +33,7 @@ func NewManager(recorderClient kubernetes.Interface, logger klog.Logger) *Manage
 		recorders:      make(map[Namespace]record.EventRecorder),
 		lock:           sync.Mutex{},
 		logger:         logger,
+		scheme:         newScheme(flags.F.EnablePSC, logger),
 	}
 }
 
@@ -46,24 +50,31 @@ func (m *Manager) Recorder(ns Namespace) record.EventRecorder {
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
 		Interface: m.recorderClient.CoreV1().Events(ns),
 	})
-	rec := broadcaster.NewRecorder(m.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
+	rec := broadcaster.NewRecorder(m.scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
 	m.recorders[ns] = rec
 
 	return rec
 }
 
-// generateScheme creates a scheme and adds relevant CRD schemes that will be used
-// for events
-func (m *Manager) generateScheme() *runtime.Scheme {
-	controllerScheme := scheme.Scheme
+// newScheme returns a scheme with the types that events can be recorded for:
+// the client-go types and, if enablePSC is set, the ServiceAttachment CRD types.
+//
+// The types are added to a new scheme instead of scheme.Scheme, because
+// scheme.Scheme is shared by the whole process and is not safe to modify while
+// other goroutines read it.
+func newScheme(enablePSC bool, logger klog.Logger) *runtime.Scheme {
+	s := runtime.NewScheme()
 
-	if flags.F.EnablePSC {
-		if err := sav1beta1.AddToScheme(controllerScheme); err != nil {
-			m.logger.Error(err, "Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder")
+	if err := scheme.AddToScheme(s); err != nil {
+		logger.Error(err, "Failed to add client-go scheme to event recorder")
+	}
+	if enablePSC {
+		if err := sav1beta1.AddToScheme(s); err != nil {
+			logger.Error(err, "Failed to add v1beta1 ServiceAttachment CRD scheme to event recorder")
 		}
-		if err := sav1.AddToScheme(controllerScheme); err != nil {
-			m.logger.Error(err, "Failed to add v1 ServiceAttachment CRD scheme to event recorder: %s")
+		if err := sav1.AddToScheme(s); err != nil {
+			logger.Error(err, "Failed to add v1 ServiceAttachment CRD scheme to event recorder")
 		}
 	}
-	return controllerScheme
+	return s
 }
