@@ -58,6 +58,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -926,9 +927,11 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
 	if needsNEGForILB && !utils.HasL4ILBFinalizerV2(service) {
-		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
+		msg := fmt.Sprintf("Skip processing NEGs for ILB Service %s/%s because it does not have the %s finalizer set by the L4 controller", service.Namespace, service.Name, common.ILBFinalizerV2)
 		c.logger.Info(msg)
-		c.recorder.Event(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
+		// Normal rather than Warning: a missing finalizer is an expected
+		// state, not a failure.
+		c.recorder.Event(service, apiv1.EventTypeNormal, "ProcessServiceSkipped", msg)
 		return nil
 	}
 
