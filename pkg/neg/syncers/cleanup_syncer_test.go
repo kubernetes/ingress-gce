@@ -3,6 +3,7 @@ package syncers
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -492,5 +493,81 @@ func TestCleanupSyncerVerification(t *testing.T) {
 	}
 	if len(updatedBinding.Status.NetworkEndpointGroups) != 0 {
 		t.Errorf("expected empty status NEGs after second iteration, got %v", updatedBinding.Status.NetworkEndpointGroups)
+	}
+}
+
+// TestCleanupSyncerConcurrentStartStopSyncTOCTOU verifies that concurrent
+// Start(), Stop(), and Sync() calls on a cleanupSyncer do not cause a TOCTOU
+// race condition or data race on internal channels (syncCh, stopCh) and state
+// (retryDelay).
+//
+// Background:
+// In negBindingManager, cleanupSyncer.Sync() can be invoked by controller
+// workers or time.AfterFunc retry timers outside negBindingManager.mu while
+// another worker stops or restarts the cleanupSyncer. If Sync() releases
+// stateLock after checking IsStopped() before sending on s.syncCh, or if loop()
+// reads s.syncCh/s.stopCh directly from struct fields without synchronization
+// while Start() reassigns those channels, a data race occurs.
+func TestCleanupSyncerConcurrentStartStopSyncTOCTOU(t *testing.T) {
+	// Step 1: Set up fake GCE cloud, NEGBinding client/lister, and status handler
+	// to construct a cleanupSyncer instance.
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+	}
+	bindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
+	negMetrics := metrics.FakeNegMetrics()
+	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
+		"test-binding",
+		"test-ns",
+		fakeNBClient,
+		bindingLister,
+		negMetrics,
+		&testNegBindingRegistry{},
+		klog.TODO(),
+	)
+	syncerKey := negtypes.NegSyncerKey{
+		Namespace:      "test-ns",
+		Name:           "test-svc",
+		NEGBindingName: "test-binding",
+	}
+	cloudAdapter := negtypes.NewAdapter(fakeGCE, negMetrics)
+	s := NewCleanupSyncer(syncerKey, cloudAdapter, statusHandler, bindingLister, "", klog.TODO())
+
+	for i := 0; i < 500; i++ {
+		// Step 2: Ensure the cleanupSyncer is started before each concurrent race
+		// iteration.
+		if err := s.Start(); err != nil {
+			t.Fatalf("Start() failed: %v", err)
+		}
+
+		// Step 3: Coordinate two goroutines via a barrier channel so they execute
+		// simultaneously:
+		//   - Goroutine 1 stops and immediately restarts the cleanupSyncer
+		//     (closing stopCh and reallocating stopCh/syncCh).
+		//   - Goroutine 2 concurrently calls Sync() (checking stopped state and
+		//     sending to syncCh).
+		startBarrier := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+			s.Stop()
+			_ = s.Start()
+		}()
+		go func() {
+			defer wg.Done()
+			<-startBarrier
+			s.Sync()
+		}()
+
+		// Step 4: Release both goroutines at once, wait for them to complete, and
+		// stop the syncer before the next iteration.
+		close(startBarrier)
+		wg.Wait()
+		s.Stop()
 	}
 }

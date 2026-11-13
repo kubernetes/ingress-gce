@@ -78,15 +78,19 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 }
 
 func (s *syncer) Start() error {
-	if !s.IsStopped() {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	if !s.stopped {
 		return fmt.Errorf("NEG syncer for %s is already running", s.NegSyncerKey.String())
 	}
-	if s.IsShuttingDown() {
+	if s.shuttingDown {
 		return fmt.Errorf("NEG syncer for %s is shutting down", s.NegSyncerKey.String())
 	}
 
 	s.logger.V(2).Info("Starting NEG syncer for service port", "negSyncerKey", s.NegSyncerKey.String())
-	s.init()
+	s.initLocked()
+
 	go func() {
 		for {
 			// equivalent to never retry
@@ -135,6 +139,10 @@ func (s *syncer) Start() error {
 func (s *syncer) init() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
+	s.initLocked()
+}
+
+func (s *syncer) initLocked() {
 	s.stopped = false
 	s.syncCh = make(chan interface{}, 1)
 }
@@ -151,7 +159,9 @@ func (s *syncer) Stop() {
 }
 
 func (s *syncer) Sync() bool {
-	if s.IsStopped() {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+	if s.stopped {
 		s.logger.Info("NEG syncer is already stopped.", "negSyncerKey", s.NegSyncerKey.String())
 		return false
 	}
