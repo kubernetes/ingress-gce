@@ -780,6 +780,20 @@ func healthStatusIndicatesDraining(ne *composite.NetworkEndpointWithHealthStatus
 	return len(ne.Healths) == 1 && (ne.Healths[0].HealthState == "UNHEALTHY" || ne.Healths[0].HealthState == "DRAINING")
 }
 
+// makeEndpointBatches removes all endpoints from the input set and returns
+// them in batches of at most MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints.
+func makeEndpointBatches(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType, endpointPodLabelMap labels.EndpointPodLabelMap, logger klog.Logger) ([]map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+	var batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint
+	for endpoints.Len() > 0 {
+		batch, err := makeEndpointBatch(endpoints, negType, endpointPodLabelMap, logger)
+		if err != nil {
+			return nil, err
+		}
+		batches = append(batches, batch)
+	}
+	return batches, nil
+}
+
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
 func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType, endpointPodLabelMap labels.EndpointPodLabelMap, logger klog.Logger) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
