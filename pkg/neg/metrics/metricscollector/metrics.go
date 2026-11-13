@@ -157,5 +157,9 @@ func registerMetrics(sm *SyncerMetrics, factory mtmetrics.MetricFactory) error {
 		return fmt.Errorf("failed to create number_of_negs: %w", err)
 	}
 
+	if err := registerL4PodChurnMetrics(sm, factory); err != nil {
+		return err
+	}
+
 	return nil
 }
