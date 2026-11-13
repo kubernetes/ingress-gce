@@ -82,13 +82,32 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	if err != nil {
 		return res, err
 	}
+	existingRules := []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP, existing.L3}
+
+	// Determine IP which will be used for this LB. If no forwarding rule has been established
+	// or specified in the Service spec, then ip = "".
+	ip, addressName, err := address.ExternalIPv4ToUse(m.Cloud, m.Recorder, m.Service, existingRules)
+	if err != nil {
+		return res, err
+	}
+
+	// Reserving the address only protects the IP while forwarding rules are deleted and
+	// re-created. When the existing rules already match the Service nothing is deleted, so
+	// skip the reservation (and its release) to avoid two address mutations on every resync.
+	if m.areRulesUpToDate(existing, backendServiceLink, ip) {
+		m.Logger.V(2).Info("Skipping address reservation and update of unchanged forwarding rules")
+		res.IPManaged = address.ManagementTypeFromSpec(m.Service, addressName)
+		res.L3FwdRule, res.TCPFwdRule, res.UDPFwdRule = existing.L3, existing.TCP, existing.UDP
+		return res, nil
+	}
 
 	addressHandle, err := address.HoldExternalIPv4(address.HoldConfig{
 		Cloud:                 m.Cloud,
-		Recorder:              m.Recorder,
 		Logger:                m.Logger,
 		Service:               m.Service,
-		ExistingRules:         []*composite.ForwardingRule{existing.Legacy, existing.TCP, existing.UDP, existing.L3},
+		IP:                    ip,
+		AddressName:           addressName,
+		ExistingRules:         existingRules,
 		ForwardingRuleDeleter: m.Provider,
 	})
 	if err != nil {
@@ -101,18 +120,26 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 		}
 	}()
 	res.IPManaged = addressHandle.Managed
+	// From here on, forwarding rules using the IP may only be deleted while it is reserved.
+	heldIP := addressHandle.IPToUse
 
 	// We need to delete legacy named forwarding rule to avoid port collisions
+	if existing.Legacy != nil {
+		if !IsRecreateAllowed(m.Cloud, heldIP.Reserved) {
+			return res, NewIPNotReservedError(existing.Legacy)
+		}
+	}
 	if err := m.deleteLegacy(); err != nil {
 		return res, err
 	}
 
 	if m.L3DefaultEnabled {
-		res.L3FwdRule, res.SyncStatus, err = m.ensure(existing.L3, backendServiceLink, "L3_DEFAULT", addressHandle.IP)
+		res.L3FwdRule, res.SyncStatus, err = m.ensure(existing.L3, backendServiceLink, "L3_DEFAULT", heldIP)
 		if err != nil {
 			return res, err
 		}
 
+		// The L3_DEFAULT rule holds the IP at this point, the split rules can be deleted safely.
 		haveToDeleteSplitRules := existing.TCP != nil || existing.UDP != nil
 		if haveToDeleteSplitRules {
 			m.Logger.Info("TCP and UDP forwarding rules are present, deleting them in favor of L3_DEFAULT rule")
@@ -126,6 +153,9 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	}
 
 	if existing.L3 != nil {
+		if !IsRecreateAllowed(m.Cloud, heldIP.Reserved) {
+			return res, NewIPNotReservedError(existing.L3)
+		}
 		m.Logger.Info("L3 forwarding rule is present, deleting it in favor of split TCP and UDP rules")
 		res.SyncStatus = l4utils.ResourceUpdate
 		if err := m.delete("l3"); err != nil {
@@ -139,11 +169,11 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		res.TCPFwdRule, tcpSync, tcpErr = m.ensure(existing.TCP, backendServiceLink, "TCP", addressHandle.IP)
+		res.TCPFwdRule, tcpSync, tcpErr = m.ensure(existing.TCP, backendServiceLink, "TCP", heldIP)
 	}()
 	go func() {
 		defer wg.Done()
-		res.UDPFwdRule, udpSync, udpErr = m.ensure(existing.UDP, backendServiceLink, "UDP", addressHandle.IP)
+		res.UDPFwdRule, udpSync, udpErr = m.ensure(existing.UDP, backendServiceLink, "UDP", heldIP)
 	}()
 
 	wg.Wait()
@@ -162,8 +192,8 @@ func (m *MixedManagerNetLB) EnsureIPv4(backendServiceLink string) (EnsureNetLBRe
 // * if doesnt exist 	-> create
 // * if equal 			-> do nothing
 // * if can be patched 	-> patch
-// * else 				-> delete and recreate
-func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
+// * else 				-> delete and recreate, only if ip is reserved (see IsRecreateAllowed)
+func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendServiceLink, protocol string, ip address.IPToUse) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	name := m.name(protocol)
 	start := time.Now()
 	log := m.Logger.
@@ -175,7 +205,7 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 		log.Info("Finished ensuring external forwarding rule for L4 NetLB Service", "timeTaken", time.Since(start))
 	}()
 
-	wanted, err := m.buildWanted(backendServiceLink, name, protocol, ip)
+	wanted, err := m.buildWanted(backendServiceLink, name, protocol, ip.IP)
 	if err != nil {
 		log.Error(err, "buildWanted returned error")
 		return nil, l4utils.ResourceResync, err
@@ -215,13 +245,59 @@ func (m *MixedManagerNetLB) ensure(existing *composite.ForwardingRule, backendSe
 	}
 
 	// Recreate
-	if err := m.recreate(wanted); err != nil {
+	if err := m.recreate(existing, wanted, ip.Reserved); err != nil {
 		return nil, l4utils.ResourceResync, err
 	}
 	return m.getAfterUpdate(name)
 }
 
-func (m *MixedManagerNetLB) recreate(wanted *composite.ForwardingRule) error {
+// areRulesUpToDate reports whether the existing forwarding rules already match what
+// EnsureIPv4 would create for the Service, so that the sync will neither create, patch
+// nor delete any IPv4 forwarding rule.
+//
+// It is intentionally conservative: whenever it can't prove that nothing will change
+// (a legacy rule or rules of the other mixed protocol mode that have to be deleted, a
+// missing rule, an IP that is being reset, or an error while building or comparing the
+// rules), it returns false and lets the regular path reserve the address and report any error.
+func (m *MixedManagerNetLB) areRulesUpToDate(existing NetLBManagedRules, backendServiceLink, ip string) bool {
+	if ip == "" || existing.Legacy != nil {
+		return false
+	}
+	if m.L3DefaultEnabled {
+		return existing.TCP == nil && existing.UDP == nil &&
+			m.isRuleUpToDate(existing.L3, backendServiceLink, "L3_DEFAULT", ip)
+	}
+	return existing.L3 == nil &&
+		m.isRuleUpToDate(existing.TCP, backendServiceLink, "TCP", ip) &&
+		m.isRuleUpToDate(existing.UDP, backendServiceLink, "UDP", ip)
+}
+
+// isRuleUpToDate reports whether the existing forwarding rule for the protocol
+// matches the rule that ensure would create.
+func (m *MixedManagerNetLB) isRuleUpToDate(existing *composite.ForwardingRule, backendServiceLink, protocol, ip string) bool {
+	if existing == nil {
+		return false
+	}
+	wanted, err := m.buildWanted(backendServiceLink, m.name(protocol), protocol, ip)
+	if err != nil {
+		m.Logger.V(2).Info("isRuleUpToDate: failed to build wanted forwarding rule, assuming it changed", "protocol", protocol, "err", err)
+		return false
+	}
+	equal, err := EqualIPv4(existing, wanted)
+	if err != nil {
+		m.Logger.V(2).Info("isRuleUpToDate: failed to compare forwarding rules, assuming they differ", "protocol", protocol, "err", err)
+		return false
+	}
+	return equal
+}
+
+// recreate replaces the existing forwarding rule with wanted by deleting and re-creating
+// it. ipReserved must report whether the IP is held by an address reservation, otherwise
+// the rule is left in place and an error is returned.
+func (m *MixedManagerNetLB) recreate(existing, wanted *composite.ForwardingRule, ipReserved bool) error {
+	if !IsRecreateAllowed(m.Cloud, ipReserved) {
+		return NewIPNotReservedError(existing)
+	}
 	if err := m.Provider.Delete(wanted.Name); err != nil {
 		return err
 	}
