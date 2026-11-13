@@ -23,8 +23,8 @@ import (
 	"testing"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
+	"github.com/google/go-cmp/cmp"
 
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -226,7 +226,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 
-			subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL, IsDefault: true})
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO(), &network.NetworkInfo{SubnetworkURL: defaultTestSubnetURL, IsDefault: true}, false)
 			if err != nil {
 				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 			}
@@ -402,21 +402,16 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 				SubnetworkURL: ipv6Subnet,
 			},
 			expectedNodesMap: map[types.NEGLocation]map[string]types.NetworkEndpoint{
-				// Invalid IPv6 should result in empty IPv6 field (or handled as per parseIPAddress returning empty string)
-				// Based on current logic: invalid/non-IPv4 IP is skipped entirely.
-				{Zone: "zone1", Subnet: defaultTestSubnet}: {},
+				// The node has no address in any family, so it is left out of the NEG and
+				// contributes no NEGLocation of its own. The only entry left is the one
+				// getSubsetPerZone pre-seeds for the network's own subnet in every zone.
+				{Zone: "zone1", Subnet: defaultTestSubnet + "-ipv6"}: {},
 			},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			oldFlags := flags.F.EnableIPv6NodeNEGEndpoints
-			flags.F.EnableIPv6NodeNEGEndpoints = true
-			defer func() {
-				flags.F.EnableIPv6NodeNEGEndpoints = oldFlags
-			}()
-
-			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo)
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo, true)
 			if err != nil {
 				t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 			}
@@ -447,6 +442,342 @@ func TestGetSubsetPerZoneMultinetwork(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetSubsetPerZoneDualStackAndMultiAddress(t *testing.T) {
+	testCases := []struct {
+		description      string
+		nodesMap         map[string][]*nodeWithSubnet
+		svcKey           string
+		networkInfo      network.NetworkInfo
+		enableIPv6Flag   bool
+		expectedNodesMap map[types.NEGLocation]types.NetworkEndpointSet
+	}{
+		{
+			description: "default network, dual-stack node with IPv6 first in addresses, IPv6 NEG disabled",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8:1::1"},
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: false,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "default network, dual-stack node with IPv6 first in addresses, IPv6 NEG enabled -> IPv4 still wins",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8:1::1"},
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "default network, dual-stack node with IPv4 first in addresses, IPv6 NEG enabled -> IPv4 still wins",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+						{Type: v1.NodeInternalIP, Address: "2001:db8:1::1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "default network, IPv6-only node, IPv6 NEG disabled -> skipped",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8:1::1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: false,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			description: "default network, IPv6-only node, IPv6 NEG enabled -> populated with IPv6",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8:1::1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IPv6: "2001:db8:1::1"},
+				),
+			},
+		},
+		{
+			description: "default network, IPv4-only node, IPv6 NEG enabled -> IPv6 stays empty",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "default network, IPv4-only node, IPv6 NEG disabled",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: false,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "default network, node with no addresses, IPv6 NEG enabled -> node absent",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, nil),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			description: "default network, node with no addresses, IPv6 NEG disabled -> node absent",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, nil),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: false,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(),
+			},
+		},
+		{
+			description: "default network, non-canonical IPv6 literal alongside IPv4, IPv6 NEG enabled -> IPv4 still wins",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithAddresses("n1_1", "zone1", defaultTestSubnet, []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+						{Type: v1.NodeInternalIP, Address: "2001:0DB8:0001:0000:0000:0000:0000:0001"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     true,
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "10.0.0.1"},
+				),
+			},
+		},
+		{
+			description: "non-default network, dual-stack node with IPv6 first in north-interfaces, IPv6 NEG disabled",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithMultiInterface("n1_1", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+						{Network: "net1", IpAddress: "2001:db8:1::1"},
+						{Network: "net1", IpAddress: "172.16.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net1",
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: false,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "172.16.0.1"},
+				),
+			},
+		},
+		{
+			description: "non-default network, dual-stack node with IPv6 first in north-interfaces, IPv6 NEG enabled -> IPv4 still wins",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithMultiInterface("n1_1", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+						{Network: "net1", IpAddress: "2001:db8:1::1"},
+						{Network: "net1", IpAddress: "172.16.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net1",
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "172.16.0.1"},
+				),
+			},
+		},
+		{
+			description: "non-default network, IPv4-only interface, IPv6 NEG enabled -> IPv6 stays empty",
+			nodesMap: map[string][]*nodeWithSubnet{
+				"zone1": {
+					makeNodeWithMultiInterface("n1_1", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+						{Network: "net1", IpAddress: "172.16.0.1"},
+					}),
+				},
+			},
+			svcKey: "svc123",
+			networkInfo: network.NetworkInfo{
+				IsDefault:     false,
+				K8sNetwork:    "net1",
+				SubnetworkURL: defaultTestSubnetURL,
+			},
+			enableIPv6Flag: true,
+			expectedNodesMap: map[types.NEGLocation]types.NetworkEndpointSet{
+				{Zone: "zone1", Subnet: defaultTestSubnet}: types.NewNetworkEndpointSet(
+					types.NetworkEndpoint{Node: "n1_1", IP: "172.16.0.1"},
+				),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			subsetMap, err := getSubsetPerZone(tc.nodesMap, maxSubsetSizeLocal, tc.svcKey, nil, klog.TODO(), &tc.networkInfo, tc.enableIPv6Flag)
+			if err != nil {
+				t.Fatalf("Failed to get subset: %v", err)
+			}
+			// Diff the whole result map, so that endpoints that are unexpected or in an
+			// unexpected NEGLocation fail the test too.
+			if diff := cmp.Diff(tc.expectedNodesMap, subsetMap); diff != "" {
+				t.Errorf("getSubsetPerZone() returned unexpected result (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func makeNodeWithAddresses(name, zone, subnet string, addresses []v1.NodeAddress) *nodeWithSubnet {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{utils.LabelNodeSubnet: subnet},
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: fmt.Sprintf("gce://testProject/%s/%s", zone, name),
+			PodCIDR:    "10.0.0.0/24",
+		},
+		Status: v1.NodeStatus{
+			Addresses: addresses,
+		},
+	}
+	return newNodeWithSubnet(node, subnet)
+}
+
+func makeNodeWithMultiInterface(name, zone, subnet string, northInterfaces networkv1.NorthInterfacesAnnotation) *nodeWithSubnet {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: map[string]string{},
+			Labels:      map[string]string{utils.LabelNodeSubnet: subnet},
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: fmt.Sprintf("gce://testProject/%s/%s", zone, name),
+			PodCIDR:    "10.0.0.0/24",
+		},
+	}
+	if len(northInterfaces) > 0 {
+		annotation, err := networkv1.MarshalNorthInterfacesAnnotation(northInterfaces)
+		if err == nil {
+			node.ObjectMeta.Annotations[networkv1.NorthInterfacesAnnotationKey] = annotation
+		}
+	}
+	return newNodeWithSubnet(node, subnet)
 }
 
 func makeNodes(startIndex, count int) []*nodeWithSubnet {
@@ -590,4 +921,181 @@ func isIdentical(subset1, subset2 []*nodeWithSubnet) bool {
 		}
 	}
 	return foundCount == len(subset1)
+}
+
+func TestNodeEndpoint(t *testing.T) {
+	t.Parallel()
+
+	defaultNetInfo := &network.NetworkInfo{IsDefault: true, SubnetworkURL: defaultTestSubnetURL}
+	nonDefaultNetInfo := &network.NetworkInfo{
+		IsDefault:     false,
+		K8sNetwork:    "custom-net",
+		SubnetworkURL: defaultTestSubnetURL,
+	}
+
+	testCases := []struct {
+		desc        string
+		node        *v1.Node
+		netInfo     *network.NetworkInfo
+		enableIPv6  bool
+		wantEP      types.NetworkEndpoint
+		wantSuccess bool
+		wantReason  nodeSkipReason
+	}{
+		{
+			desc: "default network, IPv4 only, enableIPv6 false",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-v4"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  false,
+			wantEP:      types.NetworkEndpoint{Node: "node-v4", IP: "10.0.0.1"},
+			wantSuccess: true,
+		},
+		{
+			desc: "default network, IPv4 only, enableIPv6 true",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-v4"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.1"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  true,
+			wantEP:      types.NetworkEndpoint{Node: "node-v4", IP: "10.0.0.1"},
+			wantSuccess: true,
+		},
+		{
+			desc: "default network, dual stack, enableIPv6 false",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-ds"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.2"},
+						{Type: v1.NodeInternalIP, Address: "2001:db8::2"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  false,
+			wantEP:      types.NetworkEndpoint{Node: "node-ds", IP: "10.0.0.2"},
+			wantSuccess: true,
+		},
+		{
+			desc: "default network, dual stack, enableIPv6 true -> IPv4 wins, endpoint stays single-stack",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-ds"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "10.0.0.2"},
+						{Type: v1.NodeInternalIP, Address: "2001:0db8:0000:0000:0000:0000:0000:0002"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  true,
+			wantEP:      types.NetworkEndpoint{Node: "node-ds", IP: "10.0.0.2"},
+			wantSuccess: true,
+		},
+		{
+			desc: "default network, IPv6 only, enableIPv6 false -> reports false",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-v6"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8::3"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  false,
+			wantSuccess: false,
+			wantReason:  skipReasonIPv6Disabled,
+		},
+		{
+			desc: "default network, IPv6 only, enableIPv6 true -> reports true with IPv6",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-v6"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeInternalIP, Address: "2001:db8::3"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  true,
+			wantEP:      types.NetworkEndpoint{Node: "node-v6", IPv6: "2001:db8::3"},
+			wantSuccess: true,
+		},
+		{
+			desc: "default network, no valid IPs -> reports false",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-none"},
+				Status: v1.NodeStatus{
+					Addresses: []v1.NodeAddress{
+						{Type: v1.NodeExternalIP, Address: "1.2.3.4"},
+					},
+				},
+			},
+			netInfo:     defaultNetInfo,
+			enableIPv6:  true,
+			wantSuccess: false,
+			wantReason:  skipReasonNoInternalIP,
+		},
+		{
+			desc: "non-default network, dual stack, enableIPv6 false",
+			node: makeNodeWithMultiInterface("node-custom-ds", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+				{Network: "custom-net", IpAddress: "172.16.0.5"},
+				{Network: "custom-net", IpAddress: "2001:db8:5::5"},
+			}).node,
+			netInfo:     nonDefaultNetInfo,
+			enableIPv6:  false,
+			wantEP:      types.NetworkEndpoint{Node: "node-custom-ds", IP: "172.16.0.5"},
+			wantSuccess: true,
+		},
+		{
+			desc: "non-default network, dual stack, enableIPv6 true -> IPv4 wins, endpoint stays single-stack",
+			node: makeNodeWithMultiInterface("node-custom-ds", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+				{Network: "custom-net", IpAddress: "172.16.0.5"},
+				{Network: "custom-net", IpAddress: "2001:db8:5::5"},
+			}).node,
+			netInfo:     nonDefaultNetInfo,
+			enableIPv6:  true,
+			wantEP:      types.NetworkEndpoint{Node: "node-custom-ds", IP: "172.16.0.5"},
+			wantSuccess: true,
+		},
+		{
+			desc: "non-default network, network not found on node -> reports false",
+			node: makeNodeWithMultiInterface("node-other-net", "zone1", defaultTestSubnet, networkv1.NorthInterfacesAnnotation{
+				{Network: "other-net", IpAddress: "172.16.0.5"},
+				{Network: "other-net", IpAddress: "2001:db8:5::5"},
+			}).node,
+			netInfo:     nonDefaultNetInfo,
+			enableIPv6:  true,
+			wantSuccess: false,
+			wantReason:  skipReasonNotOnNetwork,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotEP, gotReason, gotOK := nodeEndpoint(tc.node, tc.netInfo, tc.enableIPv6, klog.TODO())
+			if gotOK != tc.wantSuccess {
+				t.Fatalf("nodeEndpoint() ok = %v, want %v", gotOK, tc.wantSuccess)
+			}
+			if tc.wantSuccess && gotEP != tc.wantEP {
+				t.Errorf("nodeEndpoint() = %+v, want %+v", gotEP, tc.wantEP)
+			}
+			if gotReason != tc.wantReason {
+				t.Errorf("nodeEndpoint() reason = %q, want %q", gotReason, tc.wantReason)
+			}
+		})
+	}
 }
