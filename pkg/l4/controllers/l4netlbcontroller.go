@@ -44,7 +44,6 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/metrics"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	activecontrollermetrics "k8s.io/ingress-gce/pkg/metrics/activecontroller"
-	negmetrics "k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -143,12 +142,8 @@ func NewL4NetLBController(
 		// if it was not possible to retrieve network information use standard context as cloud network provider
 		adapter = ctx.Cloud
 	}
-	negMetrics, err := negmetrics.NewNegMetrics()
-	if err != nil {
-		klog.Fatalf("Failed to initialize NEG metrics: %v", err)
-	}
 	l4netLBc.networkResolver = network.NewNetworksResolver(networkLister, gkeNetworkParamSetLister, adapter, ctx.EnableMultinetworking, logger)
-	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud, negMetrics), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
+	l4netLBc.negLinker = backends.NewNEGLinker(l4netLBc.backendPool, negtypes.NewAdapter(ctx.Cloud, negtypes.NoopMetricsCollector{}), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.syncWrapper, logger)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

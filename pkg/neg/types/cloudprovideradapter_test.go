@@ -155,3 +155,24 @@ func TestZones(t *testing.T) {
 		t.Errorf("Zones did not hit cache, returned %v, wanted %v", zones2, expectedSet.List())
 	}
 }
+
+func TestAdapterWithNoopMetrics(t *testing.T) {
+	t.Parallel()
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	MockNetworkEndpointAPIs(fakeGCE)
+	neg := &composite.NetworkEndpointGroup{Name: "neg1", Version: meta.VersionGA}
+
+	for _, collector := range []NegMetricsCollector{NoopMetricsCollector{}, nil} {
+		adapter := NewAdapter(fakeGCE, collector)
+		if err := adapter.CreateNetworkEndpointGroup(neg, "zone1", klog.TODO()); err != nil {
+			t.Fatalf("Got CreateNetworkEndpointGroup() = %v, want nil", err)
+		}
+		if _, err := adapter.GetNetworkEndpointGroup("neg1", "zone1", meta.VersionGA, klog.TODO()); err != nil {
+			t.Fatalf("Got GetNetworkEndpointGroup() = %v, want nil", err)
+		}
+		if err := adapter.DeleteNetworkEndpointGroup("neg1", "zone1", meta.VersionGA, klog.TODO()); err != nil {
+			t.Fatalf("Got DeleteNetworkEndpointGroup() = %v, want nil", err)
+		}
+	}
+}
