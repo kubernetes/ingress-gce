@@ -78,6 +78,8 @@ type L4NetLBController struct {
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
+	// periodicEnqueuer re-enqueues services on informer resyncs.
+	periodicEnqueuer *periodicEnqueuer
 
 	backendPool                 *backends.Pool
 	instancePool                instancegroups.Manager
@@ -123,9 +125,13 @@ func NewL4NetLBController(
 		enableNEGSupport:            ctx.EnableL4NetLBNEGs,
 		enableNEGAsDefault:          ctx.EnableL4NetLBNEGsDefault,
 		serviceVersions:             NewServiceVersionsTracker(),
+		periodicEnqueuer:            newPeriodicEnqueuer(ctx.ResyncPeriod, ctx.L4ResyncSpreadFactor),
 		logger:                      logger,
 		hasSynced:                   ctx.HasSynced,
 		enableRBSDefault:            ctx.EnableL4NetLBRBSByDefault,
+	}
+	if window := l4netLBc.periodicEnqueuer.window; window > 0 {
+		logger.Info("Spreading periodic re-enqueues of services", "window", window, "resyncPeriod", ctx.ResyncPeriod)
 	}
 	var networkLister cache.Indexer
 	if ctx.NetworkInformer != nil {
@@ -174,10 +180,19 @@ func NewL4NetLBController(
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			svcLogger := logger.WithValues("serviceKey", svcKey)
 			if shouldProcess, isResync := l4netLBc.shouldProcessService(curSvc, oldSvc, svcLogger); shouldProcess {
-				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
-				if !isResync {
-					l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
+				if isResync {
+					// Informer resync of an unmodified Service: nothing to react to, so the
+					// re-enqueue may be delayed by the Service's spread offset. Anything
+					// else keeps being enqueued immediately.
+					l4netLBc.periodicEnqueuer.enqueue(svcKey, func() {
+						svcLogger.V(3).Info("Periodic enqueueing of service")
+						l4netLBc.svcQueue.Enqueue(curSvc)
+						l4netLBc.enqueueTracker.Track()
+					})
+					return
 				}
+				svcLogger.V(3).Info("L4 External LoadBalancer Service updated, enqueuing")
+				l4netLBc.serviceVersions.SetLastUpdateSeen(svcKey, curSvc.ResourceVersion, svcLogger)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return

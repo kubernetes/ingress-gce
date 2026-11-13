@@ -18,8 +18,10 @@ package controllers
 
 import (
 	"fmt"
+	"hash/maphash"
 	"reflect"
 	"sort"
+	"time"
 
 	"k8s.io/ingress-gce/pkg/l4/resources"
 
@@ -41,6 +43,66 @@ const (
 	// ReasonL4LBConfigAnnotationRemoved is used when the annotation for L4LBConfig is removed from the service.
 	ReasonL4LBConfigAnnotationRemoved = "L4LBConfigAnnotationRemoved"
 )
+
+// periodicEnqueuer delays the periodic re-enqueue of L4 LB Services, which is
+// triggered by informer resyncs, by a per-Service offset.
+//
+// Without spreading, every resync re-enqueues every LoadBalancer Service of
+// the cluster at once, and controller instances whose resync ticks are aligned
+// (e.g. after all of them recovered from the same cloud API outage) do so at
+// the same moment. With spreading, each Service gets a stable pseudo-random
+// offset in [0, window): it is still re-enqueued once per resync, just
+// phase-shifted, so the load is spread over the window. The hash is seeded
+// randomly per periodicEnqueuer, so that equally named Services of different
+// clusters do not share a phase.
+//
+// A delayed enqueue is never cancelled. Like the resync it replaces, it
+// re-reconciles the Service whatever happened to it since: the sync of a
+// Service deleted in the meantime returns early, and a queue that was shut
+// down drops the enqueue.
+//
+// A periodicEnqueuer is safe for concurrent use.
+type periodicEnqueuer struct {
+	// window is the duration over which enqueues are spread. 0 disables spreading.
+	window time.Duration
+	seed   maphash.Seed
+	// afterFunc is time.AfterFunc, replaceable in tests.
+	afterFunc func(time.Duration, func()) *time.Timer
+}
+
+// newPeriodicEnqueuer returns a periodicEnqueuer spreading periodic enqueues
+// over spreadFactor*resyncPeriod. A spreadFactor <= 0 disables spreading.
+func newPeriodicEnqueuer(resyncPeriod time.Duration, spreadFactor float64) *periodicEnqueuer {
+	var window time.Duration
+	if spreadFactor > 0 && resyncPeriod > 0 {
+		window = time.Duration(spreadFactor * float64(resyncPeriod))
+	}
+	return &periodicEnqueuer{
+		window:    window,
+		seed:      maphash.MakeSeed(),
+		afterFunc: time.AfterFunc,
+	}
+}
+
+// offset returns the stable offset of key within the spread window,
+// or 0 if spreading is disabled.
+func (p *periodicEnqueuer) offset(key string) time.Duration {
+	if p.window <= 0 {
+		return 0
+	}
+	return time.Duration(maphash.String(p.seed, key) % uint64(p.window))
+}
+
+// enqueue calls enqueueFn after the offset of key, or synchronously if the
+// offset is 0.
+func (p *periodicEnqueuer) enqueue(key string, enqueueFn func()) {
+	delay := p.offset(key)
+	if delay <= 0 {
+		enqueueFn()
+		return
+	}
+	p.afterFunc(delay, enqueueFn)
+}
 
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
