@@ -1265,6 +1265,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 		emptyNegRefList      bool
 		negDesc              string
 		malformedNegSelflink bool
+		selflinkWithoutName  bool
 		expectNegGC          bool
 		expectCrGC           bool
 		expectErr            bool
@@ -1316,6 +1317,15 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectCrGC:           true,
 			expectErr:            true,
 			negDesc:              matchingDesc.String(),
+		},
+		{desc: "neg config not in svcPortMap, neg selflink without resource name",
+			negsExist:           true,
+			markedForDeletion:   false,
+			selflinkWithoutName: true,
+			expectNegGC:         true,
+			expectCrGC:          true,
+			expectErr:           true,
+			negDesc:             matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap, empty neg list, neg has matching description",
 			negsExist:         true,
@@ -1464,6 +1474,11 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						} else {
 							cr.Status.NetworkEndpointGroups = []negv1beta1.NegObjectReference{{SelfLink: ""}}
 						}
+					}
+					if tc.selflinkWithoutName {
+						// A project URL is parsed without an error, but has no resource name.
+						projectRef := negv1beta1.NegObjectReference{SelfLink: "https://www.googleapis.com/compute/v1/projects/test-project"}
+						cr.Status.NetworkEndpointGroups = append([]negv1beta1.NegObjectReference{projectRef}, cr.Status.NetworkEndpointGroups...)
 					}
 
 					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
