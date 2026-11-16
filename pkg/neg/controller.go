@@ -657,7 +657,7 @@ func (c *Controller) processNextNodeWorkItem() bool {
 func (c *Controller) processNode() {
 	defer func() {
 		now := c.nodeSyncTracker.Track()
-		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.negMetrics.PublishLastSyncTimestamp(now)
 	}()
 
 	if c.readOnlyMode {
@@ -672,7 +672,7 @@ func (c *Controller) processNode() {
 func (c *Controller) processEndpoint(key string) {
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.negMetrics.PublishLastSyncTimestamp(now)
 	}()
 
 	if c.readOnlyMode {
@@ -714,7 +714,7 @@ func (c *Controller) processService(key string) error {
 	c.logger.V(3).Info("Processing service", "service", key)
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.negMetrics.PublishLastSyncTimestamp(now)
 		c.logger.V(3).Info("Finished processing service", "service", key)
 	}()
 
@@ -827,7 +827,7 @@ func (c *Controller) processNextNodeTopologyWorkItem() bool {
 func (c *Controller) processNodeTopology() {
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.negMetrics.PublishLastSyncTimestamp(now)
 	}()
 	if c.readOnlyMode {
 		c.logger.V(3).Info("Skipping syncing node topology since NEG controller is in read-only mode")
@@ -1304,7 +1304,7 @@ func (c *Controller) processNEGBinding(key string) error {
 	c.logger.V(3).Info("Processing NEGBinding", "binding", key)
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.negMetrics.PublishLastSyncTimestamp(now)
 		c.logger.V(3).Info("Finished processing NEGBinding", "binding", key)
 	}()
 

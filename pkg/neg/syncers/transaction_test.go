@@ -5623,7 +5623,7 @@ func TestEnsureNetworkEndpointGroupsForNEGBinding(t *testing.T) {
 				},
 			}
 
-			negMetrics := metrics.NewNegMetrics()
+			negMetrics := metrics.FakeNegMetrics()
 			statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 				bindingName,
 				namespace,
@@ -5896,7 +5896,7 @@ func TestNEGBindingSyncerClusterURLValidation(t *testing.T) {
 				namespace,
 				fakeBindingClient,
 				bindingInformer.GetIndexer(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 				registry,
 				klog.TODO(),
 			)
@@ -6032,7 +6032,7 @@ func TestNEGBindingSyncerPartialValidationFailure(t *testing.T) {
 		testServiceNamespace,
 		fakeBindingClient,
 		bindingInformer.GetIndexer(),
-		metrics.NewNegMetrics(),
+		metrics.FakeNegMetrics(),
 		registry,
 		klog.TODO(),
 	)
@@ -6398,7 +6398,7 @@ func TestNEGBindingSyncStatusVerification(t *testing.T) {
 				testServiceNamespace,
 				fakeBindingClient,
 				bindingInformer.GetIndexer(),
-				metrics.NewNegMetrics(),
+				metrics.FakeNegMetrics(),
 				registry,
 				klog.TODO(),
 			)
@@ -6545,7 +6545,7 @@ func TestEnsureNetworkEndpointGroupsDeterministicOrder(t *testing.T) {
 		namespace,
 		fakeBindingClient,
 		bindingInformer.GetIndexer(),
-		metrics.NewNegMetrics(),
+		metrics.FakeNegMetrics(),
 		registry,
 		klog.TODO(),
 	)
@@ -6620,7 +6620,7 @@ func TestEnsureNetworkEndpointGroupsDeterministicOrder(t *testing.T) {
 		manageLifecycle:      false,
 		networkInfo:          network.NetworkInfo{IsDefault: true, NetworkURL: testNetwork, SubnetworkURL: testSubnetwork},
 		syncMetricsCollector: metricscollector.FakeSyncerMetrics(),
-		negMetrics:           metrics.NewNegMetrics(),
+		negMetrics:           metrics.FakeNegMetrics(),
 	}
 
 	// Step 4: Run ensureNetworkEndpointGroups repeatedly to exercise randomized map iteration order,
