@@ -166,7 +166,6 @@ func main() {
 	}
 
 	// register NEG prometheus metrics
-	metrics.RegisterMetrics()
 	syncMetrics.RegisterMetrics()
 
 	if flags.F.EnableNEGController {
@@ -746,7 +745,10 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		adapter = ctx.Cloud
 	}
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics, err := metrics.NewNegMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize NEG metrics: %w", err)
+	}
 	syncerMetrics := syncMetrics.NewNegMetricsCollector(flags.F.NegMetricsExportInterval, logger)
 	go syncerMetrics.Run(stopCh)
 

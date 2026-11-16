@@ -89,7 +89,7 @@ func TestCleanupSyncerNEGNotFound(t *testing.T) {
 		NEGBindingName: bindingName,
 	}
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	cloudAdapter := negtypes.NewAdapter(fakeGCE, negMetrics)
 	syncer := NewCleanupSyncer(syncerKey, cloudAdapter, statusHandler, bindingLister, "", klog.TODO()).(*cleanupSyncer)
 
@@ -134,7 +134,7 @@ func TestCleanupSyncerInvalidURL(t *testing.T) {
 		t.Fatalf("failed to create binding: %v", err)
 	}
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 		bindingName,
 		namespace,
@@ -242,7 +242,7 @@ func TestCleanupSyncerDeduplicationAndStatusReporting(t *testing.T) {
 	bindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
 	bindingLister.Add(binding)
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 		bindingName,
 		namespace,
@@ -404,7 +404,7 @@ func TestCleanupSyncerVerification(t *testing.T) {
 	bindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
 	bindingLister.Add(binding)
 
-	negMetrics := metrics.NewNegMetrics()
+	negMetrics := metrics.FakeNegMetrics()
 	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
 		bindingName,
 		namespace,

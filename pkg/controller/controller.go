@@ -133,6 +133,11 @@ func NewLoadBalancerController(
 
 	enableMultiSubnetClusterPhase1 := flags.F.EnableMultiSubnetClusterPhase1
 
+	negMetrics, err := negmetrics.NewNegMetrics()
+	if err != nil {
+		klog.Fatalf("Failed to initialize NEG metrics: %v", err)
+	}
+
 	lbc := LoadBalancerController{
 		ctx:                            ctx,
 		Translator:                     ctx.Translator,
@@ -141,7 +146,7 @@ func NewLoadBalancerController(
 		instancePool:                   ctx.InstancePool,
 		l7Pool:                         loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID, logger), logger),
 		backendSyncer:                  backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud, ctx.Translator),
-		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud, negmetrics.NewNegMetrics()), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
+		negLinker:                      backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud, negMetrics), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger),
 		igLinker:                       backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool, logger),
 		metrics:                        ctx.ControllerMetrics,
 		ZoneGetter:                     ctx.ZoneGetter,
