@@ -24,9 +24,14 @@ import (
 
 	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/klog/v2"
 )
+
+type nonGathererRegistry struct{}
+
+func (nonGathererRegistry) Register(string, prometheus.Gatherer) error { return nil }
+func (nonGathererRegistry) Unregister(string)                          {}
 
 func TestLoopbackOnly(t *testing.T) {
 	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,13 +77,31 @@ func TestLoopbackOnly(t *testing.T) {
 			wantBodySubstr: "Forbidden: accessed from outside localhost",
 		},
 		{
-			name:           "Missing port in RemoteAddr is forbidden",
+			name:           "Missing port in RemoteAddr (net.SplitHostPort error) is forbidden",
 			remoteAddr:     "127.0.0.1",
 			wantStatusCode: http.StatusForbidden,
 			wantBodySubstr: "Forbidden: accessed from outside localhost",
 		},
 		{
-			name:           "Invalid IP in RemoteAddr is forbidden",
+			name:           "Empty RemoteAddr (net.SplitHostPort error) is forbidden",
+			remoteAddr:     "",
+			wantStatusCode: http.StatusForbidden,
+			wantBodySubstr: "Forbidden: accessed from outside localhost",
+		},
+		{
+			name:           "Malformed host:port with multiple colons (net.SplitHostPort error) is forbidden",
+			remoteAddr:     "127.0.0.1:8080:8087",
+			wantStatusCode: http.StatusForbidden,
+			wantBodySubstr: "Forbidden: accessed from outside localhost",
+		},
+		{
+			name:           "Malformed IPv6 host:port missing closing bracket (net.SplitHostPort error) is forbidden",
+			remoteAddr:     "[::1:8087",
+			wantStatusCode: http.StatusForbidden,
+			wantBodySubstr: "Forbidden: accessed from outside localhost",
+		},
+		{
+			name:           "Invalid IP in RemoteAddr (net.ParseIP nil) is forbidden",
 			remoteAddr:     "not-an-ip:8087",
 			wantStatusCode: http.StatusForbidden,
 			wantBodySubstr: "Forbidden: accessed from outside localhost",
@@ -105,36 +128,44 @@ func TestLoopbackOnly(t *testing.T) {
 
 func TestMultitenancyMetricsEndpoint(t *testing.T) {
 	origMultiProject := flags.F.EnableMultiProjectMode
+	origGatherer := mtmetrics.DefaultMultiGatherer
 	defer func() {
 		flags.F.EnableMultiProjectMode = origMultiProject
+		mtmetrics.DefaultMultiGatherer = origGatherer
 	}()
-
-	gatherer, ok := mtmetrics.DefaultMultiGatherer.(prometheus.Gatherer)
-	if !ok {
-		t.Fatalf("mtmetrics.DefaultMultiGatherer does not implement prometheus.Gatherer")
-	}
 
 	testCases := []struct {
 		name                   string
 		enableMultiProjectMode bool
+		gatherer               mtmetrics.TenantGathererRegistry
 		remoteAddr             string
 		wantStatusCode         int
 	}{
 		{
 			name:                   "/metrics/multitenancy rejects external non-loopback requests when multi-project mode enabled",
 			enableMultiProjectMode: true,
+			gatherer:               origGatherer,
 			remoteAddr:             "10.128.0.5:54321",
 			wantStatusCode:         http.StatusForbidden,
 		},
 		{
 			name:                   "/metrics/multitenancy allows loopback requests when multi-project mode enabled",
 			enableMultiProjectMode: true,
+			gatherer:               origGatherer,
 			remoteAddr:             "127.0.0.1:54321",
 			wantStatusCode:         http.StatusOK,
 		},
 		{
 			name:                   "/metrics/multitenancy is not registered when multi-project mode disabled",
 			enableMultiProjectMode: false,
+			gatherer:               origGatherer,
+			remoteAddr:             "127.0.0.1:54321",
+			wantStatusCode:         http.StatusNotFound,
+		},
+		{
+			name:                   "/metrics/multitenancy is not registered and does not crash when DefaultMultiGatherer does not implement prometheus.Gatherer",
+			enableMultiProjectMode: true,
+			gatherer:               nonGathererRegistry{},
 			remoteAddr:             "127.0.0.1:54321",
 			wantStatusCode:         http.StatusNotFound,
 		},
@@ -143,9 +174,10 @@ func TestMultitenancyMetricsEndpoint(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.F.EnableMultiProjectMode = tc.enableMultiProjectMode
+			mtmetrics.DefaultMultiGatherer = tc.gatherer
 			mux := http.NewServeMux()
 			if flags.F.EnableMultiProjectMode {
-				mux.HandleFunc("/metrics/multitenancy", loopbackOnly(promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{})))
+				registerMultitenancyMetricsHandler(mux, klog.TODO())
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/metrics/multitenancy", nil)
