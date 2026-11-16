@@ -21,8 +21,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/gke-enterprise-mt/pkg/mtmetrics"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus"
+	dto_pb "github.com/prometheus/client_model/go"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog/v2"
@@ -238,7 +241,7 @@ func TestComputeDualStackMigrationCounts(t *testing.T) {
 }
 
 func TestComputeLabelMetrics(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := FakeSyncerMetrics()
 	syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -308,7 +311,7 @@ func TestComputeLabelMetrics(t *testing.T) {
 }
 
 func TestComputeNegCounts(t *testing.T) {
-	collector := NewNegMetricsCollector(10*time.Second, klog.TODO())
+	collector := FakeSyncerMetrics()
 	l7Syncer1 := negtypes.NegSyncerKey{
 		Namespace:        "ns1",
 		Name:             "svc-1",
@@ -733,5 +736,191 @@ func newNegState(standalone, ingress, customNamed, preprovisioning, success, err
 		PreprovisionedNeg: preprovisioning,
 		SuccessfulNeg:     success,
 		ErrorNeg:          err,
+	}
+}
+
+func findCollectorMetricFamily(gatherer prometheus.Gatherer, name string) *dto_pb.MetricFamily {
+	mfs, err := gatherer.Gather()
+	if err != nil {
+		return nil
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == name {
+			return mf
+		}
+	}
+	return nil
+}
+
+func getCollectorMetricLabel(m *dto_pb.Metric, labelName string) string {
+	for _, lp := range m.GetLabel() {
+		if lp.GetName() == labelName {
+			return lp.GetValue()
+		}
+	}
+	return ""
+}
+
+// TestMultiTenantSyncerMetrics_TenantUIDTaggingAndExport verifies that SyncerMetrics
+// created via MTMetricFactory has tenant_uid tagged on metrics in the tenant registry.
+func TestMultiTenantSyncerMetrics_TenantUIDTaggingAndExport(t *testing.T) {
+	globalReg := prometheus.NewRegistry()
+	tracker := mtmetrics.NewGlobalMetricsTracker()
+
+	tenant1UID := "tenant-sync-1"
+	tenant2UID := "tenant-sync-2"
+
+	factory1 := mtmetrics.NewMTMetricFactory(tenant1UID, globalReg, tracker)
+	defer factory1.Cleanup()
+	sm1, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory1, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 1: %v", err)
+	}
+
+	factory2 := mtmetrics.NewMTMetricFactory(tenant2UID, globalReg, tracker)
+	defer factory2.Cleanup()
+	sm2, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory2, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 2: %v", err)
+	}
+
+	key1 := syncerKey(1)
+	key2 := syncerKey(2)
+
+	sm1.UpdateSyncerStatusInMetrics(key1, nil, false)
+	sm1.UpdateSyncerEPMetrics(key1, types.StateCountMap{types.Duplicate: 3}, types.StateCountMap{})
+	sm1.export()
+
+	sm2.UpdateSyncerStatusInMetrics(key2, nil, false)
+	sm2.UpdateSyncerEPMetrics(key2, types.StateCountMap{types.Duplicate: 7}, types.StateCountMap{})
+	sm2.export()
+
+	// Verify tenant1 metrics have tenant_uid = tenant-sync-1
+	mf1 := findCollectorMetricFamily(factory1.Registry(), "neg_controller_syncer_endpoint_state")
+	if mf1 == nil || len(mf1.GetMetric()) == 0 {
+		t.Fatalf("expected neg_controller_syncer_endpoint_state in tenant1 registry, got nil or empty")
+	}
+	for _, m := range mf1.GetMetric() {
+		if uid := getCollectorMetricLabel(m, "tenant_uid"); uid != tenant1UID {
+			t.Errorf("expected tenant_uid=%q in tenant1 metric, got %q", tenant1UID, uid)
+		}
+	}
+
+	// Verify tenant2 metrics have tenant_uid = tenant-sync-2
+	mf2 := findCollectorMetricFamily(factory2.Registry(), "neg_controller_syncer_endpoint_state")
+	if mf2 == nil || len(mf2.GetMetric()) == 0 {
+		t.Fatalf("expected neg_controller_syncer_endpoint_state in tenant2 registry, got nil or empty")
+	}
+	for _, m := range mf2.GetMetric() {
+		if uid := getCollectorMetricLabel(m, "tenant_uid"); uid != tenant2UID {
+			t.Errorf("expected tenant_uid=%q in tenant2 metric, got %q", tenant2UID, uid)
+		}
+	}
+}
+
+// TestMultiTenantSyncerMetrics_DualStackMigrationLongestDurationMaxStrategy verifies
+// that dual_stack_migration_longest_unfinished_duration_seconds uses StrategyMax across tenants.
+func TestMultiTenantSyncerMetrics_DualStackMigrationLongestDurationMaxStrategy(t *testing.T) {
+	globalReg := prometheus.NewRegistry()
+	tracker := mtmetrics.NewGlobalMetricsTracker()
+	tracker.SetAggregationStrategy("neg_controller_dual_stack_migration_longest_unfinished_duration_seconds", mtmetrics.StrategyMax)
+
+	tenant1UID := "tenant-ds-1"
+	tenant2UID := "tenant-ds-2"
+
+	factory1 := mtmetrics.NewMTMetricFactory(tenant1UID, globalReg, tracker)
+	defer factory1.Cleanup()
+	sm1, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory1, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 1: %v", err)
+	}
+
+	factory2 := mtmetrics.NewMTMetricFactory(tenant2UID, globalReg, tracker)
+	defer factory2.Cleanup()
+	sm2, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory2, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 2: %v", err)
+	}
+
+	now := time.Now()
+	sm1.clock = &fakeClock{curTime: now}
+	sm2.clock = &fakeClock{curTime: now}
+
+	// Syncer 1 migration started 100 seconds ago
+	sm1.dualStackMigrationStartTime[syncerKey(1)] = now.Add(-100 * time.Second)
+	// Syncer 2 migration started 250 seconds ago (longer)
+	sm2.dualStackMigrationStartTime[syncerKey(2)] = now.Add(-250 * time.Second)
+
+	sm1.export()
+	sm2.export()
+
+	mf := findCollectorMetricFamily(globalReg, "neg_controller_dual_stack_migration_longest_unfinished_duration_seconds")
+	if mf == nil || len(mf.GetMetric()) == 0 {
+		t.Fatalf("expected neg_controller_dual_stack_migration_longest_unfinished_duration_seconds in globalReg, got nil or empty")
+	}
+	gotVal := mf.GetMetric()[0].GetGauge().GetValue()
+	// Should be 250, NOT 350 (sum)
+	if gotVal != 250 {
+		t.Errorf("expected global longest_unfinished_duration to be max (250), got %v", gotVal)
+	}
+
+	// Update syncer 2 to have migration started 50s ago, making syncer 1 (100s) the longest
+	sm2.dualStackMigrationStartTime[syncerKey(2)] = now.Add(-50 * time.Second)
+	sm2.export()
+
+	mf = findCollectorMetricFamily(globalReg, "neg_controller_dual_stack_migration_longest_unfinished_duration_seconds")
+	gotVal = mf.GetMetric()[0].GetGauge().GetValue()
+	if gotVal != 100 {
+		t.Errorf("expected updated global longest_unfinished_duration to be max (100), got %v", gotVal)
+	}
+
+	// When syncer 1 finishes migration and is cleaned up, syncer 2 duration (50s) remains
+	factory1.Cleanup()
+
+	mf = findCollectorMetricFamily(globalReg, "neg_controller_dual_stack_migration_longest_unfinished_duration_seconds")
+	gotVal = mf.GetMetric()[0].GetGauge().GetValue()
+	if gotVal != 50 {
+		t.Errorf("expected reverted global longest_unfinished_duration to be (50), got %v", gotVal)
+	}
+}
+
+// TestDefaultGlobalTracker_DualStackLongestDurationStrategy verifies that init() correctly
+// registered StrategyMax for neg_controller_dual_stack_migration_longest_unfinished_duration_seconds
+// in DefaultGlobalTracker.
+func TestDefaultGlobalTracker_DualStackLongestDurationStrategy(t *testing.T) {
+	globalReg := prometheus.NewRegistry()
+	tracker := mtmetrics.DefaultGlobalTracker
+
+	factory1 := mtmetrics.NewMTMetricFactory("tenant-ds-def-1", globalReg, tracker)
+	defer factory1.Cleanup()
+	sm1, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory1, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 1: %v", err)
+	}
+
+	factory2 := mtmetrics.NewMTMetricFactory("tenant-ds-def-2", globalReg, tracker)
+	defer factory2.Cleanup()
+	sm2, err := NewNegMetricsCollectorWithFactory(5*time.Second, factory2, klog.TODO())
+	if err != nil {
+		t.Fatalf("failed to create SyncerMetrics 2: %v", err)
+	}
+
+	now := time.Now()
+	sm1.clock = &fakeClock{curTime: now}
+	sm2.clock = &fakeClock{curTime: now}
+
+	sm1.dualStackMigrationStartTime[syncerKey(1)] = now.Add(-120 * time.Second)
+	sm2.dualStackMigrationStartTime[syncerKey(2)] = now.Add(-400 * time.Second)
+
+	sm1.export()
+	sm2.export()
+
+	mf := findCollectorMetricFamily(globalReg, "neg_controller_dual_stack_migration_longest_unfinished_duration_seconds")
+	if mf == nil || len(mf.GetMetric()) == 0 {
+		t.Fatalf("expected neg_controller_dual_stack_migration_longest_unfinished_duration_seconds in globalReg, got nil or empty")
+	}
+	gotVal := mf.GetMetric()[0].GetGauge().GetValue()
+	if gotVal != 400 {
+		t.Errorf("DefaultGlobalTracker strategy for longest_unfinished_duration: got %v, want max 400", gotVal)
 	}
 }
