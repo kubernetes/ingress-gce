@@ -710,6 +710,10 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 			continue
 		}
 		resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
+		// ParseResourceURL returns no key and no error for a project URL.
+		if err == nil && resourceID.Key == nil {
+			err = fmt.Errorf("selflink %q does not contain a resource name", negRef.SelfLink)
+		}
 		if err != nil {
 			errList = append(errList, fmt.Errorf("failed to parse selflink for neg cr %s/%s: %s", svcNegCR.Namespace, svcNegCR.Name, err))
 			if candidate.tbdOnly {

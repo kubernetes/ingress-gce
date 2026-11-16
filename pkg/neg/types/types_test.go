@@ -25,6 +25,7 @@ import (
 	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/negannotation"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
@@ -834,5 +835,45 @@ func TestNegSyncerKeyString(t *testing.T) {
 	want = "ns/svc-binding-negBindingName-portName/80--GCE_VM_IP_PORT-L7"
 	if negBindingKey.String() != want {
 		t.Errorf("key2.String() = %q, want %q", negBindingKey.String(), want)
+	}
+}
+
+func TestNegInfoFromNegRef(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc     string
+		selfLink string
+		want     NegInfo
+		wantErr  bool
+	}{
+		{
+			desc:     "NEG self link",
+			selfLink: "https://www.googleapis.com/compute/v1/projects/mock-project/zones/zone1/networkEndpointGroups/neg1",
+			want:     NegInfo{Name: "neg1", Zone: "zone1"},
+		},
+		{
+			desc:     "self link that cannot be parsed",
+			selfLink: "malformed",
+			wantErr:  true,
+		},
+		{
+			// A project URL is parsed without an error, but has no resource name.
+			desc:     "self link without resource name",
+			selfLink: "https://www.googleapis.com/compute/v1/projects/mock-project",
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := NegInfoFromNegRef(negv1beta1.NegObjectReference{SelfLink: tc.selfLink})
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("NegInfoFromNegRef(%q) returned error %v, want error = %t", tc.selfLink, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("NegInfoFromNegRef(%q) = %+v, want %+v", tc.selfLink, got, tc.want)
+			}
+		})
 	}
 }

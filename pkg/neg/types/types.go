@@ -459,6 +459,10 @@ func NegInfoFromNegRef(negRef negv1beta1.NegObjectReference) (NegInfo, error) {
 	if err != nil {
 		return NegInfo{}, fmt.Errorf("failed to parse selflink: %v", err)
 	}
+	// ParseResourceURL returns no key and no error for a project URL.
+	if resourceID.Key == nil {
+		return NegInfo{}, fmt.Errorf("selflink %q does not contain a resource name", negRef.SelfLink)
+	}
 	return NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}, nil
 }
 

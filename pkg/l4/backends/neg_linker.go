@@ -209,6 +209,10 @@ func getNegMergeGroupKey(negUrl string) (meta.Key, error) {
 	if err != nil {
 		return meta.Key{}, err
 	}
+	// ParseResourceURL returns no key and no error for a project URL.
+	if id.Key == nil {
+		return meta.Key{}, fmt.Errorf("NEG URL %q does not contain a resource name", negUrl)
+	}
 	return *id.Key, nil
 }
 
@@ -367,7 +371,8 @@ func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer, lo
 
 	for _, negRef := range svcNEG.Status.NetworkEndpointGroups {
 		key, err := cloud.ParseResourceURL(negRef.SelfLink)
-		if err != nil {
+		// ParseResourceURL returns no key and no error for a project URL.
+		if err != nil || key.Key == nil {
 			logger.Error(err, "Failed to parse NEG SelfLink from svcneg", "svcneg", svcNEG)
 			continue
 		}

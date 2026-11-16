@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -711,6 +712,8 @@ func TestMergeBackends(t *testing.T) {
 	negUrl2 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg2"
 	negUrl3 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg3"
 	negUrl4 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg4"
+	// A project URL is parsed without an error, but has no resource name.
+	projectUrl := "https://www.googleapis.com/compute/v1/projects/test-project"
 
 	for _, tc := range []struct {
 		name        string
@@ -732,6 +735,12 @@ func TestMergeBackends(t *testing.T) {
 			name:        "mal formed NEG url in new",
 			old:         []*composite.Backend{{Group: negUrl11}},
 			new:         []*composite.Backend{{Group: "malformed"}},
+			expectError: true,
+		},
+		{
+			name:        "url without resource name in new",
+			old:         []*composite.Backend{{Group: negUrl11}},
+			new:         []*composite.Backend{{Group: projectUrl}},
 			expectError: true,
 		},
 		{
@@ -1103,6 +1112,36 @@ func TestBackendsForNEG(t *testing.T) {
 				t.Errorf("backendForNEGs(_), diff(-tc.want +got) = %s", diff)
 			}
 		})
+	}
+}
+
+// TestGetNegUrlFromSvcnegSkipsSelfLinkWithoutResourceName verifies that a NEG
+// self link without a resource name is skipped, and that the NEGs listed after
+// it are still found.
+func TestGetNegUrlFromSvcnegSkipsSelfLinkWithoutResourceName(t *testing.T) {
+	t.Parallel()
+
+	namespace, negName := "ns", "neg"
+	validNegRef := createNegRef(testZone1, negName, "")
+	svcNeg := &v1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: negName, Namespace: namespace},
+		Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+			NetworkEndpointGroups: []v1beta1.NegObjectReference{
+				// A project URL is parsed without an error, but has no resource name.
+				{SelfLink: "https://www.googleapis.com/compute/v1/projects/mock-project"},
+				validNegRef,
+			},
+		},
+	}
+	svcNegLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	if err := svcNegLister.Add(svcNeg); err != nil {
+		t.Fatalf("svcNegLister.Add(%v) returned error %v, want nil", svcNeg, err)
+	}
+
+	svcNegKey := namespace + "/" + negName
+	gotUrl, gotOk := getNegUrlFromSvcneg(svcNegKey, testZone1, svcNegLister, klog.TODO())
+	if gotUrl != validNegRef.SelfLink || !gotOk {
+		t.Errorf("getNegUrlFromSvcneg(%q, %q, _, _) = %q, %t, want %q, true", svcNegKey, testZone1, gotUrl, gotOk, validNegRef.SelfLink)
 	}
 }
 
