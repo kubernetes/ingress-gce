@@ -40,12 +40,27 @@ const (
 	detachNetworkEndpoints = "DetachNetworkEndpoints"
 )
 
+// NegMetricsCollector is an interface for publishing GCE request metrics from the adapter.
+type NegMetricsCollector interface {
+	PublishGCERequestCountMetrics(start time.Time, requestType string, err error)
+}
+
+// NoopMetricsCollector is a no-op implementation of NegMetricsCollector for controllers that do not collect NEG metrics.
+type NoopMetricsCollector struct{}
+
+// PublishGCERequestCountMetrics is a no-op.
+func (NoopMetricsCollector) PublishGCERequestCountMetrics(start time.Time, requestType string, err error) {
+}
+
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
-func NewAdapter(g *gce.Cloud, negMetrics *metrics.NegMetrics) NetworkEndpointGroupCloud {
+func NewAdapter(g *gce.Cloud, negMetrics NegMetricsCollector) NetworkEndpointGroupCloud {
 	return NewAdapterWithNetwork(g, g.NetworkURL(), g.SubnetworkURL(), negMetrics)
 }
 
-func NewAdapterWithNetwork(g *gce.Cloud, network string, subnetwork string, negMetrics *metrics.NegMetrics) NetworkEndpointGroupCloud {
+func NewAdapterWithNetwork(g *gce.Cloud, network string, subnetwork string, negMetrics NegMetricsCollector) NetworkEndpointGroupCloud {
+	if negMetrics == nil {
+		negMetrics = NoopMetricsCollector{}
+	}
 	return &cloudProviderAdapter{
 		c:             g,
 		networkURL:    network,
@@ -55,7 +70,10 @@ func NewAdapterWithNetwork(g *gce.Cloud, network string, subnetwork string, negM
 }
 
 // NewAdapterWithRateLimitSpecs takes a cloud and rate limit specs and returns a NetworkEndpointGroupCloud.
-func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string, provider network.CloudNetworkProvider, negMetrics *metrics.NegMetrics) NetworkEndpointGroupCloud {
+func NewAdapterWithRateLimitSpecs(g *gce.Cloud, specs []string, provider network.CloudNetworkProvider, negMetrics NegMetricsCollector) NetworkEndpointGroupCloud {
+	if negMetrics == nil {
+		negMetrics = NoopMetricsCollector{}
+	}
 	strategyKeys := make(map[string]struct{})
 	for _, spec := range specs {
 		params := strings.Split(spec, ",")
@@ -79,7 +97,7 @@ type cloudProviderAdapter struct {
 	networkURL         string
 	subnetworkURL      string
 	strategyKeys       map[string]struct{}
-	negMetrics         *metrics.NegMetrics
+	negMetrics         NegMetricsCollector
 	regionZonesCache   []string
 	regionZonesCacheMu sync.Mutex
 }

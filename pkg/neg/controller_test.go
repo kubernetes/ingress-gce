@@ -2984,7 +2984,7 @@ func TestBuildClusterURL(t *testing.T) {
 						t.Fatalf("failed to mock container service: %v", err)
 					}
 				}
-				cloud = negtypes.NewAdapter(fakeGCE, nil)
+				cloud = negtypes.NewAdapter(fakeGCE, negtypes.NoopMetricsCollector{})
 			}
 
 			got, err := buildClusterURL(cloud)
