@@ -18,6 +18,7 @@ package negstatushandler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -42,16 +43,27 @@ type negOwnershipRegistry interface {
 }
 
 const (
-	ManagedCondition      = "Managed"
-	NegsAttachedCondition = "NegsAttached"
+	BackendRefAttachedCondition = "BackendRefAttached"
+	ManagedCondition            = "Managed"
+	NegsAttachedCondition       = "NegsAttached"
 
-	NEGOwnershipNoConflicts  = "NEGOwnershipNoConflicts"
-	NEGOwnershipConflict     = "NEGOwnershipConflict"
-	NEGsAttachmentSuccessful = "NEGsAttachmentSuccessful"
-	NEGsAttachmentFailed     = "NEGsAttachmentFailed"
+	BackendRefValidReason       = "BackendRefValid"
+	InvalidBackendRefKindReason = "InvalidBackendRefKind"
+	ServiceNotFoundReason       = "ServiceNotFound"
+	InvalidBackendRefReason     = "InvalidBackendRef"
+	NEGOwnershipNoConflicts     = "NEGOwnershipNoConflicts"
+	NEGOwnershipConflict        = "NEGOwnershipConflict"
+	NEGsAttachmentSuccessful    = "NEGsAttachmentSuccessful"
+	NEGsAttachmentFailed        = "NEGsAttachmentFailed"
 )
 
-// NEGBindingStatusHandler implements NegStatusHandler for NetworkEndpointGroupBinding custom resource.
+var (
+	ErrServiceNotFound       = errors.New("service not found")
+	ErrInvalidBackendRef     = errors.New("BackendRef is nil")
+	ErrInvalidBackendRefKind = errors.New("unsupported BackendRef Kind")
+)
+
+// NEGBindingStatusHandler implements NEGStatusHandler for NetworkEndpointGroupBinding custom resource.
 type NEGBindingStatusHandler struct {
 	negBindingName   string
 	namespace        string
@@ -99,7 +111,7 @@ func (h *NEGBindingStatusHandler) getBinding() (*negbindingv1beta1.NetworkEndpoi
 	return binding, nil
 }
 
-// SubnetToZonesMap returns the current subnet-to-zones mapping reported inside the NegBinding CR status.
+// SubnetToZonesMap returns the current subnet-to-zones mapping reported inside the NEGBinding CR status.
 func (h *NEGBindingStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, error) {
 	binding, err := h.getBinding()
 	if err != nil {
@@ -131,11 +143,32 @@ func (h *NEGBindingStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, 
 	return subnetToZones, nil
 }
 
-// ReportStatus reports the updated list of successfully configured GCE NEGs inside the NegBinding CR status.
+// UpdateBackendRefAttachedCondition updates the BackendRefAttached condition inside the NEGBinding CR status.
+func (h *NEGBindingStatusHandler) UpdateBackendRefAttachedCondition(validationErr error) error {
+	origBinding, err := h.getBinding()
+	if err != nil {
+		h.logger.Error(err, "Error updating BackendRefAttached status for NEGBinding, failed to get NEGBinding from store")
+		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+		return err
+	}
+
+	binding := origBinding.DeepCopy()
+	h.ensureCondition(binding, h.getBackendRefAttachedCondition(validationErr))
+
+	err = h.patchNegBindingStatus(origBinding.Status, binding.Status)
+	if err != nil {
+		h.logger.Error(err, "Error updating NEGBinding status")
+		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
+		return err
+	}
+	return nil
+}
+
+// ReportStatus reports the updated list of successfully configured GCE NEGs inside the NEGBinding CR status.
 func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpointGroup, errList []error) error {
 	origBinding, err := h.getBinding()
 	if err != nil {
-		h.logger.Error(err, "Error updating init status for NegBinding, failed to get NegBinding from store.")
+		h.logger.Error(err, "Error updating init status for NEGBinding, failed to get NEGBinding from store.")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return err
 	}
@@ -160,7 +193,7 @@ func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpoint
 
 	err = h.patchNegBindingStatus(origBinding.Status, binding.Status)
 	if err != nil {
-		h.logger.Error(err, "Error updating NegBinding status")
+		h.logger.Error(err, "Error updating NEGBinding status")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return err
 	}
@@ -172,7 +205,7 @@ func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpoint
 func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) {
 	origBinding, err := h.getBinding()
 	if err != nil {
-		h.logger.Error(err, "Error updating status for NegBinding, failed to get NegBinding from store")
+		h.logger.Error(err, "Error updating status for NEGBinding, failed to get NEGBinding from store")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false, err
 	}
@@ -195,7 +228,7 @@ func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) 
 
 	err = h.patchNegBindingStatus(origBinding.Status, binding.Status)
 	if err != nil {
-		h.logger.Error(err, "Error updating NegBinding status")
+		h.logger.Error(err, "Error updating NEGBinding status")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return needInit, err
 	}
@@ -224,6 +257,31 @@ func (h *NEGBindingStatusHandler) ensureCondition(binding *negbindingv1beta1.Net
 
 	binding.Status.Conditions[index] = expectedCondition
 	return expectedCondition
+}
+
+func (h *NEGBindingStatusHandler) getBackendRefAttachedCondition(validationErr error) negbindingv1beta1.Condition {
+	cond := negbindingv1beta1.Condition{
+		Type:               BackendRefAttachedCondition,
+		LastTransitionTime: metav1.Now(),
+	}
+	if validationErr == nil {
+		cond.Status = metav1.ConditionTrue
+		cond.Reason = BackendRefValidReason
+		return cond
+	}
+
+	cond.Status = metav1.ConditionFalse
+	cond.Message = validationErr.Error()
+	if errors.Is(validationErr, ErrInvalidBackendRefKind) {
+		cond.Reason = InvalidBackendRefKindReason
+	} else if errors.Is(validationErr, ErrServiceNotFound) {
+		cond.Reason = ServiceNotFoundReason
+	} else if errors.Is(validationErr, ErrInvalidBackendRef) {
+		cond.Reason = InvalidBackendRefReason
+	} else {
+		cond.Reason = InvalidBackendRefReason
+	}
+	return cond
 }
 
 func (h *NEGBindingStatusHandler) getAttachedCondition(err error) negbindingv1beta1.Condition {
