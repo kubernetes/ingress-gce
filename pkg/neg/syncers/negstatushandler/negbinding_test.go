@@ -18,13 +18,17 @@ package negstatushandler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8stesting "k8s.io/client-go/testing"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
 	composite "k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
@@ -805,5 +809,263 @@ func TestNEGBindingStatusHandlerOwnership(t *testing.T) {
 	cond, _, found = h.findCondition(updatedBinding.Status.Conditions, NegsAttachedCondition)
 	if !found || cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected NEGsAttached=True after conflict resolved, got: %+v", cond)
+	}
+}
+
+func TestUpdateBackendRefAttachedCondition(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+
+	existingNEGs := []negbindingv1beta1.StatusNegRef{
+		{
+			ResourceURL: "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-a/networkEndpointGroups/neg-default",
+			SubnetURL:   "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/default-subnet",
+		},
+	}
+
+	testCases := []struct {
+		desc           string
+		initialStatus  negbindingv1beta1.NetworkEndpointGroupBindingStatus
+		validationErr  error
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+		expectedMsg    string
+	}{
+		{
+			desc:           "valid backend ref sets ConditionTrue",
+			validationErr:  nil,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: BackendRefValidReason,
+			expectedMsg:    "",
+		},
+		{
+			desc:           "ErrInvalidBackendRefKind sets InvalidBackendRefKind reason",
+			validationErr:  fmt.Errorf("%w: unsupported Kind %q", ErrInvalidBackendRefKind, "Pod"),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: InvalidBackendRefKindReason,
+			expectedMsg:    `unsupported BackendRef Kind: unsupported Kind "Pod"`,
+		},
+		{
+			desc:           "ErrServiceNotFound sets ServiceNotFound reason",
+			validationErr:  fmt.Errorf("%w: %s/missing-svc", ErrServiceNotFound, namespace),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: ServiceNotFoundReason,
+			expectedMsg:    "service not found in cache: test-namespace/missing-svc",
+		},
+		{
+			desc:           "ErrInvalidBackendRef sets InvalidBackendRef reason",
+			validationErr:  ErrInvalidBackendRef,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: InvalidBackendRefReason,
+			expectedMsg:    "BackendRef is nil",
+		},
+		{
+			desc:           "unclassified error defaults to InvalidBackendRef reason and preserves existing status fields",
+			validationErr:  errors.New("port 80 not found in service test-namespace/test-svc spec"),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: InvalidBackendRefReason,
+			expectedMsg:    "port 80 not found in service test-namespace/test-svc spec",
+			initialStatus: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+				Conditions: []negbindingv1beta1.Condition{
+					{
+						Type:   ManagedCondition,
+						Status: metav1.ConditionTrue,
+						Reason: NEGOwnershipNoConflicts,
+					},
+					{
+						Type:   NegsAttachedCondition,
+						Status: metav1.ConditionTrue,
+						Reason: NEGsAttachmentSuccessful,
+					},
+				},
+				NetworkEndpointGroups: existingNEGs,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeClient := fakenegbinding.NewSimpleClientset()
+			indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
+
+			binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+				},
+				Status: tc.initialStatus,
+			}
+			if err := indexer.Add(binding.DeepCopy()); err != nil {
+				t.Fatalf("failed to add binding to indexer: %v", err)
+			}
+			if _, err := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding.DeepCopy(), metav1.CreateOptions{}); err != nil {
+				t.Fatalf("failed to create binding: %v", err)
+			}
+
+			h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.FakeNegMetrics(), newMockRegistry(), klog.TODO())
+			if err := h.UpdateBackendRefAttachedCondition(tc.validationErr); err != nil {
+				t.Fatalf("UpdateBackendRefAttachedCondition(%v) failed: %v", tc.validationErr, err)
+			}
+
+			updatedBinding, err := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("failed to get updated binding: %v", err)
+			}
+
+			cond, _, exists := h.findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
+			if !exists {
+				t.Fatalf("expected %s condition to exist", BackendRefAttachedCondition)
+			}
+			if cond.Status != tc.expectedStatus {
+				t.Errorf("got status %s, want %s", cond.Status, tc.expectedStatus)
+			}
+			if cond.Reason != tc.expectedReason {
+				t.Errorf("got reason %q, want %q", cond.Reason, tc.expectedReason)
+			}
+			if cond.Message != tc.expectedMsg {
+				t.Errorf("got message %q, want %q", cond.Message, tc.expectedMsg)
+			}
+			if cond.LastTransitionTime.IsZero() {
+				t.Errorf("expected non-zero LastTransitionTime")
+			}
+
+			for _, initCond := range tc.initialStatus.Conditions {
+				got, _, ok := h.findCondition(updatedBinding.Status.Conditions, initCond.Type)
+				if !ok || got.Status != initCond.Status || got.Reason != initCond.Reason {
+					t.Errorf("expected existing condition %+v to be preserved, got %+v (exists=%v)", initCond, got, ok)
+				}
+			}
+			if len(tc.initialStatus.NetworkEndpointGroups) > 0 && !reflect.DeepEqual(updatedBinding.Status.NetworkEndpointGroups, tc.initialStatus.NetworkEndpointGroups) {
+				t.Errorf("got NetworkEndpointGroups %+v, want %+v", updatedBinding.Status.NetworkEndpointGroups, tc.initialStatus.NetworkEndpointGroups)
+			}
+			if !updatedBinding.Status.LastSyncTime.IsZero() {
+				t.Errorf("expected LastSyncTime to remain zero, got %v", updatedBinding.Status.LastSyncTime)
+			}
+		})
+	}
+}
+
+func TestUpdateBackendRefAttachedConditionTransitionTimeAndNoOp(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+
+	initialTime := metav1.NewTime(time.Now().Add(-5 * time.Minute).Truncate(time.Second))
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
+			Conditions: []negbindingv1beta1.Condition{
+				{
+					Type:               BackendRefAttachedCondition,
+					Status:             metav1.ConditionFalse,
+					Reason:             ServiceNotFoundReason,
+					Message:            "service not found in cache: test-namespace/old-svc",
+					LastTransitionTime: initialTime,
+				},
+			},
+		},
+	}
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
+	if err := indexer.Add(binding.DeepCopy()); err != nil {
+		t.Fatalf("failed to add binding to indexer: %v", err)
+	}
+	if _, err := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding.DeepCopy(), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create binding: %v", err)
+	}
+
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.FakeNegMetrics(), newMockRegistry(), klog.TODO())
+
+	// Same ConditionFalse status with a new reason/message preserves LastTransitionTime.
+	if err := h.UpdateBackendRefAttachedCondition(errors.New("port 8080 missing")); err != nil {
+		t.Fatalf("UpdateBackendRefAttachedCondition failed: %v", err)
+	}
+	updatedBinding, err := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get updated binding: %v", err)
+	}
+	cond, _, exists := h.findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
+	if !exists {
+		t.Fatalf("expected %s condition to exist", BackendRefAttachedCondition)
+	}
+	if !cond.LastTransitionTime.Equal(&initialTime) {
+		t.Errorf("expected LastTransitionTime %v to be preserved, got %v", initialTime, cond.LastTransitionTime)
+	}
+	if cond.Reason != InvalidBackendRefReason {
+		t.Errorf("got reason %q, want %q", cond.Reason, InvalidBackendRefReason)
+	}
+
+	// Sync indexer and transition ConditionFalse -> ConditionTrue: LastTransitionTime must advance.
+	if err := indexer.Update(updatedBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to update indexer: %v", err)
+	}
+	if err := h.UpdateBackendRefAttachedCondition(nil); err != nil {
+		t.Fatalf("UpdateBackendRefAttachedCondition(nil) failed: %v", err)
+	}
+	updatedBinding, err = fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get updated binding: %v", err)
+	}
+	cond, _, exists = h.findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
+	if !exists {
+		t.Fatalf("expected %s condition to exist", BackendRefAttachedCondition)
+	}
+	if !cond.LastTransitionTime.After(initialTime.Time) {
+		t.Errorf("expected LastTransitionTime %v to advance past %v", cond.LastTransitionTime, initialTime)
+	}
+
+	// Sync indexer and repeat identical ConditionTrue update: must skip K8s Patch ("{}" no-op).
+	if err := indexer.Update(updatedBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to update indexer: %v", err)
+	}
+	fakeClient.ClearActions()
+	if err := h.UpdateBackendRefAttachedCondition(nil); err != nil {
+		t.Fatalf("second UpdateBackendRefAttachedCondition(nil) failed: %v", err)
+	}
+	if actions := fakeClient.Actions(); len(actions) != 0 {
+		t.Errorf("expected 0 client actions on no-op update, got %d: %+v", len(actions), actions)
+	}
+}
+
+func TestUpdateBackendRefAttachedConditionErrors(t *testing.T) {
+	namespace := "test-namespace"
+	name := "test-binding"
+
+	fakeClient := fakenegbinding.NewSimpleClientset()
+	indexer := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeClient, "", 0, utils.NewNamespaceIndexer()).GetIndexer()
+	h := NewNEGBindingStatusHandler(name, namespace, fakeClient, indexer, metrics.FakeNegMetrics(), newMockRegistry(), klog.TODO())
+
+	// Missing binding in store returns error without issuing K8s Patch.
+	if err := h.UpdateBackendRefAttachedCondition(nil); err == nil {
+		t.Fatalf("expected error when binding is missing from store, got nil")
+	}
+	if actions := fakeClient.Actions(); len(actions) != 0 {
+		t.Errorf("expected 0 client actions when binding is missing, got %d", len(actions))
+	}
+
+	// Patch failure returns error.
+	binding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+	}
+	if err := indexer.Add(binding.DeepCopy()); err != nil {
+		t.Fatalf("failed to add binding to indexer: %v", err)
+	}
+	if _, err := fakeClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), binding.DeepCopy(), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create binding: %v", err)
+	}
+	patchErr := errors.New("injected apiserver patch failure")
+	fakeClient.PrependReactor("patch", "networkendpointgroupbindings", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, patchErr
+	})
+
+	err := h.UpdateBackendRefAttachedCondition(nil)
+	if !errors.Is(err, patchErr) {
+		t.Fatalf("expected error wrapping %v, got %v", patchErr, err)
 	}
 }
