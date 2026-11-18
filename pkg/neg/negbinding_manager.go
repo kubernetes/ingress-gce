@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	apiv1 "k8s.io/api/core/v1"
@@ -56,15 +55,10 @@ const (
 
 	// NEGBindingFinalizer is the finalizer key used to block NEGBinding deletion until NEGs are drained.
 	NEGBindingFinalizer = "networking.gke.io/negbinding-cleanup"
-
-	BackendRefAttachedCondition = "BackendRefAttached"
 )
 
 var (
 	ErrNEGBindingMultiNetworkNotSupported = errors.New("NEGBinding does not support multi-network")
-	ErrServiceNotFound                    = errors.New("service not found in cache")
-	ErrInvalidBackendRef                  = errors.New("BackendRef is nil")
-	ErrInvalidBackendRefKind              = errors.New("unsupported BackendRef Kind")
 )
 
 // ServiceKeyIndexFunc maps NEGBinding to its backend service key if kind is Service.
@@ -200,10 +194,11 @@ type negBindingManager struct {
 	recorder        record.EventRecorder
 	namer           negtypes.NetworkEndpointGroupNamer
 
-	// Syncers map keyed by binding namespace/name (bindingKey)
-	mu            sync.Mutex
-	syncerMap     map[string]negtypes.NegSyncer
-	syncerConfigs map[string]syncerConfig
+	// Syncers and status handlers maps keyed by binding namespace/name (bindingKey)
+	mu             sync.Mutex
+	syncerMap      map[string]negtypes.NegSyncer
+	syncerConfigs  map[string]syncerConfig
+	statusHandlers map[string]*negstatushandler.NEGBindingStatusHandler
 
 	// Metrics
 	negMetrics    *metrics.NegMetrics
@@ -252,6 +247,7 @@ func newNEGBindingManager(
 		namer:               namer,
 		syncerMap:           make(map[string]negtypes.NegSyncer),
 		syncerConfigs:       make(map[string]syncerConfig),
+		statusHandlers:      make(map[string]*negstatushandler.NEGBindingStatusHandler),
 		negMetrics:          negMetrics,
 		syncerMetrics:       syncerMetrics,
 		reflector:           reflector,
@@ -268,7 +264,7 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	m.acquireNEGsForBinding(binding)
 	err := m.validateBackendRef(binding)
 	if err != nil {
-		_ = m.updateBackendRefAttachedCondition(binding, err)
+		_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(err)
 		return err
 	}
 
@@ -276,8 +272,8 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 	svcKey := fmt.Sprintf("%s/%s", binding.Namespace, svcName)
 	svc, err := m.getServiceFromCache(svcKey)
 	if err != nil {
-		_ = m.updateBackendRefAttachedCondition(binding, err)
-		if errors.Is(err, ErrServiceNotFound) {
+		_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(err)
+		if errors.Is(err, negstatushandler.ErrServiceNotFound) {
 			bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 			m.logger.Info("Service not found for NEGBinding, ensuring cleanup syncer", "binding", bindingKey, "serviceKey", svcKey)
 			syncer, err := m.ensureCleanupSyncer(binding)
@@ -294,7 +290,7 @@ func (m *negBindingManager) EnsureSyncerForNEGBinding(binding *negbindingv1beta1
 
 	networkInfo, err := m.getAndVerifyNetworkInfo(svc)
 	if err != nil {
-		_ = m.updateBackendRefAttachedCondition(binding, err)
+		_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(err)
 		return err
 	}
 
@@ -405,15 +401,7 @@ func (m *negBindingManager) ensureCleanupSyncer(binding *negbindingv1beta1.Netwo
 		EpCalculatorMode: negtypes.L7Mode,
 	}
 
-	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
-		binding.Name,
-		binding.Namespace,
-		m.negBindingClient,
-		m.negBindingLister,
-		m.negMetrics,
-		m.ownershipRegistry,
-		m.logger,
-	)
+	statusHandler := m.getOrCreateStatusHandlerLocked(binding.Namespace, binding.Name)
 
 	cleanupSyncer := negsyncer.NewCleanupSyncer(
 		syncerKey,
@@ -458,13 +446,13 @@ func (m *negBindingManager) EnsureSyncersForService(svcNamespace, svcName string
 
 		err := m.validateBackendRef(binding)
 		if err != nil {
-			_ = m.updateBackendRefAttachedCondition(binding, err)
+			_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(err)
 			errs = append(errs, err)
 			continue
 		}
 
 		if networkInfoErr != nil {
-			_ = m.updateBackendRefAttachedCondition(binding, networkInfoErr)
+			_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(networkInfoErr)
 			continue
 		}
 
@@ -499,11 +487,11 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 
 	portTuple, err := m.getPortTuple(svc, svcPort)
 	if err != nil {
-		_ = m.updateBackendRefAttachedCondition(binding, err)
+		_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(err)
 		return nil, err
 	}
 
-	if err := m.updateBackendRefAttachedCondition(binding, nil); err != nil {
+	if err := m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(nil); err != nil {
 		return nil, err
 	}
 
@@ -555,15 +543,7 @@ func (m *negBindingManager) ensureSyncerForNEGBinding(
 		return nil, fmt.Errorf("failed to create topology provider: %w", err)
 	}
 
-	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
-		binding.Name,
-		binding.Namespace,
-		m.negBindingClient,
-		m.negBindingLister,
-		m.negMetrics,
-		m.ownershipRegistry,
-		m.logger,
-	)
+	statusHandler := m.getOrCreateStatusHandlerLocked(binding.Namespace, binding.Name)
 
 	epc := negsyncer.GetEndpointsCalculator(
 		m.podLister,
@@ -632,7 +612,7 @@ func (m *negBindingManager) ProcessServiceDeletion(svcNamespace, svcName string)
 		}
 		bindingKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Name)
 		m.logger.Info("Service deleted, ensuring cleanup syncer for binding", "binding", bindingKey, "service", svcKey)
-		_ = m.updateBackendRefAttachedCondition(binding, fmt.Errorf("%w: %s/%s", ErrServiceNotFound, svcNamespace, svcName))
+		_ = m.getOrCreateStatusHandler(binding.Namespace, binding.Name).UpdateBackendRefAttachedCondition(fmt.Errorf("%w: %s/%s", negstatushandler.ErrServiceNotFound, svcNamespace, svcName))
 
 		// Will ensure cleanup syncer, as there is no service, which needed for normal syncer
 		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
@@ -652,9 +632,12 @@ func (m *negBindingManager) StopSyncer(namespace, name string) {
 		delete(m.syncerMap, bindingKey)
 		delete(m.syncerConfigs, bindingKey)
 	}
+	obj, exists, err := m.negBindingLister.GetByKey(bindingKey)
+	if err == nil && !exists {
+		delete(m.statusHandlers, bindingKey)
+	}
 	m.mu.Unlock()
 
-	obj, exists, err := m.negBindingLister.GetByKey(bindingKey)
 	if err == nil && exists {
 		if binding, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding); ok {
 			svcKey := fmt.Sprintf("%s/%s", namespace, binding.Spec.BackendRef.Name)
@@ -684,6 +667,44 @@ func (m *negBindingManager) ShutDown() {
 	}
 	m.syncerMap = make(map[string]negtypes.NegSyncer)
 	m.syncerConfigs = make(map[string]syncerConfig)
+	m.statusHandlers = make(map[string]*negstatushandler.NEGBindingStatusHandler)
+}
+
+func (m *negBindingManager) getOrCreateStatusHandler(namespace, name string) *negstatushandler.NEGBindingStatusHandler {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getOrCreateStatusHandlerLocked(namespace, name)
+}
+
+func (m *negBindingManager) getOrCreateStatusHandlerLocked(namespace, name string) *negstatushandler.NEGBindingStatusHandler {
+	bindingKey := fmt.Sprintf("%s/%s", namespace, name)
+	if statusHandler, ok := m.statusHandlers[bindingKey]; ok {
+		return statusHandler
+	}
+	statusHandler := negstatushandler.NewNEGBindingStatusHandler(
+		name,
+		namespace,
+		m.negBindingClient,
+		m.negBindingLister,
+		m.negMetrics,
+		m.ownershipRegistry,
+		m.logger,
+	)
+	if _, exists, err := m.negBindingLister.GetByKey(bindingKey); err != nil || exists {
+		m.statusHandlers[bindingKey] = statusHandler
+	}
+	return statusHandler
+}
+
+func (m *negBindingManager) deleteStatusHandlerIfSameOrMissing(bindingKey string, uid types.UID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if obj, exists, err := m.negBindingLister.GetByKey(bindingKey); err == nil && exists {
+		if cached, ok := obj.(*negbindingv1beta1.NetworkEndpointGroupBinding); ok && cached.UID != uid {
+			return
+		}
+	}
+	delete(m.statusHandlers, bindingKey)
 }
 
 func (m *negBindingManager) getServiceFromCache(svcKey string) (*apiv1.Service, error) {
@@ -692,7 +713,7 @@ func (m *negBindingManager) getServiceFromCache(svcKey string) (*apiv1.Service, 
 		return nil, fmt.Errorf("failed to get service %s from cache: %w", svcKey, err)
 	}
 	if !exists {
-		return nil, fmt.Errorf("%w: %s", ErrServiceNotFound, svcKey)
+		return nil, fmt.Errorf("%w: %s", negstatushandler.ErrServiceNotFound, svcKey)
 	}
 	svc, ok := svcObj.(*apiv1.Service)
 	if !ok {
@@ -785,7 +806,11 @@ func (m *negBindingManager) ReconcileDeletion(binding *negbindingv1beta1.Network
 			m.ownershipRegistry.ReleaseAllOwnedExcept(bindingKey, nil)
 			svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
 			m.updateSyncerMetricsForService(svcKey)
-			return m.removeFinalizer(binding)
+			err := m.removeFinalizer(binding)
+			if err == nil {
+				m.deleteStatusHandlerIfSameOrMissing(bindingKey, binding.UID)
+			}
+			return err
 		}
 		if err := m.EnsureSyncerForNEGBinding(binding); err != nil {
 			return fmt.Errorf("failed to start syncer for draining: %w", err)
@@ -808,7 +833,11 @@ func (m *negBindingManager) ReconcileDeletion(binding *negbindingv1beta1.Network
 		svcKey := fmt.Sprintf("%s/%s", binding.Namespace, binding.Spec.BackendRef.Name)
 		m.updateSyncerMetricsForService(svcKey)
 
-		return m.removeFinalizer(binding)
+		err := m.removeFinalizer(binding)
+		if err == nil {
+			m.deleteStatusHandlerIfSameOrMissing(bindingKey, binding.UID)
+		}
+		return err
 	}
 
 	syncer.Sync()
@@ -855,76 +884,12 @@ func (m *negBindingManager) patchObjectMetadata(old *negbindingv1beta1.NetworkEn
 
 func (m *negBindingManager) validateBackendRef(binding *negbindingv1beta1.NetworkEndpointGroupBinding) error {
 	if binding.Spec.BackendRef == nil {
-		return ErrInvalidBackendRef
+		return negstatushandler.ErrInvalidBackendRef
 	}
 	if binding.Spec.BackendRef.Kind != negbindingv1beta1.ServiceKind {
-		return fmt.Errorf("%w: unsupported Kind %q", ErrInvalidBackendRefKind, binding.Spec.BackendRef.Kind)
+		return fmt.Errorf("%w: unsupported Kind %q", negstatushandler.ErrInvalidBackendRefKind, binding.Spec.BackendRef.Kind)
 	}
 	return nil
-}
-
-func (m *negBindingManager) updateBackendRefAttachedCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding, validationErr error) error {
-	cond := negbindingv1beta1.Condition{
-		Type:               BackendRefAttachedCondition,
-		LastTransitionTime: metav1.Now(),
-	}
-	if validationErr == nil {
-		cond.Status = metav1.ConditionTrue
-		cond.Reason = "BackendRefValid"
-	} else {
-		cond.Status = metav1.ConditionFalse
-		cond.Message = validationErr.Error()
-		if errors.Is(validationErr, ErrInvalidBackendRefKind) {
-			cond.Reason = "InvalidBackendRefKind"
-		} else if errors.Is(validationErr, ErrServiceNotFound) {
-			cond.Reason = "ServiceNotFound"
-		} else if errors.Is(validationErr, ErrInvalidBackendRef) {
-			cond.Reason = "InvalidBackendRef"
-		} else {
-			cond.Reason = "InvalidBackendRef" // Default
-		}
-	}
-
-	newBinding := binding.DeepCopy()
-	m.ensureCondition(newBinding, cond)
-
-	patchBytes, err := patch.MergePatchBytes(negbindingv1beta1.NetworkEndpointGroupBinding{Status: binding.Status}, negbindingv1beta1.NetworkEndpointGroupBinding{Status: newBinding.Status})
-	if err != nil {
-		return fmt.Errorf("failed to prepare patch bytes for status update: %w", err)
-	}
-
-	if string(patchBytes) == "{}" {
-		return nil
-	}
-
-	start := time.Now()
-	_, err = m.negBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(binding.Namespace).Patch(context.Background(), binding.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
-	m.negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
-	return err
-}
-
-func (m *negBindingManager) ensureCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding, expectedCondition negbindingv1beta1.Condition) {
-	var index int
-	var found bool
-	for i, condition := range binding.Status.Conditions {
-		if condition.Type == expectedCondition.Type {
-			index = i
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		binding.Status.Conditions = append(binding.Status.Conditions, expectedCondition)
-		return
-	}
-
-	condition := binding.Status.Conditions[index]
-	if condition.Status == expectedCondition.Status {
-		expectedCondition.LastTransitionTime = condition.LastTransitionTime
-	}
-
-	binding.Status.Conditions[index] = expectedCondition
 }
 
 // tryAssignReleasedNEGs is a callback for released NEGs. In case any other NEGBinding CR refers to any released NEG name, its syncer will be ensured and synced.
