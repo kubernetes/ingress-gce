@@ -44,6 +44,32 @@ mkdir -p "${GOBIN}"
 cd "${SCRIPT_ROOT}/tools"
 go install "k8s.io/kube-openapi/cmd/openapi-gen" >/dev/null
 OPENAPI_PKG="${GOBIN}"
+go install "google.golang.org/protobuf/cmd/protoc-gen-go" >/dev/null
+go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc" >/dev/null
+
+# protoc is not a Go binary, so download a pinned release. https://protobuf.dev/installation/
+# The version is recorded in the headers of generated *.pb.go files.
+PROTOC_VERSION="36.2"
+case "$(uname -s)" in
+  Linux) PROTOC_OS="linux" ;;
+  Darwin) PROTOC_OS="osx" ;;
+  *) echo "Unsupported OS for protoc: $(uname -s)" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+  x86_64 | amd64) PROTOC_ARCH="x86_64" ;;
+  aarch64 | arm64) PROTOC_ARCH="aarch_64" ;;
+  *) echo "Unsupported architecture for protoc: $(uname -m)" >&2; exit 1 ;;
+esac
+PROTOC_DIR="${GOBIN}/protoc-${PROTOC_VERSION}"
+PROTOC="${PROTOC_DIR}/bin/protoc"
+if [[ ! -x "${PROTOC}" ]]; then
+  PROTOC_ZIP="protoc-${PROTOC_VERSION}-${PROTOC_OS}-${PROTOC_ARCH}.zip"
+  curl -fsSL -o "${GOBIN}/${PROTOC_ZIP}" \
+    "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+  rm -rf "${PROTOC_DIR}"
+  unzip -q "${GOBIN}/${PROTOC_ZIP}" -d "${PROTOC_DIR}"
+  rm -f "${GOBIN}/${PROTOC_ZIP}"
+fi
 
 # Non-Go code dependencies (like shell scripts) need to be handled separately.
 cd "${GOBIN}"
@@ -180,3 +206,13 @@ echo "Generating openapi for NetworkEndpointGroupBinding v1beta1"
   --output-dir "${GOPATH}/src/k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1" \
   --go-header-file "${SCRIPT_ROOT}"/boilerplate.go.txt \
   k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1
+
+echo "Generating Go code for experiments proto"
+cd "${INGRESS_GCE_REPO_ROOT}"
+"${PROTOC}" \
+  -I pkg/experiments/pb \
+  --plugin=protoc-gen-go="${GOBIN}/protoc-gen-go" \
+  --plugin=protoc-gen-go-grpc="${GOBIN}/protoc-gen-go-grpc" \
+  --go_out=. --go_opt=module=k8s.io/ingress-gce \
+  --go-grpc_out=. --go-grpc_opt=module=k8s.io/ingress-gce \
+  pkg/experiments/pb/experiments.proto
