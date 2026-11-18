@@ -43,6 +43,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4/controllers"
+	"k8s.io/ingress-gce/pkg/l4/controllers/standaloneneg"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
@@ -682,7 +683,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4StandaloneNEGController {
-		standaloneNEGLBController := controllers.NewStandaloneNEGLBController(ctx, option.stopCh, logger)
+		standaloneNEGLBController := standaloneneg.NewController(ctx, option.stopCh, logger)
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")
 	}
