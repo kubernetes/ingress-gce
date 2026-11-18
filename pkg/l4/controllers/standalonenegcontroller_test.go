@@ -33,9 +33,11 @@ import (
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
@@ -44,6 +46,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	svcnegclientfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
@@ -83,7 +86,12 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		// absentEventReasons are checked after all expectEventReasons are found.
 		absentEventReasons []string
 		expectError        bool
-		expectCondition    *metav1.Condition
+		// expectSystemError is checked when expectError is set: the sync error
+		// is expected to be a system error, and not a user error.
+		expectSystemError bool
+		// failStatusPatch makes the patch of the service status fail.
+		failStatusPatch bool
+		expectCondition *metav1.Condition
 	}{
 		{
 			desc: "Multiple forwarding rules, one missing, success",
@@ -1160,6 +1168,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectIPs:          nil,
 			expectError:        true,
+			expectSystemError:  true,
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
@@ -1637,6 +1646,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			getHCErr:            &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectIPs:           []string{frIP},
 			expectError:         true,
+			expectSystemError:   true,
 			expectEventReasons:  []string{"ExternalHealthCheckFailed"},
 			expectCondition:     ipProgrammedCondition(frIP),
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
@@ -1687,6 +1697,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			getHCErrName:        "hc2",
 			expectIPs:           []string{"10.0.0.100", "10.0.0.101"},
 			expectError:         true,
+			expectSystemError:   true,
 			expectEventReasons:  []string{"ExternalHealthCheckFailed"},
 			expectCondition:     ipProgrammedCondition("10.0.0.100", "10.0.0.101"),
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345,10.0.0.101:12346"},
@@ -1712,6 +1723,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectError:        true,
+			expectSystemError:  true,
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
@@ -1746,6 +1758,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectBSGets:       map[string]int{"bs": 1},
 			expectError:        true,
+			expectSystemError:  true,
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
@@ -1766,6 +1779,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectHCGets:        map[string]int{"hc": 1},
 			expectIPs:           []string{"10.0.0.100", "10.0.0.101"},
 			expectError:         true,
+			expectSystemError:   true,
 			expectEventReasons:  []string{"ExternalHealthCheckFailed"},
 			expectCondition:     ipProgrammedCondition("10.0.0.100", "10.0.0.101"),
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345,10.0.0.101:12345"},
@@ -1782,6 +1796,82 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
 			expectCondition:     ipProgrammedCondition("10.0.0.100"),
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
+		{
+			desc:               "All forwarding rule references unparsable, external health check annotation removed",
+			svc:                standaloneSvc("invalid/url/format", withExternalHCAnnotation("10.0.0.100:12345")),
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionFalse,
+				Reason:  "InvalidForwardingRule",
+				Message: "The custom forwarding rule reference is invalid",
+			},
+			absentAnnotations: []string{annotations.ExternalHealthCheckKey},
+		},
+		{
+			desc:                "Invalid health check URL in the backend service",
+			svc:                 standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
+			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
+			bss:                 bssByName(bsWithHealthCheckURL(regionalBS("bs", "hc"), fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/not-a-hc", project, region))),
+			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			expectIPs:           []string{frIP},
+			expectError:         true,
+			expectSystemError:   true,
+			expectEventReasons:  []string{"ExternalHealthCheckFailed"},
+			expectCondition:     ipProgrammedCondition(frIP),
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
+		{
+			// The forwarding rule is considered to have an address, but no ingress IP can be programmed.
+			desc:         "Forwarding rule with an empty address in IPAddresses",
+			svc:          standaloneSvc(fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/forwardingRules/fr1", project)),
+			frs:          frsByName(globalFR("fr1", "bs", "")),
+			bss:          bssByName(globalBS("bs", "hc")),
+			hcs:          hcsByName(globalHTTPHC("hc", 12345)),
+			svcNegs:      standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			expectHCGets: map[string]int{"hc": 1},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionFalse,
+				Reason:  "ProviderError",
+				Message: "GCE provider error encountered while retrieving forwarding rules",
+			},
+			absentAnnotations: []string{annotations.ExternalHealthCheckKey},
+		},
+		{
+			desc:                "Status patch failure",
+			svc:                 standaloneSvc(frName),
+			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
+			bss:                 bssByName(regionalBS("bs", "hc")),
+			hcs:                 hcsByName(httpHC("hc", 12345)),
+			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			failStatusPatch:     true,
+			expectError:         true,
+			expectSystemError:   true,
+			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
+			absentEventReasons:  []string{"SyncLoadBalancerSuccessful"},
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
+		{
+			// The external health check annotation is not removed when the status can't be cleared.
+			desc:                "Status patch failure when the forwarding rule annotation is empty",
+			svc:                 standaloneSvc("", withExternalHCAnnotation("10.0.0.100:12345")),
+			failStatusPatch:     true,
+			expectError:         true,
+			expectSystemError:   true,
+			expectEventReasons:  []string{"NoForwardingRuleRef"},
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
+		{
+			// The error joining the status patch error with the user errors is classified as a user error.
+			desc:               "Status patch failure when all forwarding rule references are unparsable",
+			svc:                standaloneSvc("invalid/url/format", withExternalHCAnnotation("10.0.0.100:12345")),
+			failStatusPatch:    true,
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+			absentAnnotations:  []string{annotations.ExternalHealthCheckKey},
 		},
 	}
 
@@ -1921,9 +2011,24 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			kubeClient.CoreV1().Services(tc.svc.Namespace).Create(context.TODO(), tc.svc, metav1.CreateOptions{})
 
 			key := tc.svc.Namespace + "/" + tc.svc.Name
+			if tc.failStatusPatch {
+				// Both the status and the metadata are patched through the status subresource,
+				// only the patches modifying the status are failed.
+				kubeClient.PrependReactor("patch", "services", func(action clienttesting.Action) (bool, runtime.Object, error) {
+					if patch, ok := action.(clienttesting.PatchAction); ok && bytes.Contains(patch.GetPatch(), []byte(`"status"`)) {
+						return true, nil, errors.New("injected status patch error")
+					}
+					return false, nil, nil
+				})
+			}
 			err = lc.syncWrapper(key)
 			if (err != nil) != tc.expectError {
 				t.Errorf("sync() error = %v, expectError %v", err, tc.expectError)
+			}
+			if err != nil && tc.expectError {
+				if gotSystemError := !resources.IsUserError(err); gotSystemError != tc.expectSystemError {
+					t.Errorf("sync() error = %v, system error = %v, want system error = %v", err, gotSystemError, tc.expectSystemError)
+				}
 			}
 
 			for name, want := range tc.expectFRGets {
@@ -3126,6 +3231,12 @@ func regionalBS(name, hc string) *composite.BackendService {
 // globalBS returns a global backend service with the test NEG attached and the given health check.
 func globalBS(name, hc string) *composite.BackendService {
 	return testBS(name, meta.Global, hc)
+}
+
+// bsWithHealthCheckURL sets the health check URL of the backend service.
+func bsWithHealthCheckURL(bs *composite.BackendService, hcURL string) *composite.BackendService {
+	bs.HealthChecks = []string{hcURL}
+	return bs
 }
 
 func testBS(name string, scope meta.KeyType, hc string) *composite.BackendService {
