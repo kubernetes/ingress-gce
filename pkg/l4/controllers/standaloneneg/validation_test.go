@@ -19,7 +19,12 @@ package standaloneneg
 import (
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/l4/resources"
+	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
 
 func TestValidateForwardingRule(t *testing.T) {
@@ -137,6 +142,232 @@ func TestValidateForwardingRule(t *testing.T) {
 			}
 			if err != nil && tc.expectErrorMsg != "" && err.Error() != tc.expectErrorMsg {
 				t.Errorf("validateForwardingRule() error message = %q, expected = %q", err.Error(), tc.expectErrorMsg)
+			}
+		})
+	}
+}
+
+func TestBackendServiceKey(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		bsURL     string
+		wantKey   *meta.Key
+		wantError bool
+	}{
+		{
+			desc:    "regional backend service",
+			bsURL:   "https://www.googleapis.com/compute/v1/projects/p/regions/us-central1/backendServices/bs",
+			wantKey: meta.RegionalKey("bs", "us-central1"),
+		},
+		{
+			desc:    "global backend service",
+			bsURL:   "https://www.googleapis.com/compute/v1/projects/p/global/backendServices/bs",
+			wantKey: meta.GlobalKey("bs"),
+		},
+		{
+			desc:      "missing backend service",
+			bsURL:     "",
+			wantError: true,
+		},
+		{
+			desc:      "invalid backend service URL",
+			bsURL:     "not/a/url",
+			wantError: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			key, err := backendServiceKey(&composite.ForwardingRule{BackendService: tc.bsURL})
+			if tc.wantError {
+				if err == nil || !resources.IsUserError(err) {
+					t.Errorf("backendServiceKey() error = %v, want a user error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("backendServiceKey() error = %v", err)
+			}
+			if *key != *tc.wantKey {
+				t.Errorf("backendServiceKey() = %v, want %v", key, tc.wantKey)
+			}
+		})
+	}
+}
+
+func TestValidateBackendServiceAttachment(t *testing.T) {
+	serviceNEG := negSelfLink(snegTestProject, snegTestZone, snegTestNEG)
+	otherNEG := negSelfLink(snegTestProject, snegTestZone, "other-neg")
+	serviceNEGs := sets.New(negMapKey(t, serviceNEG))
+
+	testCases := []struct {
+		desc      string
+		backends  []*composite.Backend
+		wantError bool
+	}{
+		{
+			desc:     "service NEG attached",
+			backends: []*composite.Backend{{Group: otherNEG}, {Group: serviceNEG}},
+		},
+		{
+			desc:      "service NEG not attached",
+			backends:  []*composite.Backend{{Group: otherNEG}},
+			wantError: true,
+		},
+		{
+			desc:      "no backends",
+			wantError: true,
+		},
+		{
+			desc:      "invalid backends are skipped",
+			backends:  []*composite.Backend{nil, {Group: ""}, {Group: "invalid"}},
+			wantError: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := validateBackendServiceAttachment(&composite.BackendService{Name: "bs", Backends: tc.backends}, serviceNEGs)
+			if !tc.wantError {
+				if err != nil {
+					t.Errorf("validateBackendServiceAttachment() error = %v, want nil", err)
+				}
+				return
+			}
+			if !l4utils.IsBackendNotAttachedError(err) || !resources.IsUserError(err) {
+				t.Errorf("validateBackendServiceAttachment() error = %v, want a backend not attached user error", err)
+			}
+		})
+	}
+}
+
+func TestForwardingRuleVIPs(t *testing.T) {
+	testCases := []struct {
+		desc string
+		fr   *composite.ForwardingRule
+		want []string
+	}{
+		{
+			desc: "regional forwarding rule",
+			fr:   &composite.ForwardingRule{IPAddress: "10.0.0.1"},
+			want: []string{"10.0.0.1"},
+		},
+		{
+			desc: "global forwarding rule",
+			fr:   &composite.ForwardingRule{IPAddresses: []string{"10.0.0.1", "2001:db8::1/96"}},
+			want: []string{"10.0.0.1", "2001:db8::1"},
+		},
+		{
+			desc: "IPv6 address is made canonical",
+			fr:   &composite.ForwardingRule{IPAddress: "2001:0db8:0000:0000:0000:0000:0000:0001/96"},
+			want: []string{"2001:db8::1"},
+		},
+		{
+			desc: "empty addresses are skipped",
+			fr:   &composite.ForwardingRule{IPAddresses: []string{""}},
+			want: nil,
+		},
+		{
+			desc: "unparsable address is kept",
+			fr:   &composite.ForwardingRule{IPAddress: "not-an-ip"},
+			want: []string{"not-an-ip"},
+		},
+		{
+			desc: "no address",
+			fr:   &composite.ForwardingRule{},
+			want: nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, forwardingRuleVIPs(tc.fr)); diff != "" {
+				t.Errorf("forwardingRuleVIPs() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestHealthCheckKey(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		hcURL     string
+		wantKey   *meta.Key
+		wantError bool
+	}{
+		{
+			desc:    "regional health check",
+			hcURL:   "https://www.googleapis.com/compute/v1/projects/p/regions/us-central1/healthChecks/hc",
+			wantKey: meta.RegionalKey("hc", "us-central1"),
+		},
+		{
+			desc:    "global health check",
+			hcURL:   "https://www.googleapis.com/compute/v1/projects/p/global/healthChecks/hc",
+			wantKey: meta.GlobalKey("hc"),
+		},
+		{
+			desc:      "not a health check",
+			hcURL:     "https://www.googleapis.com/compute/v1/projects/p/global/backendServices/bs",
+			wantError: true,
+		},
+		{
+			desc:      "invalid URL",
+			hcURL:     "invalid",
+			wantError: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			key, err := healthCheckKey(&composite.BackendService{Name: "bs", HealthChecks: []string{tc.hcURL}})
+			if tc.wantError {
+				if err == nil {
+					t.Errorf("healthCheckKey() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("healthCheckKey() error = %v", err)
+			}
+			if *key != *tc.wantKey {
+				t.Errorf("healthCheckKey() = %v, want %v", key, tc.wantKey)
+			}
+		})
+	}
+}
+
+func TestHTTPHealthCheckPort(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		hc            *composite.HealthCheck
+		wantPort      int64
+		wantNotUsable bool
+	}{
+		{
+			desc:     "HTTP health check with a fixed port",
+			hc:       httpHC("hc", 12345),
+			wantPort: 12345,
+		},
+		{
+			desc:          "HTTP health check using the serving port",
+			hc:            httpHCWithServingPort("hc"),
+			wantNotUsable: true,
+		},
+		{
+			desc:          "TCP health check",
+			hc:            tcpHC("hc", 12345),
+			wantNotUsable: true,
+		},
+		{
+			desc:          "HTTP health check without HTTP settings",
+			hc:            &composite.HealthCheck{Name: "hc", Type: "HTTP"},
+			wantNotUsable: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			port, notUsableReason := httpHealthCheckPort(tc.hc, "hc-url")
+			if port != tc.wantPort {
+				t.Errorf("httpHealthCheckPort() port = %d, want %d", port, tc.wantPort)
+			}
+			if gotNotUsable := notUsableReason != ""; gotNotUsable != tc.wantNotUsable {
+				t.Errorf("httpHealthCheckPort() notUsableReason = %q, want not usable = %v", notUsableReason, tc.wantNotUsable)
 			}
 		})
 	}

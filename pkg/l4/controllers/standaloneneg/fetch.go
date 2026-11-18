@@ -19,53 +19,51 @@ package standaloneneg
 import (
 	"fmt"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
-// lbResourceCache stores the results of GCE resource retrievals done during
-// a single sync, so that resources shared by multiple forwarding rules are
-// retrieved only once. Errors are cached as well.
-type lbResourceCache struct {
-	// backendServices is keyed by the backend service URL.
-	backendServices map[string]backendServiceResult
-	// hcPorts is keyed by the health check URL.
-	hcPorts map[string]hcPortResult
+// syncFetcher retrieves the GCE resources of the load balancers during a
+// single sync. Backend services and health checks are memoised by URL,
+// including errors, so that the resources shared by multiple forwarding rules
+// are retrieved only once.
+type syncFetcher struct {
+	cloud   *gce.Cloud
+	logger  klog.Logger
+	bsByURL map[string]bsResult
+	hcByURL map[string]hcResult
 }
 
-type backendServiceResult struct {
+type bsResult struct {
 	bs  *composite.BackendService
 	err error
 }
 
-type hcPortResult struct {
-	port int64
-	ok   bool
-	err  error
+type hcResult struct {
+	hc  *composite.HealthCheck
+	err error
 }
 
-func newLBResourceCache() *lbResourceCache {
-	return &lbResourceCache{
-		backendServices: make(map[string]backendServiceResult),
-		hcPorts:         make(map[string]hcPortResult),
+func newSyncFetcher(cloud *gce.Cloud, logger klog.Logger) *syncFetcher {
+	return &syncFetcher{
+		cloud:   cloud,
+		logger:  logger,
+		bsByURL: make(map[string]bsResult),
+		hcByURL: make(map[string]hcResult),
 	}
 }
 
-func (c *Controller) forwardingRule(frRawName string, key *meta.Key, svcLogger klog.Logger) (*composite.ForwardingRule, error) {
-	fr, err := composite.GetForwardingRule(c.ctx.Cloud, key, meta.VersionBeta, svcLogger)
+// forwardingRule retrieves the referenced forwarding rule. A forwarding rule
+// that does not exist is a user error.
+func (f *syncFetcher) forwardingRule(ref frRef) (*composite.ForwardingRule, error) {
+	fr, err := composite.GetForwardingRule(f.cloud, ref.key, meta.VersionBeta, f.logger)
 	if err != nil {
 		if utils.IsNotFoundError(err) {
-			svcLogger.Error(err, "failed to get forwarding rule", "frName", frRawName)
+			f.logger.Error(err, "failed to get forwarding rule", "frName", ref.raw)
 			err = l4utils.NewUserError(err)
 		}
 		return nil, err
@@ -73,74 +71,35 @@ func (c *Controller) forwardingRule(frRawName string, key *meta.Key, svcLogger k
 	return fr, nil
 }
 
-// backendService retrieves the backend service referenced by the forwarding rule.
-func (c *Controller) backendService(fr *composite.ForwardingRule, svcLogger klog.Logger) (*composite.BackendService, error) {
-	bsURL := fr.BackendService
-	if bsURL == "" {
-		return nil, l4utils.NewUserError(fmt.Errorf("the service NEGs are not attached to the load balancer, forwarding rule is missing the backend service reference"))
+// backendService retrieves the backend service with the given URL and key.
+// A backend service that does not exist is a user error.
+func (f *syncFetcher) backendService(url string, key *meta.Key) (*composite.BackendService, error) {
+	if result, ok := f.bsByURL[url]; ok {
+		return result.bs, result.err
 	}
-
-	resourceID, err := cloud.ParseResourceURL(bsURL)
+	bs, err := composite.GetBackendService(f.cloud, key, meta.VersionBeta, f.logger)
 	if err != nil {
-		return nil, l4utils.NewUserError(fmt.Errorf("failed to parse backend service URL %s: %w", bsURL, err))
-	}
-	if resourceID == nil || resourceID.Key == nil || resourceID.Key.Name == "" {
-		return nil, l4utils.NewUserError(fmt.Errorf("invalid backend service URL %s: missing resource key", bsURL))
-	}
-
-	bs, err := composite.GetBackendService(c.ctx.Cloud, resourceID.Key, meta.VersionBeta, svcLogger)
-	if err != nil {
-		wrappedError := fmt.Errorf("failed to get backend service %s: %w", bsURL, err)
+		wrappedErr := fmt.Errorf("failed to get backend service %s: %w", url, err)
 		if utils.IsNotFoundError(err) {
-			return nil, l4utils.NewUserError(wrappedError)
+			wrappedErr = l4utils.NewUserError(wrappedErr)
 		}
-		return nil, wrappedError
+		bs, err = nil, wrappedErr
 	}
-	return bs, nil
+	f.bsByURL[url] = bsResult{bs: bs, err: err}
+	return bs, err
 }
 
-func (c *Controller) serviceNEGLinks(svc *v1.Service) (sets.Set[cloud.ResourceMapKey], error) {
-	negLinks := sets.New[cloud.ResourceMapKey]()
-	if svc == nil {
-		return negLinks, nil
+// healthCheck retrieves the health check with the given URL and key. The
+// error is returned as is, a health check that does not exist is handled by
+// the caller.
+func (f *syncFetcher) healthCheck(url string, key *meta.Key) (*composite.HealthCheck, error) {
+	if result, ok := f.hcByURL[url]; ok {
+		return result.hc, result.err
 	}
-
-	negName := c.namer.L4Backend(svc.Namespace, svc.Name)
-	if flags.F.EnableL4CustomStandaloneNEGNames {
-		if customName, err := annotations.StandaloneNEGName(svc); err != nil {
-			return nil, l4utils.NewUserError(err)
-		} else if customName != "" {
-			negName = customName
-		}
+	hc, err := composite.GetHealthCheck(f.cloud, key, meta.VersionBeta, f.logger)
+	if err != nil {
+		hc = nil
 	}
-	svcNegKey := fmt.Sprintf("%s/%s", svc.Namespace, negName)
-
-	if c.ctx != nil && c.ctx.SvcNegInformer != nil {
-		obj, exists, err := c.ctx.SvcNegInformer.GetIndexer().GetByKey(svcNegKey)
-		if err != nil {
-			return nil, err
-		}
-		if !exists {
-			return nil, nil
-		}
-		svcNeg, ok := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
-		if !ok || svcNeg == nil {
-			return nil, fmt.Errorf("failed to retrieve ServiceNetworkEndpointGroup")
-		}
-		if !metav1.IsControlledBy(svcNeg, svc) {
-			err := fmt.Errorf("retrieved ServiceNetworkEndpointGroup %s is not controller by the service %s", svcNeg.Name, svc.Name)
-			return nil, l4utils.NewUserError(err)
-		}
-
-		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
-			if negRef.SelfLink != "" {
-				resourceKey, err := cloud.ParseResourceURL(negRef.SelfLink)
-				if err != nil {
-					continue
-				}
-				negLinks.Insert(resourceKey.MapKey())
-			}
-		}
-	}
-	return negLinks, nil
+	f.hcByURL[url] = hcResult{hc: hc, err: err}
+	return hc, err
 }

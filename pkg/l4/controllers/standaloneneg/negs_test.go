@@ -23,9 +23,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/test"
 )
 
@@ -190,6 +192,68 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 				if key := negMapKey(t, negSelfLink(project, zone, generatedName)); got.Has(key) {
 					t.Errorf("getServiceNEGLinks() still returned the generated NEG %q", generatedName)
 				}
+			}
+		})
+	}
+}
+
+func TestServiceNEGKeys(t *testing.T) {
+	svc := standaloneSvc("fr")
+	svc.UID = "svc-uid"
+	neg1 := negSelfLink(snegTestProject, snegTestZone, "neg-1")
+	neg2 := negSelfLink(snegTestProject, "us-central1-b", "neg-1")
+
+	testCases := []struct {
+		desc      string
+		owner     *v1.Service
+		negRefs   []negv1beta1.NegObjectReference
+		wantKeys  []string
+		wantError bool
+	}{
+		{
+			desc:     "NEGs of the service",
+			owner:    svc,
+			negRefs:  []negv1beta1.NegObjectReference{{SelfLink: neg1}, {SelfLink: neg2}},
+			wantKeys: []string{neg1, neg2},
+		},
+		{
+			desc:     "invalid NEG references are skipped",
+			owner:    svc,
+			negRefs:  []negv1beta1.NegObjectReference{{SelfLink: ""}, {SelfLink: "invalid"}, {SelfLink: neg1}},
+			wantKeys: []string{neg1},
+		},
+		{
+			desc:      "ServiceNetworkEndpointGroup not controlled by the service",
+			negRefs:   []negv1beta1.NegObjectReference{{SelfLink: neg1}},
+			wantError: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svcNeg := &negv1beta1.ServiceNetworkEndpointGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "neg-1", Namespace: svc.Namespace},
+				Status:     negv1beta1.ServiceNetworkEndpointGroupStatus{NetworkEndpointGroups: tc.negRefs},
+			}
+			if tc.owner != nil {
+				svcNeg.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(tc.owner, v1.SchemeGroupVersion.WithKind("Service"))})
+			}
+
+			keys, err := serviceNEGKeys(svc, svcNeg)
+			if tc.wantError {
+				if err == nil || !resources.IsUserError(err) {
+					t.Errorf("serviceNEGKeys() error = %v, want a user error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("serviceNEGKeys() error = %v", err)
+			}
+			wantKeys := sets.New[cloud.ResourceMapKey]()
+			for _, selfLink := range tc.wantKeys {
+				wantKeys.Insert(negMapKey(t, selfLink))
+			}
+			if !keys.Equal(wantKeys) {
+				t.Errorf("serviceNEGKeys() = %v, want %v", keys, wantKeys)
 			}
 		})
 	}

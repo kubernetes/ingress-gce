@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,61 +33,16 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/servicestatus"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
-// validateLoadBalancer ensures that its forwarding rule and backend services are valid.
-// It returns the validated forwarding rule and its backend service.
-func (c *Controller) validateLoadBalancer(parsedFR parsedForwardingRule, targetNEGs sets.Set[cloud.ResourceMapKey], resourceCache *lbResourceCache, svcLogger klog.Logger) (*composite.ForwardingRule, *composite.BackendService, error) {
-	fr, err := c.forwardingRule(parsedFR.rawName, parsedFR.key, svcLogger)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := validateForwardingRule(fr, parsedFR.rawName); err != nil {
-		svcLogger.Error(err, "invalid forwarding rule", "frName", parsedFR.rawName)
-		return nil, nil, l4utils.NewUserError(err)
-	}
-
-	bsURL := fr.BackendService
-	result, ok := resourceCache.backendServices[bsURL]
-	if !ok {
-		result = c.validatedBackendService(fr, targetNEGs, svcLogger)
-		resourceCache.backendServices[bsURL] = result
-	}
-	if result.err != nil {
-		// The cached error is shared by the forwarding rules using the backend service,
-		// add the forwarding rule name to make the errors of each rule distinguishable.
-		errWithContext := fmt.Errorf("forwarding rule %s: %w", parsedFR.rawName, result.err)
-		svcLogger.Error(errWithContext, "invalid backend service for forwarding rule", "frName", parsedFR.rawName, "bsURL", bsURL)
-		return nil, nil, errWithContext
-	}
-
-	return fr, result.bs, nil
-}
-
-// validatedBackendService retrieves the backend service of the forwarding rule
-// and checks that it has the service NEGs attached.
-func (c *Controller) validatedBackendService(fr *composite.ForwardingRule, targetNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) backendServiceResult {
-	bs, err := c.backendService(fr, svcLogger)
-	if err != nil {
-		return backendServiceResult{err: err}
-	}
-	if !backendServiceHasNEGAttached(bs, targetNEGs) {
-		return backendServiceResult{err: l4utils.NewUserError(l4utils.NewBackendNotAttachedError(bs.Name))}
-	}
-	return backendServiceResult{bs: bs}
-}
-
-// IPAddress field is used for creating Regional NetLB forwarding rules, IPAddresses[] field is used for creating Global NetLB forwarding rules.
-func frAddresses(fr *composite.ForwardingRule) []string {
-	if len(fr.IPAddresses) > 0 {
-		return fr.IPAddresses
-	}
-	if fr.IPAddress != "" {
-		return []string{fr.IPAddress}
-	}
-	return nil
+// unusableHealthCheck is a health check that can't be used to redirect the
+// health check traffic, as it is not an HTTP health check with a fixed port.
+type unusableHealthCheck struct {
+	url    string
+	bsName string
+	reason string
 }
 
 func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (lbSchemes sets.Set[string], err error) {
@@ -107,13 +61,13 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 		return nil, l4utils.NewUserError(fmt.Errorf("service has no forwarding rule reference annotation %s", annotations.CustomForwardingRuleKey))
 	}
 
-	parsedRules, parseErrs := c.parseForwardingRuleKeys(frNamesStr, svcLogger)
+	refs, parseErrs := parseFRRefs(frNamesStr, c.ctx.Cloud.Region(), svcLogger)
 	var errs []error
 	for _, parseErr := range parseErrs {
 		errs = append(errs, l4utils.NewUserError(parseErr))
 	}
 
-	if len(parsedRules) == 0 {
+	if len(refs) == 0 {
 		var reason lbConditionReason
 		if len(parseErrs) > 0 {
 			reason = reasonInvalidForwardingRule
@@ -132,12 +86,11 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 		return nil, joinMaybeUserErrors(clearErr, clearAnnotationErr, l4utils.NewUserError(fmt.Errorf("service has no valid forwarding rule reference in annotation")))
 	}
 
-	// Sort alphabetically forwarding rules so rules and status ingress IPs are deterministic between resyncs.
-	sortParsedFRs(parsedRules)
-	if len(parsedRules) > forwardingRulesLimit {
-		skippedFrs := strings.Join(parsedFRNames(parsedRules[forwardingRulesLimit:]), ", ")
+	sortFRRefs(refs)
+	if len(refs) > forwardingRulesLimit {
+		skippedFrs := strings.Join(frRefNames(refs[forwardingRulesLimit:]), ", ")
 		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRulesLimitExceeded", "Up to %d forwarding rules are supported. Skipping remaining forwarding rules (%s)", forwardingRulesLimit, skippedFrs)
-		parsedRules = parsedRules[:forwardingRulesLimit]
+		refs = refs[:forwardingRulesLimit]
 	}
 
 	var lbIngresses []v1.LoadBalancerIngress
@@ -149,7 +102,7 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 		errs = append(errs, err)
 	}
 
-	resourceCache := newLBResourceCache()
+	fetcher := newSyncFetcher(c.ctx.Cloud, svcLogger)
 	// healthCheckAddrs are the VIP:port entries of the external health check annotation.
 	var healthCheckAddrs []string
 	seenHealthCheckAddrs := sets.New[string]()
@@ -158,49 +111,41 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 	// hcErrs are errors related to the external health check annotation, kept separately
 	// from the forwarding rule errors as they do not make the forwarding rules unusable.
 	var hcErrs []error
+	// unusableHCs are reported after the loop, once per health check, as health checks
+	// can be shared by multiple backend services.
+	var unusableHCs []unusableHealthCheck
 
-	for _, parsed := range parsedRules {
-		fr, bs, err := c.validateLoadBalancer(parsed, targetNEGs, resourceCache, svcLogger)
+	for _, ref := range refs {
+		fr, bs, err := c.resolveFR(fetcher, ref, targetNEGs, svcLogger)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		addresses := frAddresses(fr)
-		if len(addresses) == 0 {
-			errs = append(errs, l4utils.NewUserError(fmt.Errorf("forwarding rule %s has no IP address", parsed.rawName)))
+		if len(frAddresses(fr)) == 0 {
+			errs = append(errs, l4utils.NewUserError(fmt.Errorf("forwarding rule %s has no IP address", ref.raw)))
 			continue
 		}
 		schemes.Insert(fr.LoadBalancingScheme)
 
-		var vips []string
-		for _, a := range addresses {
-			if a == "" {
-				continue
-			}
-			// GCP IPv6 forwarding rules provide the IP in CIDR form (e.g. /96 range). We must extract the base IP.
-			trimmedIP := strings.Split(a, "/")[0]
-			// And make it canonical to avoid warnings from k8s apiserver
-			if ipAddr, err := netip.ParseAddr(trimmedIP); err == nil {
-				trimmedIP = ipAddr.String()
-			}
-			if trimmedIP != "" {
-				lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: trimmedIP, IPMode: &vipMode})
-				vips = append(vips, trimmedIP)
-			}
+		vips := forwardingRuleVIPs(fr)
+		for _, vip := range vips {
+			lbIngresses = append(lbIngresses, v1.LoadBalancerIngress{IP: vip, IPMode: &vipMode})
 		}
 
-		hcPort, ok, err := c.cachedHealthCheckPort(resourceCache, bs, svc, svcLogger)
+		hcPort, notUsableReason, err := resolveHealthCheck(fetcher, bs)
 		switch {
 		case err != nil:
 			c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ExternalHealthCheckFailed",
-				"Failed to get the health check port of forwarding rule %s: %v", parsed.rawName, err)
-			hcErrs = append(hcErrs, fmt.Errorf("failed to get the health check port of forwarding rule %s: %w", parsed.rawName, err))
-		case !ok:
-			// No HTTP health check with a fixed port, nothing to redirect.
+				"Failed to get the health check port of forwarding rule %s: %v", ref.raw, err)
+			hcErrs = append(hcErrs, fmt.Errorf("failed to get the health check port of forwarding rule %s: %w", ref.raw, err))
+		case notUsableReason != "":
+			unusableHCs = append(unusableHCs, unusableHealthCheck{url: bs.HealthChecks[0], bsName: bs.Name, reason: notUsableReason})
+		case hcPort == 0:
+			// No HTTP health check, nothing to redirect.
 		case hcPort == int64(svc.Spec.HealthCheckNodePort):
 			// The health check already targets the service health check node port, no redirection is needed.
 		case serviceServesTCPPort(svc, hcPort):
-			collisions[hcPort] = append(collisions[hcPort], parsed.rawName)
+			collisions[hcPort] = append(collisions[hcPort], ref.raw)
 		default:
 			for _, vip := range vips {
 				addr := net.JoinHostPort(vip, strconv.FormatInt(hcPort, 10))
@@ -212,6 +157,7 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 		}
 	}
 
+	c.reportUnusableHealthChecks(svc, unusableHCs, svcLogger)
 	for _, port := range slices.Sorted(maps.Keys(collisions)) {
 		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "PortCollision",
 			"Health check port %d collides with a TCP port of the service, skipping it in the %s annotation for forwarding rules: %s",
@@ -275,4 +221,74 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (l
 	}
 	c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "SyncLoadBalancerSuccessful", "Successfully programmed Standalone NEG LoadBalancer IP(s)")
 	return schemes, nil
+}
+
+// resolveFR retrieves the forwarding rule and its backend service, and checks
+// that they can be used for the service. A non-nil error means the forwarding
+// rule can't be used.
+func (c *Controller) resolveFR(fetcher *syncFetcher, ref frRef, serviceNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) (*composite.ForwardingRule, *composite.BackendService, error) {
+	fr, err := fetcher.forwardingRule(ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateForwardingRule(fr, ref.raw); err != nil {
+		svcLogger.Error(err, "invalid forwarding rule", "frName", ref.raw)
+		return nil, nil, l4utils.NewUserError(err)
+	}
+
+	var bs *composite.BackendService
+	bsKey, err := backendServiceKey(fr)
+	if err == nil {
+		bs, err = fetcher.backendService(fr.BackendService, bsKey)
+	}
+	if err == nil {
+		err = validateBackendServiceAttachment(bs, serviceNEGs)
+	}
+	if err != nil {
+		// Backend services can be shared by multiple forwarding rules, the forwarding
+		// rule name is added to make the errors of each rule distinguishable.
+		err = fmt.Errorf("forwarding rule %s: %w", ref.raw, err)
+		svcLogger.Error(err, "invalid backend service for forwarding rule", "frName", ref.raw, "bsURL", fr.BackendService)
+		return nil, nil, err
+	}
+	return fr, bs, nil
+}
+
+// resolveHealthCheck returns the port of the HTTP health check of the backend
+// service. If the backend service has a health check that is not an HTTP
+// health check with a fixed port, it returns the reason why it can't be used
+// instead.
+func resolveHealthCheck(fetcher *syncFetcher, bs *composite.BackendService) (port int64, notUsableReason string, err error) {
+	// Currently, at most one health check can be specified for each backend service.
+	if len(bs.HealthChecks) == 0 {
+		return 0, "", nil
+	}
+	hcURL := bs.HealthChecks[0]
+	hcKey, err := healthCheckKey(bs)
+	if err != nil {
+		return 0, "", err
+	}
+	hc, err := fetcher.healthCheck(hcURL, hcKey)
+	switch {
+	case utils.IsNotFoundError(err):
+		return 0, fmt.Sprintf("health check %s not found", hcURL), nil
+	case err != nil:
+		return 0, "", fmt.Errorf("failed to get health check %s: %w", hcURL, err)
+	}
+	port, notUsableReason = httpHealthCheckPort(hc, hcURL)
+	return port, notUsableReason, nil
+}
+
+// reportUnusableHealthChecks reports the health checks that can't be used to
+// redirect the health check traffic, once per health check.
+func (c *Controller) reportUnusableHealthChecks(svc *v1.Service, unusableHCs []unusableHealthCheck, svcLogger klog.Logger) {
+	reported := sets.New[string]()
+	for _, hc := range unusableHCs {
+		if reported.Has(hc.url) {
+			continue
+		}
+		reported.Insert(hc.url)
+		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoHTTPHealthChecks", "Backend service %s has no usable HTTP health check: %s", hc.bsName, hc.reason)
+		svcLogger.V(4).Info("Backend service has no usable HTTP health check", "backendService", hc.bsName, "reason", hc.reason)
+	}
 }

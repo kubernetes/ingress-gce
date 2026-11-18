@@ -30,57 +30,63 @@ import (
 // forwardingRulesLimit is the maximum number of forwarding rules of a service.
 const forwardingRulesLimit = 10
 
-type parsedForwardingRule struct {
-	key     *meta.Key
-	rawName string
+// frRef is a forwarding rule reference from the service annotation.
+type frRef struct {
+	key *meta.Key
+	// raw is the reference as written in the annotation: a name or a URL.
+	raw string
 }
 
-func (c *Controller) parseForwardingRuleKeys(frNamesStr string, svcLogger klog.Logger) ([]parsedForwardingRule, []error) {
-	if frNamesStr == "" {
+// parseFRRefs parses the comma separated forwarding rule references of the
+// annotation. A reference is either a forwarding rule name, in the given
+// region, or a forwarding rule URL. Duplicate references are skipped.
+func parseFRRefs(annotation, region string, svcLogger klog.Logger) ([]frRef, []error) {
+	if annotation == "" {
 		return nil, nil
 	}
-	var parsedRules []parsedForwardingRule
+	var refs []frRef
 	var errs []error
 	seenKeys := sets.New[meta.Key]()
-	frNames := strings.Split(frNamesStr, ",")
-	for _, frName := range frNames {
-		frName = strings.TrimSpace(frName)
-		if frName == "" {
+	for _, raw := range strings.Split(annotation, ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
 			continue
 		}
-		var frKey *meta.Key
-		if strings.Contains(frName, "/") {
-			resourceID, err := cloud.ParseResourceURL(frName)
+		var key *meta.Key
+		if strings.Contains(raw, "/") {
+			resourceID, err := cloud.ParseResourceURL(raw)
 			if err != nil {
-				svcLogger.Error(err, "Failed to parse forwarding rule reference URL", "frRef", frName)
-				errs = append(errs, fmt.Errorf("failed to parse forwarding rule reference URL %s: %w", frName, err))
+				svcLogger.Error(err, "Failed to parse forwarding rule reference URL", "frRef", raw)
+				errs = append(errs, fmt.Errorf("failed to parse forwarding rule reference URL %s: %w", raw, err))
 				continue
 			}
-			frKey = resourceID.Key
+			key = resourceID.Key
 		} else {
-			frKey = meta.RegionalKey(frName, c.ctx.Cloud.Region())
+			key = meta.RegionalKey(raw, region)
 		}
 		// The same forwarding rule can be referenced multiple times, e.g. by name and by URL.
-		if seenKeys.Has(*frKey) {
-			svcLogger.V(2).Info("Skipping duplicate forwarding rule reference", "frRef", frName)
+		if seenKeys.Has(*key) {
+			svcLogger.V(2).Info("Skipping duplicate forwarding rule reference", "frRef", raw)
 			continue
 		}
-		seenKeys.Insert(*frKey)
-		parsedRules = append(parsedRules, parsedForwardingRule{key: frKey, rawName: frName})
+		seenKeys.Insert(*key)
+		refs = append(refs, frRef{key: key, raw: raw})
 	}
-	return parsedRules, errs
+	return refs, errs
 }
 
-func parsedFRNames(frs []parsedForwardingRule) []string {
-	names := make([]string, len(frs))
-	for i, fr := range frs {
-		names[i] = fr.rawName
+// sortFRRefs sorts the references alphabetically, so that the forwarding
+// rules and the status ingress IPs are deterministic between syncs.
+func sortFRRefs(refs []frRef) {
+	sort.Slice(refs, func(i, j int) bool {
+		return refs[i].raw < refs[j].raw
+	})
+}
+
+func frRefNames(refs []frRef) []string {
+	names := make([]string, len(refs))
+	for i, ref := range refs {
+		names[i] = ref.raw
 	}
 	return names
-}
-
-func sortParsedFRs(frs []parsedForwardingRule) {
-	sort.Slice(frs, func(i, j int) bool {
-		return frs[i].rawName < frs[j].rawName
-	})
 }

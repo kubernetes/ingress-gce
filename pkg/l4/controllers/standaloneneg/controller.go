@@ -43,7 +43,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/tools/cache"
 	ccontext "k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
@@ -60,7 +59,7 @@ const (
 	defaultNumWorkers = 1
 )
 
-// Controller manages services with CustomNegLoadBalancerClass.
+// Controller manages the LoadBalancer services using the Standalone NEG load balancer class.
 type Controller struct {
 	ctx       *ccontext.ControllerContext
 	svcQueue  utils.TaskQueue
@@ -82,49 +81,13 @@ func NewController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logg
 	}
 	c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, c.syncWrapper, logger)
 
-	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			svc, ok := obj.(*v1.Service)
-			if !ok {
-				return
-			}
-			if wantsStandaloneNEGLB(svc) {
-				c.enqueue(svc)
-			}
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			curSvc, ok := cur.(*v1.Service)
-			if !ok {
-				return
-			}
-			oldSvc, okOld := old.(*v1.Service)
-			if okOld && wantsStandaloneNEGLB(oldSvc) || wantsStandaloneNEGLB(curSvc) {
-				c.enqueue(curSvc)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			svc, ok := obj.(*v1.Service)
-			if !ok {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					logger.Error(nil, "Unexpected object type in DeleteFunc", "type", fmt.Sprintf("%T", obj))
-					return
-				}
-				svc, ok = tombstone.Obj.(*v1.Service)
-				if !ok {
-					logger.Error(nil, "Unexpected object type in tombstone in DeleteFunc", "type", fmt.Sprintf("%T", tombstone.Obj))
-					return
-				}
-			}
-			if wantsStandaloneNEGLB(svc) {
-				c.enqueue(svc)
-			}
-		},
-	})
+	ctx.ServiceInformer.AddEventHandler(c.serviceEventHandler())
 
 	return c
 }
 
+// Run waits for the informer caches to sync and runs the controller until
+// the stop channel is closed.
 func (c *Controller) Run() {
 	c.logger.Info("Starting StandaloneNEGLBController", "numWorkers", defaultNumWorkers)
 

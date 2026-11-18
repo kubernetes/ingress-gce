@@ -193,3 +193,97 @@ func TestStandaloneNEGLBControllerEventHandlers_Delete(t *testing.T) {
 		t.Errorf("Failed to verify DeleteFunc via metrics: %v", err)
 	}
 }
+
+func TestServiceEventHandlers(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	otherClass := "other-class"
+	standalone := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: "default"},
+		Spec:       v1.ServiceSpec{Type: v1.ServiceTypeLoadBalancer, LoadBalancerClass: &lbClass},
+	}
+	otherLB := standalone.DeepCopy()
+	otherLB.Spec.LoadBalancerClass = &otherClass
+	clusterIP := standalone.DeepCopy()
+	clusterIP.Spec.Type = v1.ServiceTypeClusterIP
+
+	testCases := []struct {
+		desc        string
+		handle      func(c *Controller)
+		wantEnqueue bool
+	}{
+		{
+			desc:        "add standalone NEG LB service",
+			handle:      func(c *Controller) { c.onServiceAdd(standalone) },
+			wantEnqueue: true,
+		},
+		{
+			desc:   "add service with another load balancer class",
+			handle: func(c *Controller) { c.onServiceAdd(otherLB) },
+		},
+		{
+			desc:   "add ClusterIP service",
+			handle: func(c *Controller) { c.onServiceAdd(clusterIP) },
+		},
+		{
+			desc:   "add unexpected object",
+			handle: func(c *Controller) { c.onServiceAdd("not a service") },
+		},
+		{
+			desc:        "update standalone NEG LB service",
+			handle:      func(c *Controller) { c.onServiceUpdate(standalone, standalone) },
+			wantEnqueue: true,
+		},
+		{
+			desc:        "update service to standalone NEG LB",
+			handle:      func(c *Controller) { c.onServiceUpdate(clusterIP, standalone) },
+			wantEnqueue: true,
+		},
+		{
+			desc:        "update service from standalone NEG LB, so that its status is cleared",
+			handle:      func(c *Controller) { c.onServiceUpdate(standalone, otherLB) },
+			wantEnqueue: true,
+		},
+		{
+			desc:   "update service with another load balancer class",
+			handle: func(c *Controller) { c.onServiceUpdate(otherLB, otherLB) },
+		},
+		{
+			desc:        "delete standalone NEG LB service",
+			handle:      func(c *Controller) { c.onServiceDelete(standalone) },
+			wantEnqueue: true,
+		},
+		{
+			desc: "delete standalone NEG LB service tombstone",
+			handle: func(c *Controller) {
+				c.onServiceDelete(cache.DeletedFinalStateUnknown{Key: "default/svc", Obj: standalone})
+			},
+			wantEnqueue: true,
+		},
+		{
+			desc:   "delete service with another load balancer class",
+			handle: func(c *Controller) { c.onServiceDelete(otherLB) },
+		},
+		{
+			desc: "delete unexpected tombstone",
+			handle: func(c *Controller) {
+				c.onServiceDelete(cache.DeletedFinalStateUnknown{Key: "default/svc", Obj: "not a service"})
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			_, _, c, stopCh := setupControllerContext(t)
+			defer close(stopCh)
+
+			tc.handle(c)
+
+			wantLen := 0
+			if tc.wantEnqueue {
+				wantLen = 1
+			}
+			if got := c.svcQueue.Len(); got != wantLen {
+				t.Errorf("queue length = %d, want %d", got, wantLen)
+			}
+		})
+	}
+}
