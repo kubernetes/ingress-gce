@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/l4/servicestatus"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -580,7 +581,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoForwardingRuleRef", "Service has no forwarding rule reference")
 		svcLogger.V(4).Info("Service has no forwarding rule reference; skipping")
 		cond := NewConditionExternalIPProgrammedFalse(NoForwardingRuleRef)
-		err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		err := servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -604,7 +605,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			reason = NoForwardingRuleRef
 		}
 		cond := NewConditionExternalIPProgrammedFalse(reason)
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		clearErr := servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		_, clearAnnotationErr := lc.updateExternalHealthCheckAnnotation(svc, nil, svcLogger)
 		if len(errs) > 0 {
 			lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "ForwardingRuleUnusable", "Could not use any Forwarding Rule: %v", errors.Join(errs...))
@@ -729,7 +730,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 			firstErr = errs[0]
 		}
 		cond := NewConditionExternalIPProgrammedFalse(classifyError(firstErr))
-		clearErr := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
+		clearErr := servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{Ingress: nil}, []metav1.Condition{cond}, nil, svcLogger)
 		allErrs := append([]error{clearErr}, errs...)
 		allErrs = append(allErrs, hcErrs...)
 		return schemes, joinMaybeUserErrors(allErrs...)
@@ -749,7 +750,7 @@ func (lc *StandaloneNEGLBController) syncStandaloneNEGLB(svc *v1.Service, svcLog
 	}
 	cond := NewConditionExternalIPProgrammedTrue(ips)
 
-	if err := updateServiceStatus(lc.ctx, svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
+	if err := servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, newStatus, []metav1.Condition{cond}, nil, svcLogger); err != nil {
 		return schemes, err
 	}
 
@@ -831,7 +832,7 @@ func (lc *StandaloneNEGLBController) clearStatusIngressIP(svc *v1.Service, svcLo
 	}
 
 	conditionsToRemove := []string{ExternalIPProgrammed}
-	return updateServiceStatus(lc.ctx, svc, newStatus, nil, conditionsToRemove, svcLogger)
+	return servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, newStatus, nil, conditionsToRemove, svcLogger)
 }
 
 func (lc *StandaloneNEGLBController) publishMetrics(key string, schemes sets.Set[string], syncErr error, start time.Time) {

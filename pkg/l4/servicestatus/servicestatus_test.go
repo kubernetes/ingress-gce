@@ -1,0 +1,329 @@
+/*
+Copyright 2026 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package servicestatus
+
+import (
+	"testing"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func TestConditionsEqual(t *testing.T) {
+	testCases := []struct {
+		desc           string
+		left           []metav1.Condition
+		right          []metav1.Condition
+		expectedResult bool
+	}{
+		{
+			desc:           "Both empty",
+			left:           []metav1.Condition{},
+			right:          []metav1.Condition{},
+			expectedResult: true,
+		},
+		{
+			desc:           "One nil, one empty",
+			left:           nil,
+			right:          []metav1.Condition{},
+			expectedResult: true,
+		},
+		{
+			desc: "Different lengths",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+			},
+			right:          []metav1.Condition{},
+			expectedResult: false,
+		},
+		{
+			desc: "Same conditions, same order",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "ReasonA", Message: "MsgA"},
+				{Type: "Synced", Status: metav1.ConditionFalse, Reason: "ReasonB", Message: "MsgB"},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "ReasonA", Message: "MsgA"},
+				{Type: "Synced", Status: metav1.ConditionFalse, Reason: "ReasonB", Message: "MsgB"},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Same conditions, different order",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Synced", Status: metav1.ConditionFalse},
+			},
+			right: []metav1.Condition{
+				{Type: "Synced", Status: metav1.ConditionFalse},
+				{Type: "Ready", Status: metav1.ConditionTrue},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Missing condition type in right",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Synced", Status: metav1.ConditionTrue},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Other", Status: metav1.ConditionTrue},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Different Status",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionFalse},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Different Reason",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Foo"},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Bar"},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Different Message",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Message: "Foo"},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Message: "Bar"},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Extra fields in left ignored (LastTransitionTime is not checked)",
+			left: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: metav1.Now()},
+			},
+			right: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+			},
+			expectedResult: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotResult := conditionsEqual(tc.left, tc.right)
+			if gotResult != tc.expectedResult {
+				t.Errorf("conditionsEqual() = %v, expected %v", gotResult, tc.expectedResult)
+			}
+		})
+	}
+}
+
+func TestMergeConditions(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		existing      []metav1.Condition
+		newConditions []metav1.Condition
+		expected      []metav1.Condition
+	}{
+		{
+			desc:          "Empty existing and new",
+			existing:      nil,
+			newConditions: nil,
+			expected:      nil,
+		},
+		{
+			desc:          "Add new conditions to empty existing",
+			existing:      nil,
+			newConditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+			expected:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+		},
+		{
+			desc:          "Replace existing condition",
+			existing:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "Old"}},
+			newConditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, Reason: "New"}},
+			expected:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, Reason: "New"}},
+		},
+		{
+			desc:          "Add new condition to existing",
+			existing:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+			newConditions: []metav1.Condition{{Type: "Synced", Status: metav1.ConditionTrue}},
+			expected:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}, {Type: "Synced", Status: metav1.ConditionTrue}},
+		},
+		{
+			desc: "Mixed update and add",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionFalse},
+				{Type: "Old", Status: metav1.ConditionTrue},
+			},
+			newConditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "New", Status: metav1.ConditionTrue},
+			},
+			expected: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Old", Status: metav1.ConditionTrue},
+				{Type: "New", Status: metav1.ConditionTrue},
+			},
+		},
+		{
+			desc:          "Case sensitive types",
+			existing:      []metav1.Condition{{Type: "ready", Status: metav1.ConditionFalse}},
+			newConditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+			expected:      []metav1.Condition{{Type: "ready", Status: metav1.ConditionFalse}, {Type: "Ready", Status: metav1.ConditionTrue}},
+		},
+		{
+			desc:          "Duplicate types in newConditions (last wins)",
+			existing:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse}},
+			newConditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse}, {Type: "Ready", Status: metav1.ConditionTrue}},
+			expected:      []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := mergeConditions(tc.existing, tc.newConditions, nil)
+			if !conditionsEqual(got, tc.expected) {
+				t.Errorf("mergeConditions() = %v, expected %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestMergeConditions_Remove(t *testing.T) {
+	testCases := []struct {
+		desc               string
+		existing           []metav1.Condition
+		newConditions      []metav1.Condition
+		conditionsToRemove []string
+		expected           []metav1.Condition
+	}{
+		{
+			desc:               "Remove existing condition",
+			existing:           []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}},
+			newConditions:      nil,
+			conditionsToRemove: []string{"Ready"},
+			expected:           nil,
+		},
+		{
+			desc: "Remove one, keep one, add one",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+				{Type: "Synced", Status: metav1.ConditionFalse},
+			},
+			newConditions:      []metav1.Condition{{Type: "Programmed", Status: metav1.ConditionTrue}},
+			conditionsToRemove: []string{"Ready"},
+			expected: []metav1.Condition{
+				{Type: "Synced", Status: metav1.ConditionFalse},
+				{Type: "Programmed", Status: metav1.ConditionTrue},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := mergeConditions(tc.existing, tc.newConditions, tc.conditionsToRemove)
+			if !conditionsEqual(got, tc.expected) {
+				t.Errorf("mergeConditions() = %v, expected %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestMergeConditions_PreserveLastTransitionTime(t *testing.T) {
+	t1 := metav1.NewTime(time.Now().Add(-10 * time.Minute))
+	t2 := metav1.NewTime(time.Now())
+
+	testCases := []struct {
+		desc          string
+		existing      []metav1.Condition
+		newConditions []metav1.Condition
+		expected      []metav1.Condition
+	}{
+		{
+			desc: "Preserve transition time when status is same",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t1},
+			},
+			newConditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+			expected: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t1},
+			},
+		},
+		{
+			desc: "Update transition time when status changes",
+			existing: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionFalse, LastTransitionTime: t1},
+			},
+			newConditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+			expected: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, LastTransitionTime: t2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := mergeConditions(tc.existing, tc.newConditions, nil)
+			if len(got) != len(tc.expected) {
+				t.Fatalf("Got %d conditions, expected %d", len(got), len(tc.expected))
+			}
+			for i, gotCond := range got {
+				expectedCond := tc.expected[i]
+				if gotCond.Type != expectedCond.Type {
+					t.Errorf("Condition %d type mismatch: got %s, expected %s", i, gotCond.Type, expectedCond.Type)
+				}
+				if gotCond.Status != expectedCond.Status {
+					t.Errorf("Condition %d status mismatch: got %v, expected %v", i, gotCond.Status, expectedCond.Status)
+				}
+				if !gotCond.LastTransitionTime.Equal(&expectedCond.LastTransitionTime) {
+					t.Errorf("Condition %d LastTransitionTime mismatch: got %v, expected %v", i, gotCond.LastTransitionTime, expectedCond.LastTransitionTime)
+				}
+			}
+		})
+	}
+}
+
+func TestMergeConditions_Sorting(t *testing.T) {
+	newConditions := []metav1.Condition{
+		{Type: "C", Status: metav1.ConditionTrue},
+		{Type: "A", Status: metav1.ConditionTrue},
+		{Type: "B", Status: metav1.ConditionTrue},
+	}
+	expectedOrder := []string{"A", "B", "C"}
+
+	got := mergeConditions(nil, newConditions, nil)
+
+	if len(got) != len(expectedOrder) {
+		t.Fatalf("Got %d conditions, expected %d", len(got), len(expectedOrder))
+	}
+
+	for i, cond := range got {
+		if cond.Type != expectedOrder[i] {
+			t.Errorf("At index %d: got Type %q, expected %q", i, cond.Type, expectedOrder[i])
+		}
+	}
+}
