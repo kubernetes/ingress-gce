@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -55,6 +56,8 @@ const (
 	NEGOwnershipConflict        = "NEGOwnershipConflict"
 	NEGsAttachmentSuccessful    = "NEGsAttachmentSuccessful"
 	NEGsAttachmentFailed        = "NEGsAttachmentFailed"
+
+	statusPatchTimeout = 30 * time.Second
 )
 
 var (
@@ -72,6 +75,10 @@ type NEGBindingStatusHandler struct {
 	negMetrics       *metrics.NegMetrics
 	registry         negOwnershipRegistry
 	logger           klog.Logger
+
+	patchMu           sync.Mutex
+	lastPatchedUID    types.UID
+	lastPatchedStatus *negbindingv1beta1.NetworkEndpointGroupBindingStatus
 }
 
 // NewNEGBindingStatusHandler constructs a new NEGBindingStatusHandler.
@@ -145,6 +152,9 @@ func (h *NEGBindingStatusHandler) SubnetToZonesMap() (shared.ZonesPerSubnetMap, 
 
 // UpdateBackendRefAttachedCondition updates the BackendRefAttached condition inside the NEGBinding CR status.
 func (h *NEGBindingStatusHandler) UpdateBackendRefAttachedCondition(validationErr error) error {
+	h.patchMu.Lock()
+	defer h.patchMu.Unlock()
+
 	origBinding, err := h.getBinding()
 	if err != nil {
 		h.logger.Error(err, "Error updating BackendRefAttached status for NEGBinding, failed to get NEGBinding from store")
@@ -152,7 +162,7 @@ func (h *NEGBindingStatusHandler) UpdateBackendRefAttachedCondition(validationEr
 		return err
 	}
 
-	binding := origBinding.DeepCopy()
+	binding := h.bindingForPatchBase(origBinding)
 	h.ensureCondition(binding, h.getBackendRefAttachedCondition(validationErr))
 
 	err = h.patchNegBindingStatus(origBinding.Status, binding.Status)
@@ -161,11 +171,15 @@ func (h *NEGBindingStatusHandler) UpdateBackendRefAttachedCondition(validationEr
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return err
 	}
+	h.saveLastPatchedStatus(origBinding.UID, binding.Status)
 	return nil
 }
 
 // ReportStatus reports the updated list of successfully configured GCE NEGs inside the NEGBinding CR status.
 func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpointGroup, errList []error) error {
+	h.patchMu.Lock()
+	defer h.patchMu.Unlock()
+
 	origBinding, err := h.getBinding()
 	if err != nil {
 		h.logger.Error(err, "Error updating init status for NEGBinding, failed to get NEGBinding from store.")
@@ -181,7 +195,7 @@ func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpoint
 		}
 	}
 
-	binding := origBinding.DeepCopy()
+	binding := h.bindingForPatchBase(origBinding)
 	binding.Status.NetworkEndpointGroups = statusNegs
 
 	managedCond := h.getManagedCondition(binding)
@@ -197,19 +211,23 @@ func (h *NEGBindingStatusHandler) ReportStatus(negs []*composite.NetworkEndpoint
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return err
 	}
+	h.saveLastPatchedStatus(origBinding.UID, binding.Status)
 	return nil
 }
 
 // ReportSyncStatus reports the result of a sync operation. It returns true if
 // the syncer needs to re-initialize NEGs on next sync.
 func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) {
+	h.patchMu.Lock()
+	defer h.patchMu.Unlock()
+
 	origBinding, err := h.getBinding()
 	if err != nil {
 		h.logger.Error(err, "Error updating status for NEGBinding, failed to get NEGBinding from store")
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return false, err
 	}
-	binding := origBinding.DeepCopy()
+	binding := h.bindingForPatchBase(origBinding)
 
 	ts := metav1.Now()
 	needInit := false
@@ -232,6 +250,7 @@ func (h *NEGBindingStatusHandler) ReportSyncStatus(syncErr error) (bool, error) 
 		h.negMetrics.PublishNegControllerErrorCountMetrics(err, true)
 		return needInit, err
 	}
+	h.saveLastPatchedStatus(origBinding.UID, binding.Status)
 	return needInit, nil
 }
 
@@ -242,6 +261,22 @@ func (h *NEGBindingStatusHandler) LastSyncTime() (time.Time, error) {
 		return time.Time{}, err
 	}
 	return binding.Status.LastSyncTime.Time, nil
+}
+
+// bindingForPatchBase returns a copy of origBinding with lastPatchedStatus applied so new patches
+// do not overwrite fields from recent patches that have not propagated to the informer cache yet.
+// Cached status is ignored if the binding has a different UID.
+func (h *NEGBindingStatusHandler) bindingForPatchBase(origBinding *negbindingv1beta1.NetworkEndpointGroupBinding) *negbindingv1beta1.NetworkEndpointGroupBinding {
+	baseBinding := origBinding.DeepCopy()
+	if h.lastPatchedStatus != nil && h.lastPatchedUID == origBinding.UID {
+		baseBinding.Status = *h.lastPatchedStatus.DeepCopy()
+	}
+	return baseBinding
+}
+
+func (h *NEGBindingStatusHandler) saveLastPatchedStatus(uid types.UID, status negbindingv1beta1.NetworkEndpointGroupBindingStatus) {
+	h.lastPatchedStatus = status.DeepCopy()
+	h.lastPatchedUID = uid
 }
 
 func (h *NEGBindingStatusHandler) ensureCondition(binding *negbindingv1beta1.NetworkEndpointGroupBinding, expectedCondition negbindingv1beta1.Condition) negbindingv1beta1.Condition {
@@ -324,8 +359,11 @@ func (h *NEGBindingStatusHandler) patchNegBindingStatus(oldStatus, newStatus neg
 		return nil
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), statusPatchTimeout)
+	defer cancel()
+
 	start := time.Now()
-	_, err = h.negBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(h.namespace).Patch(context.Background(), h.negBindingName, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
+	_, err = h.negBindingClient.NetworkingV1beta1().NetworkEndpointGroupBindings(h.namespace).Patch(ctx, h.negBindingName, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 	h.negMetrics.PublishK8sRequestCountMetrics(start, metrics.PatchRequest, err)
 	return err
 }
