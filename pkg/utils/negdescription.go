@@ -82,6 +82,66 @@ func (expectDesc StandardNEGDescription) MatchesString(descString, negName, zone
 	return true, nil
 }
 
+// CustomL4PassthroughNEGDescription is the description of a GCE_VM_IP NEG with a user
+// provided name (L4 Standalone passthrough NEG services). It serializes the same way as
+// the wrapped StandardNEGDescription, but its MatchesString is stricter, since the NEG
+// could have been created outside of the cluster and the description is the only proof
+// that the NEG is owned by the service.
+type CustomL4PassthroughNEGDescription struct {
+	Desc StandardNEGDescription
+}
+
+// String returns the string representation of the description.
+func (desc CustomL4PassthroughNEGDescription) String() string {
+	return desc.Desc.String()
+}
+
+// MatchesString returns whether the provided descString proves the NEG is owned by the service.
+// Unlike StandardNEGDescription.MatchesString, an empty or malformed description is a mismatch.
+// A missing port and port "0" are considered equal, since the port is meaningless for
+// GCE_VM_IP NEGs and users pre-creating NEGs may omit it from the description.
+// When returning false, a detailed error will also be returned.
+func (expectDesc CustomL4PassthroughNEGDescription) MatchesString(descString, negName, zone string) (bool, error) {
+	if descString == "" {
+		return false, fmt.Errorf("NEG object %q/%q has an empty description, expected %+v", zone, negName, expectDesc.Desc)
+	}
+	// Unmarshal directly instead of NEGDescriptionFromString, which logs an error. Malformed
+	// descriptions are expected here for NEGs created outside of the cluster.
+	var desc StandardNEGDescription
+	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
+		return false, fmt.Errorf("NEG object %q/%q has a malformed description %q, expected %+v: %w", zone, negName, descString, expectDesc.Desc, err)
+	}
+	if desc.ClusterUID != expectDesc.Desc.ClusterUID || desc.Namespace != expectDesc.Desc.Namespace {
+		return false, fmt.Errorf("expected description of NEG object %q/%q to be %+v, but got %+v", zone, negName, expectDesc.Desc, desc)
+	}
+	// Same as for StandardNEGDescription, a conflict within the same cluster and namespace wraps
+	// ErrNEGUsedByAnotherSyncer, so that the NEG CR status is not updated. For the default subnet
+	// NEG the CR is named after the NEG and is owned by this service, so the conflict is reported
+	// with the NegNameConflict event only. It is still needed for NEGs in non-default subnets,
+	// where "<name>-<subnet hash>" may collide with the custom name of another service.
+	if desc.ServiceName != expectDesc.Desc.ServiceName || !portsMatch(expectDesc.Desc.Port, desc.Port) {
+		return false, fmt.Errorf("%w: expected description of NEG object %q/%q to be %+v, but got %+v", ErrNEGUsedByAnotherSyncer, zone, negName, expectDesc.Desc, desc)
+	}
+	return true, nil
+}
+
+// UserFacingString returns the description users should set on a pre-created NEG.
+// The port is omitted since it is meaningless for GCE_VM_IP NEGs.
+func (desc CustomL4PassthroughNEGDescription) UserFacingString() string {
+	withoutPort := desc.Desc
+	withoutPort.Port = ""
+	return withoutPort.String()
+}
+
+// portsMatch treats a missing port and port "0" as equal.
+func portsMatch(expected, got string) bool {
+	if expected == got {
+		return true
+	}
+	isUnset := func(port string) bool { return port == "" || port == "0" }
+	return isUnset(expected) && isUnset(got)
+}
+
 // BoundNEGDescription stores the description for a NEG managed for NEGBinding CR.
 type BoundNEGDescription struct {
 	ClusterURL string `json:"cluster-url,omitempty"`

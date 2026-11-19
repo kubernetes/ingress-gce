@@ -969,7 +969,9 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 			c.recorder.Event(service, apiv1.EventTypeWarning, "InvalidNEGName", err.Error())
 			return err
 		}
-		if customName != "" {
+		// A custom name equal to the generated one is treated as the generated name, since the NEG
+		// garbage collection identifies custom named NEGs by the name differing from the generated one.
+		if customName != "" && customName != c.l4Namer.L4Backend(name.Namespace, name.Name) {
 			negUsage.CustomNamedNeg = 1
 			customNegName = customName
 		}

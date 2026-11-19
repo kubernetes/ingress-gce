@@ -6858,3 +6858,63 @@ func TestSvcNegStatusStateTransitionsOnZoneChanges(t *testing.T) {
 		}
 	}
 }
+
+func TestTransactionSyncerExpectedNEGDescription(t *testing.T) {
+	t.Parallel()
+	const (
+		kubeSystemUID = "kube-system-uid"
+		clusterURL    = "https://container.googleapis.com/v1/projects/p/locations/l/clusters/c"
+		namespace     = "test-ns"
+		svcName       = "test-svc"
+	)
+	standardDesc := func(port string) utils.StandardNEGDescription {
+		return utils.StandardNEGDescription{ClusterUID: kubeSystemUID, Namespace: namespace, ServiceName: svcName, Port: port}
+	}
+
+	testCases := []struct {
+		desc       string
+		key        negtypes.NegSyncerKey
+		customName bool
+		want       utils.NEGDescription
+	}{
+		{
+			desc:       "custom named GCE_VM_IP NEG uses the strict description",
+			key:        negtypes.NegSyncerKey{Namespace: namespace, Name: svcName, NegType: negtypes.VmIpEndpointType},
+			customName: true,
+			want:       utils.CustomL4PassthroughNEGDescription{Desc: standardDesc("0")},
+		},
+		{
+			desc: "generated name GCE_VM_IP NEG uses the standard description",
+			key:  negtypes.NegSyncerKey{Namespace: namespace, Name: svcName, NegType: negtypes.VmIpEndpointType},
+			want: standardDesc("0"),
+		},
+		{
+			desc:       "custom named GCE_VM_IP_PORT NEG uses the standard description",
+			key:        negtypes.NegSyncerKey{Namespace: namespace, Name: svcName, NegType: negtypes.VmIpPortEndpointType, PortTuple: negtypes.SvcPortTuple{Port: 80}},
+			customName: true,
+			want:       standardDesc("80"),
+		},
+		{
+			desc:       "binding NEG uses the bound description",
+			key:        negtypes.NegSyncerKey{Namespace: namespace, Name: "backend", NEGBindingName: "binding", NegType: negtypes.VmIpPortEndpointType},
+			customName: true,
+			want:       utils.BoundNEGDescription{ClusterURL: clusterURL, Namespace: namespace, BackendRef: "backend"},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			s := &transactionSyncer{
+				NegSyncerKey:  tc.key,
+				kubeSystemUID: kubeSystemUID,
+				clusterURL:    clusterURL,
+				customName:    tc.customName,
+			}
+			if got := s.expectedNEGDescription(); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("expectedNEGDescription() = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}

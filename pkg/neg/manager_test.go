@@ -2638,26 +2638,49 @@ func TestUpdatePreprovisioningZones(t *testing.T) {
 
 // TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG verifies GC never removes a NEG
 // that is not provably ours, even when its name collides with a name we manage.
+// The GC is intentionally not gated by EnableL4CustomStandaloneNEGNames, so that NEGs are
+// still cleaned up after the flag is disabled.
 func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
-	flags.F.EnableL4CustomStandaloneNEGNames = true
-	defer func() { flags.F.EnableL4CustomStandaloneNEGNames = false }()
-
 	const (
-		negName   = "my-custom-neg"
-		testZone  = "zone1"
-		namespace = "test-ns"
-		svcName   = "test-svc"
-		port      = "0"
+		customName = "my-custom-neg"
+		testZone   = "zone1"
+		namespace  = "test-ns"
+		svcName    = "test-svc"
+		port       = "0"
 	)
+	namerManager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+	generatedName := namerManager.l4Namer.L4Backend(namespace, svcName)
+	generatedNonDefaultSubnetName, err := namerManager.l4Namer.NonDefaultSubnetNEG(namespace, svcName, "additional-subnet", 0)
+	if err != nil {
+		t.Fatalf("NonDefaultSubnetNEG() = %v", err)
+	}
+	customNonDefaultSubnetName, err := namerManager.l4Namer.NonDefaultSubnetCustomNEG(customName, "additional-subnet")
+	if err != nil {
+		t.Fatalf("NonDefaultSubnetCustomNEG() = %v", err)
+	}
+	ownDesc := utils.StandardNEGDescription{
+		ClusterUID: string(KubeSystemUID), Namespace: namespace, ServiceName: svcName, Port: port,
+	}.String()
+	ownDescWithoutPort := fmt.Sprintf(`{"cluster-uid":%q,"namespace":%q,"service-name":%q}`, KubeSystemUID, namespace, svcName)
 
 	testCases := []struct {
 		desc         string
 		existingDesc string
+		// crName is the name of the svcneg CR, defaults to customName.
+		crName string
+		// negName is the name of the NEG, defaults to crName.
+		negName string
+		// negType is the NEG type stored in the CR NEG reference.
+		negType      negv1beta1.NetworkEndpointType
 		expectDelete bool
 	}{
 		{
 			desc:         "custom named NEG with empty description is kept",
 			existingDesc: "",
+			negType:      negv1beta1.VmIpEndpointType,
 			expectDelete: false,
 		},
 		{
@@ -2665,6 +2688,7 @@ func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
 			existingDesc: utils.StandardNEGDescription{
 				ClusterUID: "another-cluster-uid", Namespace: namespace, ServiceName: svcName, Port: port,
 			}.String(),
+			negType:      negv1beta1.VmIpEndpointType,
 			expectDelete: false,
 		},
 		{
@@ -2672,6 +2696,7 @@ func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
 			existingDesc: utils.StandardNEGDescription{
 				ClusterUID: string(KubeSystemUID), Namespace: namespace, ServiceName: "another-svc", Port: port,
 			}.String(),
+			negType:      negv1beta1.VmIpEndpointType,
 			expectDelete: false,
 		},
 		{
@@ -2679,34 +2704,103 @@ func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
 			existingDesc: utils.StandardNEGDescription{
 				ClusterUID: string(KubeSystemUID), Namespace: "another-ns", ServiceName: svcName, Port: port,
 			}.String(),
+			negType:      negv1beta1.VmIpEndpointType,
 			expectDelete: false,
 		},
 		{
-			desc: "our own NEG is deleted",
-			existingDesc: utils.StandardNEGDescription{
-				ClusterUID: string(KubeSystemUID), Namespace: namespace, ServiceName: svcName, Port: port,
-			}.String(),
+			desc:         "our own NEG is deleted",
+			existingDesc: ownDesc,
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: true,
+		},
+		{
+			desc:         "adopted NEG with description without port is deleted",
+			existingDesc: ownDescWithoutPort,
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: true,
+		},
+		{
+			desc:         "custom named NEG with malformed description is kept",
+			existingDesc: "created by terraform",
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: false,
+		},
+		{
+			desc:         "NEG type missing from the reference, inferred from the port label: malformed description is kept",
+			existingDesc: "created by terraform",
+			expectDelete: false,
+		},
+		{
+			desc:         "custom named NEG in a non-default subnet with malformed description is kept",
+			existingDesc: "created by terraform",
+			negName:      customNonDefaultSubnetName,
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: false,
+		},
+		{
+			desc:         "adopted custom named NEG in a non-default subnet with description without port is deleted",
+			existingDesc: ownDescWithoutPort,
+			negName:      customNonDefaultSubnetName,
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: true,
+		},
+		{
+			// GC of generated L4 NEGs must not be affected by the custom NEG name handling.
+			desc:         "generated L4 NEG in a non-default subnet with empty description is deleted",
+			existingDesc: "",
+			crName:       generatedName,
+			negName:      generatedNonDefaultSubnetName,
+			negType:      negv1beta1.VmIpEndpointType,
+			expectDelete: true,
+		},
+		{
+			desc:         "generated L4 NEG with empty description is deleted",
+			existingDesc: "",
+			crName:       generatedName,
+			negType:      negv1beta1.VmIpEndpointType,
 			expectDelete: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			crName := tc.crName
+			if crName == "" {
+				crName = customName
+			}
+			negName := tc.negName
+			if negName == "" {
+				negName = crName
+			}
+
 			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
 			if err := manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 				Version:             meta.VersionGA,
 				Name:                negName,
 				NetworkEndpointType: string(negtypes.VmIpEndpointType),
 				Description:         tc.existingDesc,
 			}, testZone, klog.TODO()); err != nil {
-				t.Fatalf("failed to create test syncer manager: %v", err)
+				t.Fatalf("failed to create NEG: %v", err)
 			}
 
-			expectedDesc := &utils.StandardNEGDescription{
-				ClusterUID: KubeSystemUID, Namespace: namespace, ServiceName: svcName, Port: port,
+			// The CR of a GCE_VM_IP NEG is named after the base NEG name and has service port 0.
+			svcNegCR := &negv1beta1.ServiceNetworkEndpointGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      crName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						negtypes.NegCRServiceNameKey: svcName,
+						negtypes.NegCRServicePortKey: port,
+					},
+				},
 			}
-			if err := manager.ensureDeleteNetworkEndpointGroup(negName, testZone, expectedDesc); err != nil {
-				t.Fatalf("ensureDeleteNetworkEndpointGroup() = %v, want nil", err)
+			var errList []error
+			negType := negTypeFromCR(svcNegCR, tc.negType)
+			if deleted := manager.deleteNegOrReportErr(negName, testZone, svcNegCR, negType, &errList); !deleted || len(errList) != 0 {
+				t.Fatalf("deleteNegOrReportErr() = %v, errors: %v, want true and no errors", deleted, errList)
 			}
 
 			_, err = manager.cloud.GetNetworkEndpointGroup(negName, testZone, meta.VersionGA, klog.TODO())
@@ -2716,6 +2810,217 @@ func TestEnsureDeleteNetworkEndpointGroupDoesNotDeleteForeignNEG(t *testing.T) {
 			}
 			if deleted != tc.expectDelete {
 				t.Errorf("NEG deleted = %v, want %v", deleted, tc.expectDelete)
+			}
+		})
+	}
+}
+
+func TestNegTypeFromCR(t *testing.T) {
+	newCR := func(port string) *negv1beta1.ServiceNetworkEndpointGroup {
+		return &negv1beta1.ServiceNetworkEndpointGroup{
+			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{negtypes.NegCRServicePortKey: port}},
+		}
+	}
+	testCases := []struct {
+		desc    string
+		cr      *negv1beta1.ServiceNetworkEndpointGroup
+		refType negv1beta1.NetworkEndpointType
+		want    negv1beta1.NetworkEndpointType
+	}{
+		{
+			desc:    "type from the NEG reference",
+			cr:      newCR("80"),
+			refType: negv1beta1.VmIpEndpointType,
+			want:    negv1beta1.VmIpEndpointType,
+		},
+		{
+			desc: "no type in the reference, port 0",
+			cr:   newCR("0"),
+			want: negv1beta1.VmIpEndpointType,
+		},
+		{
+			desc: "no type in the reference, non zero port",
+			cr:   newCR("80"),
+			want: negv1beta1.VmIpPortEndpointType,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := negTypeFromCR(tc.cr, tc.refType); got != tc.want {
+				t.Errorf("negTypeFromCR() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsCustomNamedVmIpNEGCR(t *testing.T) {
+	manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test syncer manager: %v", err)
+	}
+	const (
+		namespace = "test-ns"
+		svcName   = "test-svc"
+	)
+	newCR := func(name string) *negv1beta1.ServiceNetworkEndpointGroup {
+		return &negv1beta1.ServiceNetworkEndpointGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				Labels:    map[string]string{negtypes.NegCRServiceNameKey: svcName},
+			},
+		}
+	}
+
+	testCases := []struct {
+		desc    string
+		cr      *negv1beta1.ServiceNetworkEndpointGroup
+		negType negv1beta1.NetworkEndpointType
+		want    bool
+	}{
+		{
+			desc:    "VM_IP NEG with custom name",
+			cr:      newCR("my-custom-neg"),
+			negType: negv1beta1.VmIpEndpointType,
+			want:    true,
+		},
+		{
+			desc:    "VM_IP NEG with generated name",
+			cr:      newCR(manager.l4Namer.L4Backend(namespace, svcName)),
+			negType: negv1beta1.VmIpEndpointType,
+			want:    false,
+		},
+		{
+			desc:    "VM_IP_PORT NEG with custom name",
+			cr:      newCR("my-custom-neg"),
+			negType: negv1beta1.VmIpPortEndpointType,
+			want:    false,
+		},
+		{
+			desc:    "VM_IP_PORT NEG with generated name",
+			cr:      newCR(manager.namer.NEG(namespace, svcName, 80)),
+			negType: negv1beta1.VmIpPortEndpointType,
+			want:    false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := manager.isCustomNamedVmIpNEGCR(tc.cr, tc.negType); got != tc.want {
+				t.Errorf("isCustomNamedVmIpNEGCR() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProcessNEGDeletionCandidateCustomNamedVmIpNEG verifies the GC of custom named GCE_VM_IP NEGs,
+// both when the NEGs are referenced in the svcneg CR status and when they are deleted by zone.
+// NEGs not owned by the service are kept, adopted NEGs are deleted and the CR is removed.
+func TestProcessNEGDeletionCandidateCustomNamedVmIpNEG(t *testing.T) {
+	const (
+		customName = "my-custom-neg"
+		namespace  = "test-ns"
+		svcName    = "test-svc"
+		zone1      = "zone1"
+		zone2      = "zone2"
+	)
+	foreignDesc := "created by terraform"
+	ownDescWithoutPort := fmt.Sprintf(`{"cluster-uid":%q,"namespace":%q,"service-name":%q}`, KubeSystemUID, namespace, svcName)
+
+	type testNEG struct {
+		name, zone, desc string
+		wantDeleted      bool
+	}
+
+	testCases := []struct {
+		desc string
+		// withRefs sets the NEG references (including the NEG type) in the CR status.
+		// Otherwise the NEGs are deleted by zone and the NEG type is inferred from the port label.
+		withRefs bool
+		negs     func(customNonDefaultSubnetName string) []testNEG
+	}{
+		{
+			desc:     "NEGs referenced in the CR status",
+			withRefs: true,
+			negs: func(customNonDefaultSubnetName string) []testNEG {
+				return []testNEG{
+					{name: customName, zone: zone1, desc: foreignDesc, wantDeleted: false},
+					{name: customNonDefaultSubnetName, zone: zone1, desc: ownDescWithoutPort, wantDeleted: true},
+				}
+			},
+		},
+		{
+			desc:     "NEGs deleted by zone",
+			withRefs: false,
+			negs: func(string) []testNEG {
+				return []testNEG{
+					{name: customName, zone: zone1, desc: foreignDesc, wantDeleted: false},
+					{name: customName, zone: zone2, desc: ownDescWithoutPort, wantDeleted: true},
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			manager, _, _, err := NewTestSyncerManager(fake.NewSimpleClientset())
+			if err != nil {
+				t.Fatalf("failed to create test syncer manager: %v", err)
+			}
+			customNonDefaultSubnetName, err := manager.l4Namer.NonDefaultSubnetCustomNEG(customName, "additional-subnet")
+			if err != nil {
+				t.Fatalf("NonDefaultSubnetCustomNEG() = %v", err)
+			}
+			negs := tc.negs(customNonDefaultSubnetName)
+
+			svcNegCR := &negv1beta1.ServiceNetworkEndpointGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      customName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						negtypes.NegCRManagedByKey:   negtypes.NegCRControllerValue,
+						negtypes.NegCRServiceNameKey: svcName,
+						negtypes.NegCRServicePortKey: "0",
+					},
+					Finalizers: []string{common.NegFinalizerKey},
+				},
+			}
+			for _, neg := range negs {
+				if err := manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+					Version:             meta.VersionGA,
+					Name:                neg.name,
+					NetworkEndpointType: string(negtypes.VmIpEndpointType),
+					Description:         neg.desc,
+				}, neg.zone, klog.TODO()); err != nil {
+					t.Fatalf("failed to create NEG: %v", err)
+				}
+				if tc.withRefs {
+					svcNegCR.Status.NetworkEndpointGroups = append(svcNegCR.Status.NetworkEndpointGroups, negv1beta1.NegObjectReference{
+						SelfLink:            cloud.SelfLink(meta.VersionGA, "mock-project", "networkEndpointGroups", meta.ZonalKey(neg.name, neg.zone)),
+						NetworkEndpointType: negv1beta1.VmIpEndpointType,
+					})
+				}
+			}
+			if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Create(context2.TODO(), svcNegCR, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("failed to create svcneg CR: %v", err)
+			}
+
+			if errs := manager.processNEGDeletionCandidate(deletionCandidate{neg: svcNegCR}, []string{zone1, zone2}); len(errs) != 0 {
+				t.Fatalf("processNEGDeletionCandidate() = %v, want no errors", errs)
+			}
+
+			for _, neg := range negs {
+				_, err := manager.cloud.GetNetworkEndpointGroup(neg.name, neg.zone, meta.VersionGA, klog.TODO())
+				deleted := utils.IsNotFoundError(err)
+				if err != nil && !deleted {
+					t.Fatalf("GetNetworkEndpointGroup(%s, %s) = %v", neg.name, neg.zone, err)
+				}
+				if deleted != neg.wantDeleted {
+					t.Errorf("NEG %s in %s deleted = %v, want %v", neg.name, neg.zone, deleted, neg.wantDeleted)
+				}
+			}
+			if crs := getNegCRs(t, manager.svcNegClient, namespace); len(crs) != 0 {
+				t.Errorf("got svcneg CRs %v, want the CR to be deleted", crs)
 			}
 		})
 	}

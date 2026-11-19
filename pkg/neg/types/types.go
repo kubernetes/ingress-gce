@@ -62,6 +62,9 @@ const (
 	NegSyncFailed               = "NegSyncFailed"
 	NegInitializationSuccessful = "NegInitializationSuccessful"
 	NegInitializationFailed     = "NegInitializationFailed"
+	// NegNameConflict is the Service event reason used when a NEG with the user requested
+	// name already exists but is not owned by the service.
+	NegNameConflict = "NegNameConflict"
 
 	// NEG CRD Enabled Garbage Collection Event Reasons
 	NegGCError = "NegCRError"
