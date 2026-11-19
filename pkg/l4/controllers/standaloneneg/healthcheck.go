@@ -17,13 +17,75 @@ limitations under the License.
 package standaloneneg
 
 import (
+	"fmt"
+	"maps"
+	"net"
+	"slices"
+	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog/v2"
 )
+
+// externalHealthCheckAddrs returns the VIP:port entries of the external health
+// check annotation: the HTTP health check traffic to these addresses is
+// redirected to the health check node port of the service. It also returns
+// the health check ports colliding with the TCP ports of the service, mapped
+// to the forwarding rules using them: they are skipped, as the health check
+// traffic can't be distinguished from the service traffic.
+func externalHealthCheckAddrs(svc *v1.Service, usable []usableFR) (addrs []string, collisions map[int64][]string) {
+	collisions = make(map[int64][]string)
+	seenAddrs := sets.New[string]()
+	for _, u := range usable {
+		switch {
+		case u.hcPort == 0:
+			// No HTTP health check with a fixed port, nothing to redirect.
+		case u.hcPort == int64(svc.Spec.HealthCheckNodePort):
+			// The health check already targets the service health check node port, no redirection is needed.
+		case serviceServesTCPPort(svc, u.hcPort):
+			collisions[u.hcPort] = append(collisions[u.hcPort], u.ref.raw)
+		default:
+			for _, vip := range u.vips {
+				addr := net.JoinHostPort(vip, strconv.FormatInt(u.hcPort, 10))
+				if !seenAddrs.Has(addr) {
+					seenAddrs.Insert(addr)
+					addrs = append(addrs, addr)
+				}
+			}
+		}
+	}
+	return addrs, collisions
+}
+
+// reportHealthCheckPortCollisions reports the health check ports colliding
+// with the TCP ports of the service.
+func (c *Controller) reportHealthCheckPortCollisions(svc *v1.Service, collisions map[int64][]string) {
+	for _, port := range slices.Sorted(maps.Keys(collisions)) {
+		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "PortCollision",
+			"Health check port %d collides with a TCP port of the service, skipping it in the %s annotation for forwarding rules: %s",
+			port, annotations.ExternalHealthCheckKey, strings.Join(collisions[port], ", "))
+	}
+}
+
+// patchExternalHealthCheckAnnotation updates the external health check
+// annotation of the service and reports the result in an event.
+func (c *Controller) patchExternalHealthCheckAnnotation(svc *v1.Service, addrs []string, svcLogger klog.Logger) error {
+	changed, err := c.updateExternalHealthCheckAnnotation(svc, addrs, svcLogger)
+	if err != nil {
+		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "UpdateExternalHealthCheckFailed",
+			"Failed to update external health check annotation for load balancer, err: %v", err)
+		return fmt.Errorf("failed to update the %s annotation: %w", annotations.ExternalHealthCheckKey, err)
+	}
+	if changed {
+		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "UpdateExternalHealthCheckSuccessful",
+			"Successfully updated external health check annotation for load balancer")
+	}
+	return nil
+}
 
 // serviceServesTCPPort checks if the service exposes the given port over TCP.
 // HTTP health check traffic to such port can't be redirected, as it can't be

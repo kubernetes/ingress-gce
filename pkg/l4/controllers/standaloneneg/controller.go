@@ -46,7 +46,6 @@ import (
 	ccontext "k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
-	"k8s.io/ingress-gce/pkg/l4/servicestatus"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -145,13 +144,7 @@ func (c *Controller) sync(key string, svcLogger klog.Logger) error {
 	if !wantsStandaloneNEGLB(svc) {
 		svcLogger.V(3).Info("Ignoring sync: service does not match standalone LB criteria")
 		c.ctx.L4Metrics.DeleteL4StandaloneNEGService(key)
-		if err := c.clearStatusIngressIP(svc, svcLogger); err != nil {
-			return err
-		}
-		if _, err := c.updateExternalHealthCheckAnnotation(svc, nil, svcLogger); err != nil {
-			return err
-		}
-		return nil
+		return c.removeLoadBalancer(svc, svcLogger)
 	}
 
 	schemes, err := c.syncLoadBalancer(svc, svcLogger)
@@ -159,20 +152,13 @@ func (c *Controller) sync(key string, svcLogger klog.Logger) error {
 	return err
 }
 
-func (c *Controller) clearStatusIngressIP(svc *v1.Service, svcLogger klog.Logger) error {
-	newStatus := &v1.LoadBalancerStatus{
-		Ingress: nil,
-	}
-
-	conditionsToRemove := []string{externalIPProgrammed}
-	return servicestatus.Update(c.ctx.KubeClient.CoreV1(), svc, newStatus, nil, conditionsToRemove, svcLogger)
-}
-
 func (c *Controller) publishMetrics(key string, schemes sets.Set[string], syncErr error, start time.Time) {
 	state := l4metrics.L4StandaloneNEGServiceState{
 		Status: l4metrics.StatusSuccess,
 	}
 	if syncErr != nil {
+		// TODO: IsUserError matches if any of the joined sync errors is a user error, a
+		// sync failing with both user and system errors should be reported as a system error.
 		if resources.IsUserError(syncErr) {
 			state.Status = l4metrics.StatusUserError
 		} else {

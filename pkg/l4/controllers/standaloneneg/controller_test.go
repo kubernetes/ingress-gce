@@ -1797,7 +1797,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			desc:               "All forwarding rule references unparsable, external health check annotation removed",
 			svc:                standaloneSvc("invalid/url/format", withExternalHCAnnotation("10.0.0.100:12345")),
 			expectError:        true,
-			expectEventReasons: []string{"ForwardingRuleUnusable"},
+			expectEventReasons: []string{"ForwardingRuleUnusable", "UpdateExternalHealthCheckSuccessful"},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
@@ -1851,14 +1851,23 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
 		},
 		{
-			// The external health check annotation is not removed when the status can't be cleared.
-			desc:                "Status patch failure when the forwarding rule annotation is empty",
-			svc:                 standaloneSvc("", withExternalHCAnnotation("10.0.0.100:12345")),
-			failStatusPatch:     true,
-			expectError:         true,
-			expectSystemError:   true,
-			expectEventReasons:  []string{"NoForwardingRuleRef"},
-			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+			// The external health check annotation is removed even if the status can't be cleared.
+			desc:               "Status patch failure when the forwarding rule annotation is empty",
+			svc:                standaloneSvc("", withExternalHCAnnotation("10.0.0.100:12345")),
+			failStatusPatch:    true,
+			expectError:        true,
+			expectSystemError:  true,
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+			absentAnnotations:  []string{annotations.ExternalHealthCheckKey},
+		},
+		{
+			desc:               "Status patch failure when the forwarding rule annotation parses to nothing",
+			svc:                standaloneSvc(",  , ", withExternalHCAnnotation("10.0.0.100:12345")),
+			failStatusPatch:    true,
+			expectError:        true,
+			expectSystemError:  true,
+			expectEventReasons: []string{"NoForwardingRuleRef"},
+			absentAnnotations:  []string{annotations.ExternalHealthCheckKey},
 		},
 		{
 			// The error joining the status patch error with the user errors is classified as a user error.
