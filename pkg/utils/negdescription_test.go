@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -403,5 +404,102 @@ func TestVerifyDescription(t *testing.T) {
 		if matches != tc.shouldMatch {
 			t.Errorf("%s: VerifyDescription(%+v, %s) should result in %t, but was %t", tc.desc, tc.expectNegDesc, tc.negDescString, tc.shouldMatch, matches)
 		}
+	}
+}
+
+func TestCustomL4PassthroughNEGDescriptionMatchesString(t *testing.T) {
+	t.Parallel()
+	expected := CustomL4PassthroughNEGDescription{
+		Desc: StandardNEGDescription{ClusterUID: "uid", Namespace: "ns", ServiceName: "svc", Port: "0"},
+	}
+
+	testCases := []struct {
+		desc                      string
+		descString                string
+		expectedPort              string
+		wantMatch                 bool
+		wantErrUsedByOtherSyncers bool
+	}{
+		{
+			desc:       "exact match",
+			descString: `{"cluster-uid":"uid","namespace":"ns","service-name":"svc","port":"0"}`,
+			wantMatch:  true,
+		},
+		{
+			desc:       "port omitted",
+			descString: `{"cluster-uid":"uid","namespace":"ns","service-name":"svc"}`,
+			wantMatch:  true,
+		},
+		{
+			desc:                      "non zero port",
+			descString:                `{"cluster-uid":"uid","namespace":"ns","service-name":"svc","port":"80"}`,
+			wantErrUsedByOtherSyncers: true,
+		},
+		{
+			desc:                      "port omitted does not match an expected non zero port",
+			descString:                `{"cluster-uid":"uid","namespace":"ns","service-name":"svc"}`,
+			expectedPort:              "80",
+			wantErrUsedByOtherSyncers: true,
+		},
+		{
+			desc:       "empty description",
+			descString: "",
+		},
+		{
+			desc:       "malformed description",
+			descString: "created by terraform",
+		},
+		{
+			desc:       "empty JSON object",
+			descString: "{}",
+		},
+		{
+			desc:       "different cluster",
+			descString: `{"cluster-uid":"other","namespace":"ns","service-name":"svc"}`,
+		},
+		{
+			desc:       "different namespace",
+			descString: `{"cluster-uid":"uid","namespace":"other","service-name":"svc"}`,
+		},
+		{
+			desc:                      "different service",
+			descString:                `{"cluster-uid":"uid","namespace":"ns","service-name":"other"}`,
+			wantErrUsedByOtherSyncers: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			expectedDesc := expected
+			if tc.expectedPort != "" {
+				expectedDesc.Desc.Port = tc.expectedPort
+			}
+			gotMatch, err := expectedDesc.MatchesString(tc.descString, "neg", "zone")
+			if gotMatch != tc.wantMatch {
+				t.Errorf("MatchesString(%q) = %v, want %v (err: %v)", tc.descString, gotMatch, tc.wantMatch, err)
+			}
+			if gotMatch != (err == nil) {
+				t.Errorf("MatchesString(%q) returned match %v with err %v, want an error iff there is no match", tc.descString, gotMatch, err)
+			}
+			if gotUsed := errors.Is(err, ErrNEGUsedByAnotherSyncer); gotUsed != tc.wantErrUsedByOtherSyncers {
+				t.Errorf("MatchesString(%q) err = %v, want wrapping ErrNEGUsedByAnotherSyncer = %v", tc.descString, err, tc.wantErrUsedByOtherSyncers)
+			}
+		})
+	}
+}
+
+func TestCustomL4PassthroughNEGDescriptionString(t *testing.T) {
+	t.Parallel()
+	desc := CustomL4PassthroughNEGDescription{
+		Desc: StandardNEGDescription{ClusterUID: "uid", Namespace: "ns", ServiceName: "svc", Port: "0"},
+	}
+	// The NEG description written by the controller must stay the same as for StandardNEGDescription.
+	if got, want := desc.String(), desc.Desc.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got, want := desc.UserFacingString(), `{"cluster-uid":"uid","namespace":"ns","service-name":"svc"}`; got != want {
+		t.Errorf("UserFacingString() = %q, want %q", got, want)
 	}
 }

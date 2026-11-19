@@ -141,6 +141,22 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		needToCreate = true
 	} else {
 		if err := verifyNEGDescription(neg, zone, expectedDesc, customName, negLogger); err != nil {
+			if isCustomNamedVmIpNEG(customName, networkEndpointType) {
+				recordNEGNameConflict(svcNamespace, svcName, serviceLister, recorder, logger, negMetrics,
+					"NEG %q in zone %q already exists and is not owned by this service. Delete the NEG or set its description to %s.",
+					negName, zone, userFacingDescription(expectedDesc))
+			}
+			return nil, err
+		}
+
+		// A matching description of a custom named NEG doesn't prove it was created by the controller,
+		// it could have been created by the user with a different type than expected.
+		if isCustomNamedVmIpNEG(customName, networkEndpointType) && neg.NetworkEndpointType != string(networkEndpointType) {
+			err := fmt.Errorf("custom named NEG %s in zone %s has network endpoint type %q, expected %q", negName, zone, neg.NetworkEndpointType, networkEndpointType)
+			negLogger.Error(err, "Found custom named NEG with unexpected network endpoint type")
+			recordNEGNameConflict(svcNamespace, svcName, serviceLister, recorder, logger, negMetrics,
+				"NEG %q in zone %q already exists with network endpoint type %q, expected %q. Delete the NEG.",
+				negName, zone, neg.NetworkEndpointType, networkEndpointType)
 			return nil, err
 		}
 
@@ -173,7 +189,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 	if needToCreate {
 		if customName && neg != nil {
-			if matches, err := expectedDesc.MatchesString(neg.Description, negName, zone); !matches {
+			if err := verifyNEGDescription(neg, zone, expectedDesc, customName, negLogger); err != nil {
 				negLogger.Error(err, "cannot create NEG without matching description")
 				return nil, fmt.Errorf("custom named NEG %s in zone %s does not match the cluster network/subnetwork; refusing to recreate", negName, zone)
 			}
@@ -230,6 +246,39 @@ func verifyNEGDescription(neg *composite.NetworkEndpointGroup, zone string, expe
 		return fmt.Errorf("found conflicting description in neg %s: %w", neg.Name, err)
 	}
 	return nil
+}
+
+// isCustomNamedVmIpNEG returns true for GCE_VM_IP NEGs which name was provided by the user.
+// Currently these are only created for services with the StandalonePassthroughNegLoadBalancerClass.
+func isCustomNamedVmIpNEG(customName bool, networkEndpointType negtypes.NetworkEndpointType) bool {
+	return customName && networkEndpointType == negtypes.VmIpEndpointType
+}
+
+// userFacingNEGDescription is implemented by NEG descriptions for which the description
+// users should set on NEGs they create differs from the one written by the controller.
+type userFacingNEGDescription interface {
+	UserFacingString() string
+}
+
+// userFacingDescription returns the description users should set on NEGs they create.
+func userFacingDescription(desc utils.NEGDescription) string {
+	if userFacing, ok := desc.(userFacingNEGDescription); ok {
+		return userFacing.UserFacingString()
+	}
+	return desc.String()
+}
+
+// recordNEGNameConflict emits an event on the service explaining how to resolve
+// a conflict with an existing custom named NEG that can't be used by the service.
+func recordNEGNameConflict(svcNamespace, svcName string, serviceLister cache.Indexer, recorder record.EventRecorder, logger klog.Logger, negMetrics *metrics.NegMetrics, messageFmt string, args ...interface{}) {
+	if recorder == nil || serviceLister == nil {
+		return
+	}
+	svc := getService(serviceLister, svcNamespace, svcName, logger, negMetrics)
+	if svc == nil {
+		return
+	}
+	recorder.Eventf(svc, apiv1.EventTypeWarning, negtypes.NegNameConflict, messageFmt, args...)
 }
 
 func verifyNEGNetwork(neg *composite.NetworkEndpointGroup, zone string, networkEndpointType negtypes.NetworkEndpointType, expectedNetworkURL, expectedSubnetworkURL string) error {

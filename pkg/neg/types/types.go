@@ -66,6 +66,10 @@ const (
 	// NEG CRD Enabled Garbage Collection Event Reasons
 	NegGCError = "NegCRError"
 
+	// NegNameConflict is the Service event reason used when a NEG with the user requested
+	// name already exists but is not owned by the service.
+	NegNameConflict = "NEGNameConflict"
+
 	// L4LBTypes are used to mark what type of LB the calculator is determinig endpoints for.
 	L4InternalLB = L4LBType("INTERNAL")
 	L4ExternalLB = L4LBType("EXTERNAL")

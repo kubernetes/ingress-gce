@@ -88,7 +88,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "annotation set: NEG name matches the annotation value, generated name is ignored",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: customName,
+				annotations.StandalonePassthroughLBNegNameKey: customName,
 			}),
 			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated, customName} },
@@ -97,7 +97,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "annotation set: NEG name matches the annotation value, but is not owned by controller",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: customName,
+				annotations.StandalonePassthroughLBNegNameKey: customName,
 			}),
 			isOwnedBySvc:    false,
 			negNamesInStore: func(generated string) []string { return []string{generated, customName} },
@@ -106,7 +106,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "annotation set but only the generated NEG exists: nothing is returned",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: customName,
+				annotations.StandalonePassthroughLBNegNameKey: customName,
 			}),
 			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
@@ -115,7 +115,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "invalid custom name is rejected",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: "Invalid_NEG_Name",
+				annotations.StandalonePassthroughLBNegNameKey: "Invalid_NEG_Name",
 			}),
 			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
@@ -124,7 +124,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "empty custom name is rejected",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: "",
+				annotations.StandalonePassthroughLBNegNameKey: "",
 			}),
 			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },
@@ -133,7 +133,7 @@ func TestGetServiceNEGLinks_CustomNEGName(t *testing.T) {
 		{
 			desc: "path traversal name is rejected",
 			svc: newSvc(map[string]string{
-				annotations.StandaloneNegName: "../../us-central1-c/networkEndpointGroups/custom-neg",
+				annotations.StandalonePassthroughLBNegNameKey: "../../us-central1-c/networkEndpointGroups/custom-neg",
 			}),
 			isOwnedBySvc:    true,
 			negNamesInStore: func(generated string) []string { return []string{generated} },

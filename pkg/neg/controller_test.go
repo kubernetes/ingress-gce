@@ -1462,6 +1462,127 @@ func TestMergeVmIpNEGsPortInfo(t *testing.T) {
 	}
 }
 
+// TestMergeVmIpNEGsPortInfoCustomStandaloneNEGName verifies that the custom NEG name annotation
+// is only honored for services with the StandalonePassthroughNegLoadBalancerClass.
+func TestMergeVmIpNEGsPortInfoCustomStandaloneNEGName(t *testing.T) {
+	oldEnableL4StandaloneNEGs := flags.F.EnableL4StandaloneNEGs
+	oldEnableL4CustomStandaloneNEGNames := flags.F.EnableL4CustomStandaloneNEGNames
+	flags.F.EnableL4StandaloneNEGs = true
+	defer func() {
+		flags.F.EnableL4StandaloneNEGs = oldEnableL4StandaloneNEGs
+		flags.F.EnableL4CustomStandaloneNEGNames = oldEnableL4CustomStandaloneNEGNames
+	}()
+
+	controller, err := newTestController(fake.NewSimpleClientset())
+	if err != nil {
+		t.Fatalf("failed to create test controller %s", err)
+	}
+	defer controller.stop()
+	controller.runL4ForILB = true
+	controller.runL4ForNetLB = true
+
+	const customName = "my-custom-neg"
+	withAnnotation := func(svc *apiv1.Service, key, value string) *apiv1.Service {
+		svc.Annotations[key] = value
+		return svc
+	}
+	standaloneSvc := func(key, value string) *apiv1.Service {
+		return withAnnotation(newL4LBServiceWithLoadBalancerClass(controller, l4annotations.StandalonePassthroughNegLoadBalancerClass), key, value)
+	}
+	ilbSvc := withAnnotation(newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalInternalLoadBalancerClass), l4annotations.StandalonePassthroughLBNegNameKey, customName)
+	ilbSvc.Finalizers = append(ilbSvc.Finalizers, common.ILBFinalizerV2)
+	netLBSvc := withAnnotation(newL4LBServiceWithLoadBalancerClass(controller, l4annotations.RegionalExternalLoadBalancerClass), l4annotations.StandalonePassthroughLBNegNameKey, customName)
+	netLBSvc.Finalizers = append(netLBSvc.Finalizers, common.NetLBFinalizerV3)
+
+	testCases := []struct {
+		desc             string
+		svc              *apiv1.Service
+		enableCustomName bool
+		wantNEGName      string
+		wantCustomName   bool
+		wantErr          bool
+	}{
+		{
+			desc:             "standalone service with the annotation",
+			svc:              standaloneSvc(l4annotations.StandalonePassthroughLBNegNameKey, customName),
+			enableCustomName: true,
+			wantNEGName:      customName,
+			wantCustomName:   true,
+		},
+		{
+			desc:             "standalone service with the annotation, feature disabled",
+			svc:              standaloneSvc(l4annotations.StandalonePassthroughLBNegNameKey, customName),
+			enableCustomName: false,
+			wantNEGName:      controller.l4Namer.L4Backend(testServiceNamespace, testServiceName),
+		},
+		{
+			desc:             "standalone service with the old annotation key",
+			svc:              standaloneSvc("networking.gke.io/standalone-neg-name", customName),
+			enableCustomName: true,
+			wantNEGName:      controller.l4Namer.L4Backend(testServiceNamespace, testServiceName),
+		},
+		{
+			desc:             "standalone service with an invalid name",
+			svc:              standaloneSvc(l4annotations.StandalonePassthroughLBNegNameKey, "Invalid_Name"),
+			enableCustomName: true,
+			wantErr:          true,
+		},
+		{
+			// The shared test service name is not a valid DNS-1035 label, so a valid one is used here.
+			desc: "standalone service with the generated name in the annotation is not custom named",
+			svc: func() *apiv1.Service {
+				svc := standaloneSvc(l4annotations.StandalonePassthroughLBNegNameKey, controller.l4Namer.L4Backend(testServiceNamespace, "test-svc"))
+				svc.Name = "test-svc"
+				return svc
+			}(),
+			enableCustomName: true,
+			wantNEGName:      controller.l4Namer.L4Backend(testServiceNamespace, "test-svc"),
+		},
+		{
+			desc:             "ILB service with the annotation",
+			svc:              ilbSvc,
+			enableCustomName: true,
+			wantNEGName:      controller.l4Namer.L4Backend(testServiceNamespace, testServiceName),
+		},
+		{
+			desc:             "NetLB service with the annotation",
+			svc:              netLBSvc,
+			enableCustomName: true,
+			wantNEGName:      controller.l4Namer.L4Backend(testServiceNamespace, testServiceName),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.EnableL4CustomStandaloneNEGNames = tc.enableCustomName
+			portInfoMap := make(negtypes.PortInfoMap)
+			negUsage := metricscollector.NegServiceState{}
+			err := controller.mergeVmIpNEGsPortInfo(tc.svc, types.NamespacedName{Namespace: tc.svc.Namespace, Name: tc.svc.Name}, portInfoMap, &negUsage, defaultNetwork)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("mergeVmIpNEGsPortInfo() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if len(portInfoMap) != 1 {
+				t.Fatalf("mergeVmIpNEGsPortInfo() returned %d ports, want 1: %+v", len(portInfoMap), portInfoMap)
+			}
+			for _, portInfo := range portInfoMap {
+				if portInfo.NegName != tc.wantNEGName || portInfo.CustomName != tc.wantCustomName {
+					t.Errorf("got NEG name %q (custom: %v), want %q (custom: %v)", portInfo.NegName, portInfo.CustomName, tc.wantNEGName, tc.wantCustomName)
+				}
+			}
+			wantCustomNamedNeg := 0
+			if tc.wantCustomName {
+				wantCustomNamedNeg = 1
+			}
+			if negUsage.CustomNamedNeg != wantCustomNamedNeg {
+				t.Errorf("negUsage.CustomNamedNeg = %d, want %d", negUsage.CustomNamedNeg, wantCustomNamedNeg)
+			}
+		})
+	}
+}
+
 // TestMergeVmIpNEGsPortInfoILBWithoutFinalizer verifies that an ILB Service
 // without the ILBFinalizerV2 finalizer gets no NEG ports and a Normal event.
 func TestMergeVmIpNEGsPortInfoILBWithoutFinalizer(t *testing.T) {
