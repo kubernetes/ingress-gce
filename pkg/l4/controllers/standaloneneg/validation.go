@@ -25,7 +25,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 )
@@ -87,19 +86,46 @@ func backendServiceKey(fr *composite.ForwardingRule) (*meta.Key, error) {
 	return resourceID.Key, nil
 }
 
+// syncWarning is a problem of the load balancer that doesn't make it
+// unusable, reported as a Warning event on the service.
+type syncWarning struct {
+	reason  string
+	message string
+}
+
 // validateBackendServiceAttachment checks that the backend service has any of
-// the service NEGs attached.
-func validateBackendServiceAttachment(bs *composite.BackendService, serviceNEGs sets.Set[cloud.ResourceMapKey]) error {
+// the service NEGs attached. A backend service that only has draining NEGs
+// attached is still usable, not to disrupt the traffic while the user switches
+// it to the active NEGs, but a warning is returned.
+func validateBackendServiceAttachment(bs *composite.BackendService, negs serviceNEGs) (warnings []syncWarning, err error) {
+	var drainingNEGs []string
 	for _, be := range bs.Backends {
 		if be == nil || be.Group == "" {
 			continue
 		}
-		groupID, err := cloud.ParseResourceURL(be.Group)
-		if err == nil && groupID != nil && serviceNEGs.Has(groupID.MapKey()) {
-			return nil
+		groupID, parseErr := cloud.ParseResourceURL(be.Group)
+		if parseErr != nil || groupID.Key == nil {
+			continue
+		}
+		if negs.active.Has(groupID.MapKey()) {
+			return nil, nil
+		}
+		if negs.draining.Has(groupID.MapKey()) {
+			drainingNEGs = append(drainingNEGs, groupID.Key.Zone+"/"+groupID.Key.Name)
 		}
 	}
-	return l4utils.NewUserError(l4utils.NewBackendNotAttachedError(bs.Name))
+	if len(drainingNEGs) > 0 {
+		return []syncWarning{{
+			reason: "DrainingNEGsAttached",
+			message: fmt.Sprintf("Backend service %s only has NEGs attached that are no longer synced, of a previous NEG name or of a removed subnet: %s. "+
+				"Attach the NEGs of the service that are not being deleted, listed in its ServiceNetworkEndpointGroups, and detach these ones.",
+				bs.Name, strings.Join(drainingNEGs, ", ")),
+		}}, nil
+	}
+	if negs.active.Len() == 0 && negs.draining.Len() == 0 {
+		return nil, l4utils.NewUserError(fmt.Errorf("no NEGs of the service found in its ServiceNetworkEndpointGroups, check the events of the service: %w", l4utils.NewBackendNotAttachedError(bs.Name)))
+	}
+	return nil, l4utils.NewUserError(l4utils.NewBackendNotAttachedError(bs.Name))
 }
 
 // frAddresses returns the addresses of the forwarding rule. The IPAddress

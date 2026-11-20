@@ -26,7 +26,9 @@ limitations under the License.
 // For each service the controller:
 //  1. parses the forwarding rule references from the annotation,
 //  2. retrieves the forwarding rules and their backend services, and checks
-//     that they are supported and that the service NEGs are attached to them,
+//     that they are supported and that the service NEGs, read from the
+//     ServiceNetworkEndpointGroups controlled by the service, are attached to
+//     them,
 //  3. computes the networking.gke.io/external-hc annotation from the HTTP
 //     health checks of the backend services,
 //  4. updates the networking.gke.io/external-hc annotation, and
@@ -47,7 +49,6 @@ import (
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
 
@@ -63,7 +64,6 @@ type Controller struct {
 	ctx       *ccontext.ControllerContext
 	svcQueue  utils.TaskQueue
 	logger    klog.Logger
-	namer     namer.L4ResourcesNamer
 	stopCh    <-chan struct{}
 	hasSynced func() bool
 }
@@ -74,13 +74,13 @@ func NewController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logg
 	c := &Controller{
 		ctx:       ctx,
 		stopCh:    stopCh,
-		namer:     ctx.L4Namer,
 		hasSynced: ctx.HasSynced,
 		logger:    logger,
 	}
 	c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, c.syncWrapper, logger)
 
 	ctx.ServiceInformer.AddEventHandler(c.serviceEventHandler())
+	ctx.SvcNegInformer.AddEventHandler(c.svcNegEventHandler())
 
 	return c
 }
