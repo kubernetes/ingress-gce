@@ -182,6 +182,9 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 		m.X.(NetworkEndpointStore)[*key] = []NetworkEndpointEntry{}
 	}
 
+	// Convert the requested endpoints once: converting them again for every
+	// stored endpoint makes detaching from large NEGs slow.
+	toDelete := make([]*composite.NetworkEndpoint, 0, len(obj.NetworkEndpoints))
 	for _, left := range obj.NetworkEndpoints {
 		found := false
 		leftComposite, err := composite.GAToNetworkEndpoint(left)
@@ -201,16 +204,13 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 				Message: fmt.Sprintf("Endpoint %v was not found in NetworkEndpointGroup %q", left, key.String()),
 			}
 		}
+		toDelete = append(toDelete, leftComposite)
 	}
 
 	newList := []*composite.NetworkEndpoint{}
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
-		for _, del := range obj.NetworkEndpoints {
-			delComposite, err := composite.GAToNetworkEndpoint(del)
-			if err != nil {
-				return err
-			}
+		for _, delComposite := range toDelete {
 			if isNetworkEndpointsEqual(ep.NetworkEndpoint, delComposite) {
 				found = true
 				break
