@@ -23,9 +23,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
@@ -33,15 +35,18 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	negbindingv1beta1 "k8s.io/ingress-gce/pkg/apis/negbinding/v1beta1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics/metricscollector"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/syncers/negstatushandler"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	fakenegbinding "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned/fake"
 	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -169,9 +174,9 @@ func TestNEGBindingManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get updated binding: %v", err)
 	}
-	cond, found := findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
+	cond, found := findCondition(updatedBinding.Status.Conditions, negstatushandler.BackendRefAttachedCondition)
 	if !found {
-		t.Fatalf("Condition %s not found", BackendRefAttachedCondition)
+		t.Fatalf("Condition %s not found", negstatushandler.BackendRefAttachedCondition)
 	}
 	if cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected BackendRef condition status True, got %s", cond.Status)
@@ -333,7 +338,7 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 					NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{{Name: "neg-1", Subnet: "default", Zones: []string{"us-central1-a"}}},
 				},
 			},
-			expectedErr:    fmt.Sprintf("%v: unsupported Kind %q", ErrInvalidBackendRefKind, "InvalidKind"),
+			expectedErr:    fmt.Sprintf("%v: unsupported Kind %q", negstatushandler.ErrInvalidBackendRefKind, "InvalidKind"),
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: "InvalidBackendRefKind",
 		},
@@ -477,16 +482,16 @@ func TestNEGBindingManagerErrorCases(t *testing.T) {
 				t.Fatalf("Failed to get updated binding: %v", err)
 			}
 
-			cond, found := findCondition(updatedBinding.Status.Conditions, BackendRefAttachedCondition)
+			cond, found := findCondition(updatedBinding.Status.Conditions, negstatushandler.BackendRefAttachedCondition)
 			if !found {
-				t.Fatalf("Condition %s not found in updated status", BackendRefAttachedCondition)
+				t.Fatalf("Condition %s not found in updated status", negstatushandler.BackendRefAttachedCondition)
 			}
 
 			if cond.Status != tc.expectedStatus {
-				t.Errorf("Condition %s status got %s, expected %s", BackendRefAttachedCondition, cond.Status, tc.expectedStatus)
+				t.Errorf("Condition %s status got %s, expected %s", negstatushandler.BackendRefAttachedCondition, cond.Status, tc.expectedStatus)
 			}
 			if cond.Reason != tc.expectedReason {
-				t.Errorf("Condition %s reason got %s, expected %s", BackendRefAttachedCondition, cond.Reason, tc.expectedReason)
+				t.Errorf("Condition %s reason got %s, expected %s", negstatushandler.BackendRefAttachedCondition, cond.Reason, tc.expectedReason)
 			}
 		})
 	}
@@ -1623,5 +1628,350 @@ func TestNEGBindingManagerReadinessGate(t *testing.T) {
 
 	if m.ReadinessGateEnabled(negtypes.NegSyncerKey{Namespace: namespace, Name: svcName, NEGBindingName: "non-existing"}) {
 		t.Errorf("Expected ReadinessGateEnabled=false for non-existing binding name")
+	}
+}
+
+func TestNEGBindingManagerSharedStatusHandlerPreservesConditions(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	namespace := "test-ns"
+	svcName := "test-svc"
+	bindingName := "test-binding"
+	bindingKey := fmt.Sprintf("%s/%s", namespace, bindingName)
+
+	// Start with Service missing port 80 so backend validation initially fails without starting a syncer.
+	invalidPortSvc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      svcName,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Port: 9999, TargetPort: intstr.FromString("9999")},
+			},
+		},
+	}
+
+	testBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      bindingName,
+			UID:       types.UID("uid-shared-handler"),
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: svcName,
+				Port: 80,
+			},
+			NetworkEndpointGroups: []negbindingv1beta1.SpecNegRef{
+				{
+					Name:   "neg-1",
+					Subnet: "default",
+					Zones:  []string{"us-central1-a"},
+				},
+			},
+		},
+	}
+
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	if _, err := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), testBinding.DeepCopy(), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create binding: %v", err)
+	}
+
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+		ServiceKeyIndex:      ServiceKeyIndexFunc,
+	}
+	negBindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
+	if err := negBindingLister.Add(testBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to add binding to lister: %v", err)
+	}
+
+	podLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	if err := serviceLister.Add(invalidPortSvc); err != nil {
+		t.Fatalf("failed to add service to lister: %v", err)
+	}
+	endpointSliceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
+	})
+	nodeLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	defaultTestNetworkURL := "https://www.googleapis.com/compute/v1/projects/mock-project/global/networks/default-network"
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
+	clusterURL := "https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster"
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to create zone getter: %v", err)
+	}
+
+	negMetrics := metrics.FakeNegMetrics()
+	cloudAdapter := negtypes.NewAdapterWithNetwork(fakeGCE, defaultTestNetworkURL, defaultTestSubnetURL, negMetrics)
+	negDesc := utils.BoundNEGDescription{
+		ClusterURL: clusterURL,
+		Namespace:  namespace,
+		BackendRef: svcName,
+	}.String()
+	if err := cloudAdapter.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+		Name:                "neg-1",
+		Version:             meta.VersionGA,
+		Network:             defaultTestNetworkURL,
+		Subnetwork:          defaultTestSubnetURL,
+		NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+		Description:         negDesc,
+	}, "us-central1-a", klog.TODO()); err != nil {
+		t.Fatalf("failed to create NEG: %v", err)
+	}
+
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		podLister,
+		serviceLister,
+		endpointSliceLister,
+		nodeLister,
+		zoneGetter,
+		network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: defaultTestNetworkURL, SubnetworkURL: defaultTestSubnetURL}),
+		cloudAdapter,
+		record.NewFakeRecorder(100),
+		namer.NewNamer("cluster-id", "", klog.TODO()),
+		negMetrics,
+		metricscollector.FakeSyncerMetrics(),
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		clusterURL,
+		klog.TODO(),
+	)
+	defer m.ShutDown()
+
+	// Invalid backend creates statusHandler and reports BackendRefAttached=False while syncerMap stays empty.
+	if err := m.EnsureSyncerForNEGBinding(testBinding); err == nil {
+		t.Fatalf("expected EnsureSyncerForNEGBinding to fail on missing service port")
+	}
+	m.mu.Lock()
+	initialHandler := m.statusHandlers[bindingKey]
+	m.mu.Unlock()
+	if initialHandler == nil {
+		t.Fatalf("expected statusHandler to be stored for %s even when syncer does not start", bindingKey)
+	}
+
+	// Make Service valid without updating negBindingLister (simulating stale binding informer).
+	validSvc := invalidPortSvc.DeepCopy()
+	validSvc.Spec.Ports = []apiv1.ServicePort{{Port: 80, TargetPort: intstr.FromString("8080")}}
+	if err := serviceLister.Update(validSvc); err != nil {
+		t.Fatalf("failed to update service in lister: %v", err)
+	}
+	if err := m.EnsureSyncersForService(namespace, svcName); err != nil {
+		t.Fatalf("EnsureSyncersForService failed: %v", err)
+	}
+
+	m.mu.Lock()
+	reusedHandler := m.statusHandlers[bindingKey]
+	m.mu.Unlock()
+	if reusedHandler != initialHandler {
+		t.Fatalf("expected same statusHandler instance to be reused when service becomes valid")
+	}
+
+	// Wait for transactionSyncer to report status while negBindingLister still has empty Status; all 3 conditions must coexist.
+	err = wait.PollImmediate(50*time.Millisecond, 5*time.Second, func() (bool, error) {
+		b, getErr := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
+		if getErr != nil {
+			return false, getErr
+		}
+		for _, condType := range []string{negstatushandler.BackendRefAttachedCondition, negstatushandler.ManagedCondition, negstatushandler.NegsAttachedCondition} {
+			cond, found := findCondition(b.Status.Conditions, condType)
+			if !found || cond.Status != metav1.ConditionTrue {
+				return false, nil
+			}
+		}
+		return !b.Status.LastSyncTime.IsZero(), nil
+	})
+	if err != nil {
+		b, _ := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
+		t.Fatalf("timed out waiting for all 3 conditions to be True under stale lister, current status: %+v", b.Status)
+	}
+
+	// Delete Service while negBindingLister still lacks Managed and NegsAttached: ProcessServiceDeletion replaces transactionSyncer with cleanupSyncer using the same statusHandler.
+	if err := serviceLister.Delete(validSvc); err != nil {
+		t.Fatalf("failed to delete service from lister: %v", err)
+	}
+	m.ProcessServiceDeletion(namespace, svcName)
+
+	m.mu.Lock()
+	cleanupHandler := m.statusHandlers[bindingKey]
+	m.mu.Unlock()
+	if cleanupHandler != initialHandler {
+		t.Fatalf("expected same statusHandler instance to be retained across cleanup syncer replacement")
+	}
+
+	err = wait.PollImmediate(50*time.Millisecond, 5*time.Second, func() (bool, error) {
+		m.mu.Lock()
+		syncer := m.syncerMap[bindingKey]
+		m.mu.Unlock()
+		if syncer == nil || !syncer.IsStopped() {
+			return false, nil
+		}
+		b, getErr := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
+		if getErr != nil {
+			return false, getErr
+		}
+		backendCond, found := findCondition(b.Status.Conditions, negstatushandler.BackendRefAttachedCondition)
+		if !found || backendCond.Status != metav1.ConditionFalse || backendCond.Reason != negstatushandler.ServiceNotFoundReason {
+			return false, nil
+		}
+		for _, condType := range []string{negstatushandler.ManagedCondition, negstatushandler.NegsAttachedCondition} {
+			cond, ok := findCondition(b.Status.Conditions, condType)
+			if !ok || cond.Status != metav1.ConditionTrue {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		b, _ := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Get(context.TODO(), bindingName, metav1.GetOptions{})
+		t.Fatalf("timed out waiting for cleanup syncer and preserved conditions after service deletion, current status: %+v", b.Status)
+	}
+}
+
+func TestNEGBindingManagerStatusHandlerCleanupLifecycle(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	namespace := "test-ns"
+	svcName := "test-svc"
+	bindingName := "test-binding"
+	bindingKey := fmt.Sprintf("%s/%s", namespace, bindingName)
+
+	testSvc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      svcName,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Port: 80, TargetPort: intstr.FromString("8080")},
+			},
+		},
+	}
+
+	emptyNEGsBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:  namespace,
+			Name:       bindingName,
+			UID:        types.UID("uid-lifecycle-1"),
+			Finalizers: []string{NEGBindingFinalizer},
+		},
+		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
+			BackendRef: &negbindingv1beta1.BackendRefConfig{
+				Kind: negbindingv1beta1.ServiceKind,
+				Name: svcName,
+				Port: 80,
+			},
+		},
+	}
+
+	fakeNBClient := fakenegbinding.NewSimpleClientset()
+	if _, err := fakeNBClient.NetworkingV1beta1().NetworkEndpointGroupBindings(namespace).Create(context.TODO(), emptyNEGsBinding.DeepCopy(), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create binding: %v", err)
+	}
+
+	indexers := cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+		ServiceKeyIndex:      ServiceKeyIndexFunc,
+	}
+	negBindingLister := informernegbinding.NewNetworkEndpointGroupBindingInformer(fakeNBClient, "", 0, indexers).GetIndexer()
+	if err := negBindingLister.Add(emptyNEGsBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to add binding to lister: %v", err)
+	}
+
+	serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	if err := serviceLister.Add(testSvc); err != nil {
+		t.Fatalf("failed to add service to lister: %v", err)
+	}
+
+	nodeInformer := zonegetter.FakeNodeInformer()
+	zonegetter.PopulateFakeNodeInformer(nodeInformer, false)
+	defaultTestSubnetURL := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/test-region/subnetworks/default"
+	zoneGetter, err := zonegetter.NewFakeZoneGetter(nodeInformer, zonegetter.FakeNodeTopologyInformer(), defaultTestSubnetURL, false)
+	if err != nil {
+		t.Fatalf("failed to create zone getter: %v", err)
+	}
+
+	negMetrics := metrics.FakeNegMetrics()
+	m := newNEGBindingManager(
+		fakeNBClient,
+		negBindingLister,
+		cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{}),
+		serviceLister,
+		cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{}),
+		cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{}),
+		zoneGetter,
+		network.NewFakeResolver(&network.NetworkInfo{IsDefault: true, NetworkURL: "default-network", SubnetworkURL: defaultTestSubnetURL}),
+		negtypes.NewAdapterWithNetwork(fakeGCE, "default-network", defaultTestSubnetURL, negMetrics),
+		record.NewFakeRecorder(100),
+		namer.NewNamer("cluster-id", "", klog.TODO()),
+		negMetrics,
+		metricscollector.FakeSyncerMetrics(),
+		&readiness.NoopReflector{},
+		"kube-system-uid",
+		"https://container.googleapis.com/v1/projects/test-project/locations/us-central1/clusters/test-cluster",
+		klog.TODO(),
+	)
+
+	// Empty Spec.NetworkEndpointGroups calls StopSyncer while binding exists in lister: statusHandler must be kept.
+	if err := m.EnsureSyncerForNEGBinding(emptyNEGsBinding); err != nil {
+		t.Fatalf("EnsureSyncerForNEGBinding failed: %v", err)
+	}
+	if _, exists := m.statusHandlers[bindingKey]; !exists {
+		t.Fatalf("expected statusHandler to remain in map when binding still exists in lister")
+	}
+
+	// ReconcileDeletion removes finalizer and deletes statusHandler for matching UID.
+	now := metav1.Now()
+	deletingBinding := emptyNEGsBinding.DeepCopy()
+	deletingBinding.DeletionTimestamp = &now
+	if err := negBindingLister.Update(deletingBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to update deleting binding in lister: %v", err)
+	}
+	if err := m.ReconcileDeletion(deletingBinding); err != nil {
+		t.Fatalf("ReconcileDeletion failed: %v", err)
+	}
+	if _, exists := m.statusHandlers[bindingKey]; exists {
+		t.Errorf("expected statusHandler to be deleted after ReconcileDeletion removes finalizer")
+	}
+
+	// If a recreated binding with a new UID is already in lister, deleteStatusHandlerIfSameOrMissing must preserve its handler.
+	recreatedBinding := emptyNEGsBinding.DeepCopy()
+	recreatedBinding.UID = types.UID("uid-lifecycle-2")
+	if err := negBindingLister.Update(recreatedBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to update recreated binding in lister: %v", err)
+	}
+	newHandler := m.getOrCreateStatusHandler(namespace, bindingName)
+	m.deleteStatusHandlerIfSameOrMissing(bindingKey, types.UID("uid-lifecycle-1"))
+	if got := m.statusHandlers[bindingKey]; got != newHandler {
+		t.Errorf("expected recreated binding handler to be preserved on old UID cleanup")
+	}
+
+	// Removing binding from lister and calling StopSyncer deletes statusHandler, and stale getOrCreateStatusHandler calls do not re-insert orphans.
+	if err := negBindingLister.Delete(recreatedBinding); err != nil {
+		t.Fatalf("failed to delete binding from lister: %v", err)
+	}
+	m.StopSyncer(namespace, bindingName)
+	if _, exists := m.statusHandlers[bindingKey]; exists {
+		t.Errorf("expected statusHandler to be deleted by StopSyncer when binding is absent from lister")
+	}
+	_ = m.getOrCreateStatusHandler(namespace, bindingName)
+	if _, exists := m.statusHandlers[bindingKey]; exists {
+		t.Errorf("expected getOrCreateStatusHandler not to store an orphaned handler when binding is absent from lister")
+	}
+
+	// ShutDown clears statusHandlers.
+	if err := negBindingLister.Add(recreatedBinding.DeepCopy()); err != nil {
+		t.Fatalf("failed to re-add binding to lister: %v", err)
+	}
+	_ = m.getOrCreateStatusHandler(namespace, bindingName)
+	m.ShutDown()
+	if len(m.statusHandlers) != 0 {
+		t.Errorf("expected ShutDown to clear statusHandlers, got %d entries", len(m.statusHandlers))
 	}
 }
