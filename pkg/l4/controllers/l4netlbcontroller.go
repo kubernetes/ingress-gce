@@ -27,6 +27,7 @@ import (
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/l4/servicestatus"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -789,7 +790,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service, svcLogger klog.Lo
 		return syncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
+	err = servicestatus.Update(lc.ctx.KubeClient.CoreV1(), service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error updating L4 External LoadBalancer, err: %v", err)
@@ -1001,7 +1002,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service,
 		return result
 	}
 
-	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
+	if err := servicestatus.Update(lc.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
