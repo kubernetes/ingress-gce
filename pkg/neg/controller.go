@@ -19,7 +19,7 @@ package neg
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,21 +183,48 @@ func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) 
 // negBindingUpdateRequiresSync reports whether the change from old to cur
 // requires enqueuing the NEGBinding for processing. Every syncer execution
 // patches Status (e.g. LastSyncTime and Conditions), which triggers an
-// informer Update event. Avoid enqueuing on status-only updates so we do not
-// trigger EnsureSyncerForNEGBinding -> syncer.Sync() in a self-reinforcing
-// loop that bypasses syncer exponential backoff and retries indefinitely
-// after maxRetries.
+// informer Update event. Avoid enqueuing on status-only updates that do not
+// change Status.NetworkEndpointGroups so we do not trigger
+// EnsureSyncerForNEGBinding -> syncer.Sync() in a self-reinforcing loop that
+// bypasses syncer exponential backoff and retries indefinitely after maxRetries.
 func negBindingUpdateRequiresSync(old, cur *negbindingv1beta1.NetworkEndpointGroupBinding) bool {
-	specChanged := !reflect.DeepEqual(old.Spec, cur.Spec)
-	deletionStarted := (old.DeletionTimestamp == nil) != (cur.DeletionTimestamp == nil)
-	// During deletion, the syncer clears Status.NetworkEndpointGroups once
-	// endpoint draining completes; we must enqueue this transition so
-	// ReconcileDeletion can remove the finalizer.
-	drainingCompleted := cur.DeletionTimestamp != nil &&
-		len(old.Status.NetworkEndpointGroups) > 0 &&
-		len(cur.Status.NetworkEndpointGroups) == 0
+	// CR was recreated with the same name (e.g. Delete+Add coalesced on relist);
+	// enqueue to reconcile finalizer, NEG ownership, and syncer for the new object.
+	if old.UID != cur.UID {
+		return true
+	}
+	// Spec changed (CRD /status subresource bumps Generation only on Spec edits);
+	// enqueue to update syncer config and NEG ownership.
+	if old.Generation != cur.Generation {
+		return true
+	}
 
-	return specChanged || deletionStarted || drainingCompleted
+	// Deletion started (DeletionTimestamp transitioned from nil to non-nil);
+	// enqueue so ReconcileDeletion can drain NEGs and remove the finalizer.
+	if (old.DeletionTimestamp == nil) != (cur.DeletionTimestamp == nil) {
+		return true
+	}
+	// NEGBindingFinalizer was removed from an active CR; enqueue to re-attach it
+	// so future deletion cannot bypass NEG draining.
+	if cur.DeletionTimestamp == nil &&
+		slices.Contains(old.Finalizers, NEGBindingFinalizer) &&
+		!slices.Contains(cur.Finalizers, NEGBindingFinalizer) {
+		return true
+	}
+
+	// Status NEG count changed (e.g. active NEG rename/drain progress, deletion
+	// drain completion, or external edits); enqueue to update ownership, syncer, or finalizer.
+	if len(old.Status.NetworkEndpointGroups) != len(cur.Status.NetworkEndpointGroups) {
+		return true
+	}
+	// Both old and cur have no status NEGs (lengths matched above); no status NEG
+	// changed, so no sync is needed and set allocation is skipped.
+	if len(old.Status.NetworkEndpointGroups) == 0 {
+		return false
+	}
+	// Equal non-empty lengths: enqueue if any status NEG entry changed (e.g. same-count
+	// replacement or zone/subnet edit, order-independent) to reconcile ownership and syncer.
+	return !sets.New(old.Status.NetworkEndpointGroups...).Equal(sets.New(cur.Status.NetworkEndpointGroups...))
 }
 
 func buildClusterURL(cloud negtypes.NetworkEndpointGroupCloud) (string, error) {
