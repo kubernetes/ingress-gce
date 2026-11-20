@@ -62,7 +62,7 @@ func EqualIPv6(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 // one of them (e.g. set by an older controller version for a static BYOIP
 // address) is not a meaningful difference and must not cause a recreate.
 func equalSubnetworks(fr1, fr2 *composite.ForwardingRule) bool {
-	if fr1.Subnetwork == fr2.Subnetwork {
+	if equalResourcePaths(fr1.Subnetwork, fr2.Subnetwork) {
 		return true
 	}
 	return fr1.IpCollection != "" && fr2.IpCollection != ""

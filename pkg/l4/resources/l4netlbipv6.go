@@ -275,8 +275,8 @@ func (l4netlb *L4NetLB) ipv6SubnetURL() (string, error) {
 		}
 		return cloud.SelfLink(meta.VersionGA, l4netlb.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
 	}
-	// if no subnet in annotation, use cluster subnet
-	return l4netlb.cloud.SubnetworkURL(), nil
+	// if no subnet in annotation, use service/cluster subnet
+	return l4netlb.networkInfo.SubnetworkURL, nil
 }
 
 func (l4netlb *L4NetLB) ipv6SubnetName() string {
@@ -286,8 +286,8 @@ func (l4netlb *L4NetLB) ipv6SubnetName() string {
 		return customSubnetName
 	}
 
-	// If no custom subnet in annotation -- use cluster subnet.
-	clusterSubnetURL := l4netlb.cloud.SubnetworkURL()
+	// If no custom subnet in annotation -- use service/cluster subnet.
+	clusterSubnetURL := l4netlb.networkInfo.SubnetworkURL
 	splitURL := strings.Split(clusterSubnetURL, "/")
 	return splitURL[len(splitURL)-1]
 }
