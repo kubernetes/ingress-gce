@@ -6,7 +6,7 @@ layout: protoc-gen-docs
 generator: protoc-gen-docs
 schema: istio.networking.v1alpha3.DestinationRule
 aliases: [/docs/reference/config/networking/v1alpha3/destination-rule]
-number_of_entries: 31
+number_of_entries: 32
 ---
 <p><code>DestinationRule</code> defines policies that apply to traffic intended for a
 service after routing has occurred. These rules specify configuration
@@ -610,6 +610,21 @@ spec:
           name: user
           ttl: 0s
 </code></pre>
+<p>The following example uses backend utilization to dynamically weight
+endpoints based on ORCA metrics reported by the backends:</p>
+<pre><code class="language-yaml">apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: bookinfo-ratings
+spec:
+  host: ratings.prod.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      backendUtilization:
+        weightStabilizationPeriod: 10s
+        weightExpirationPeriod: 3m
+        weightUpdatePeriod: 1s
+</code></pre>
 
 <table class="message-fields">
 <thead>
@@ -634,6 +649,17 @@ spec:
 </div></td>
 <td>
 <p>Consistent Hash-based load balancing can be used to provide soft session affinity based on HTTP headers, cookies or other properties.</p>
+
+</td>
+</tr>
+<tr id="LoadBalancerSettings-backend_utilization" class="oneof">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-backend_utilization">backendUtilization</a></code></div>
+<div class="type"><a href="#LoadBalancerSettings-BackendUtilizationLB">BackendUtilizationLB (oneof)</a></div>
+</div></td>
+<td>
+<p>Utilization-based load balancing that uses backend-reported ORCA
+metrics to weight endpoints by their current load. Backends that
+report higher utilization receive fewer requests.</p>
 
 </td>
 </tr>
@@ -914,6 +940,94 @@ the generated cookie will be a session cookie.</p>
 </div></td>
 <td>
 <p>The optional value of the cookie attribute.</p>
+
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<h3 id="LoadBalancerSettings-BackendUtilizationLB">BackendUtilizationLB</h3>
+<section>
+<p>BackendUtilizationLB load balancing policy that uses
+backend-reported utilization metrics (ORCA) to dynamically adjust
+endpoint weights. Endpoints that report higher utilization receive
+proportionally fewer requests. Endpoints that have not yet reported
+metrics are given equal weight.</p>
+<p>This corresponds to Envoy&rsquo;s
+<a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/load_balancers#weighted-round-robin">client_side_weighted_round_robin</a>
+load balancing policy.</p>
+
+<table class="message-fields">
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr id="LoadBalancerSettings-BackendUtilizationLB-weight_stabilization_period">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-BackendUtilizationLB-weight_stabilization_period">weightStabilizationPeriod</a></code></div>
+<div class="type"><a href="https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#duration">Duration</a></div>
+</div></td>
+<td>
+<p>Duration after an endpoint first reports metrics before its weight
+is trusted. During the stabilization period the endpoint receives the
+same weight as endpoints without metrics.
+Default is 10s.</p>
+
+</td>
+</tr>
+<tr id="LoadBalancerSettings-BackendUtilizationLB-weight_expiration_period">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-BackendUtilizationLB-weight_expiration_period">weightExpirationPeriod</a></code></div>
+<div class="type"><a href="https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#duration">Duration</a></div>
+</div></td>
+<td>
+<p>If an endpoint stops reporting utilization metrics for this long,
+its reported weight is discarded and it reverts to the default
+(equal) weight.
+Default is 3m.</p>
+
+</td>
+</tr>
+<tr id="LoadBalancerSettings-BackendUtilizationLB-weight_update_period">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-BackendUtilizationLB-weight_update_period">weightUpdatePeriod</a></code></div>
+<div class="type"><a href="https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#duration">Duration</a></div>
+</div></td>
+<td>
+<p>How often the load balancer recomputes endpoint weights from the
+latest reported utilization data. Smaller values react faster but
+increase CPU overhead. Minimum 100ms.
+Default is 1s.</p>
+
+</td>
+</tr>
+<tr id="LoadBalancerSettings-BackendUtilizationLB-error_utilization_penalty_percent">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-BackendUtilizationLB-error_utilization_penalty_percent">errorUtilizationPenaltyPercent</a></code></div>
+<div class="type">uint32</div>
+</div></td>
+<td>
+<p>Additional penalty applied to endpoints that return errors,
+expressed as a percentage of the utilization. For example, a value
+of 100 means the error rate is weighted 1.0x, and 150 means 1.5x.
+A value of 0 disables the penalty.
+Default is 0 (disabled).</p>
+
+</td>
+</tr>
+<tr id="LoadBalancerSettings-BackendUtilizationLB-metric_names_for_computing_utilization">
+<td><div class="field"><div class="name"><code><a href="#LoadBalancerSettings-BackendUtilizationLB-metric_names_for_computing_utilization">metricNamesForComputingUtilization</a></code></div>
+<div class="type">string[]</div>
+</div></td>
+<td>
+<p>Custom ORCA metric names used to compute utilization. Check
+<a href="https://github.com/cncf/xds/blob/main/xds/data/orca/v3/orca_load_report.proto">ORCA Protocol</a>
+for available metrics. For map fields in the ORCA proto,
+the string will be of the form <code>&lt;map_field_name&gt;.&lt;map_key&gt;</code>.
+For example, the string <code>named_metrics.foo</code>.</p>
+<p>If not specified, the load balancer will use the standard
+<code>application_utilization</code> metric.
+If specified, the utilization is the max of the values of
+the metrics specified here, when that max is greater than 0.</p>
 
 </td>
 </tr>
@@ -1513,6 +1627,12 @@ used separately or together. Because the errors counted by
 if the value of <code>consecutiveGatewayErrors</code> is greater than or equal to
 the value of <code>consecutive5xxErrors</code>, <code>consecutiveGatewayErrors</code> will have
 no effect.</p>
+<p>Because this threshold only counts <em>consecutive</em> failures, a host whose
+errors are interleaved with successful requests may never reach it even
+if its overall failure rate is high, e.g. a host that fails every other
+request will never accumulate 5 consecutive errors. Use
+<code>failurePercentageThreshold</code> to eject hosts based on failure rate over
+the analysis <code>interval</code> instead of requiring consecutive failures.</p>
 
 </td>
 </tr>
@@ -1577,6 +1697,20 @@ only 5xx responses are treated as errors.</p>
 <code>consecutiveGatewayErrors</code> thresholds; this field only redefines which
 HTTP status codes are counted as errors toward those thresholds.</p>
 <p>Values must be in the range [100, 599].</p>
+
+</td>
+</tr>
+<tr id="OutlierDetection-failure_percentage_threshold">
+<td><div class="field"><div class="name"><code><a href="#OutlierDetection-failure_percentage_threshold">failurePercentageThreshold</a></code></div>
+<div class="type"><a href="#google-protobuf-UInt32Value">UInt32Value</a></div>
+</div></td>
+<td>
+<p>The failure percentage to use when determining failure percentage-based outlier detection. If
+the failure percentage of a given host is greater than or equal to this value, it will be
+ejected. Defaults to 85.</p>
+<p>Unlike <code>consecutive5xxErrors</code> and <code>consecutiveGatewayErrors</code>, this does not require failures
+to occur back-to-back, so it will still eject a host whose failure rate is high but whose
+errors are interspersed with successful requests.</p>
 
 </td>
 </tr>
@@ -1700,6 +1834,22 @@ A TLS secret for client certificates with an additional
 certificate revocation list(CRL) is also supported.
 Only one of client certificates and CA certificate
 or credentialName can be specified.</p>
+<p><strong>NOTE:</strong> This field is applicable at sidecars only if
+<code>DestinationRule</code> has a <code>workloadSelector</code> specified.
+Otherwise the field will be applicable only at gateways, and
+sidecars will continue to use the certificate paths.</p>
+
+</td>
+</tr>
+<tr id="ClientTLSSettings-ca_cert_credential_name">
+<td><div class="field"><div class="name"><code><a href="#ClientTLSSettings-ca_cert_credential_name">caCertCredentialName</a></code></div>
+<div class="type">string</div>
+</div></td>
+<td>
+<p>The name of the secret or the configmap that holds CA certificates used to
+verify the server&rsquo;s certificate. Allows sourcing the trust bundle
+independently from <code>credentialName</code>.</p>
+<p>Applies to <code>SIMPLE</code> and <code>MUTUAL</code> TLS modes. Should be empty when using <code>ISTIO_MUTUAL</code>.</p>
 <p><strong>NOTE:</strong> This field is applicable at sidecars only if
 <code>DestinationRule</code> has a <code>workloadSelector</code> specified.
 Otherwise the field will be applicable only at gateways, and

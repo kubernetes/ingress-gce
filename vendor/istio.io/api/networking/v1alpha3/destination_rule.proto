@@ -415,6 +415,24 @@ message Subset {
 //           ttl: 0s
 // ```
 //
+// The following example uses backend utilization to dynamically weight
+// endpoints based on ORCA metrics reported by the backends:
+//
+// ```yaml
+// apiVersion: networking.istio.io/v1
+// kind: DestinationRule
+// metadata:
+//   name: bookinfo-ratings
+// spec:
+//   host: ratings.prod.svc.cluster.local
+//   trafficPolicy:
+//     loadBalancer:
+//       backendUtilization:
+//         weightStabilizationPeriod: 10s
+//         weightExpirationPeriod: 3m
+//         weightUpdatePeriod: 1s
+// ```
+//
 message LoadBalancerSettings {
   // +kubebuilder:validation:XValidation:message="only one of warmupDurationSecs or warmup can be set",rule="oneof(self.warmupDurationSecs, self.warmup)"
   // Standard load balancing algorithms that require no tuning.
@@ -542,6 +560,58 @@ message LoadBalancerSettings {
     uint64 minimum_ring_size = 4 [deprecated = true];
   }
 
+  // BackendUtilizationLB load balancing policy that uses
+  // backend-reported utilization metrics (ORCA) to dynamically adjust
+  // endpoint weights. Endpoints that report higher utilization receive
+  // proportionally fewer requests. Endpoints that have not yet reported
+  // metrics are given equal weight.
+  //
+  // This corresponds to Envoy's
+  // [client_side_weighted_round_robin](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/load_balancers#weighted-round-robin)
+  // load balancing policy.
+  message BackendUtilizationLB {
+    // Duration after an endpoint first reports metrics before its weight
+    // is trusted. During the stabilization period the endpoint receives the
+    // same weight as endpoints without metrics.
+    // Default is 10s.
+    // +protoc-gen-crd:duration-validation:none
+    google.protobuf.Duration weight_stabilization_period = 1;
+
+    // If an endpoint stops reporting utilization metrics for this long,
+    // its reported weight is discarded and it reverts to the default
+    // (equal) weight.
+    // Default is 3m.
+    // +protoc-gen-crd:duration-validation:none
+    google.protobuf.Duration weight_expiration_period = 2;
+
+    // How often the load balancer recomputes endpoint weights from the
+    // latest reported utilization data. Smaller values react faster but
+    // increase CPU overhead. Minimum 100ms.
+    // Default is 1s.
+    // +protoc-gen-crd:duration-validation:none
+    google.protobuf.Duration weight_update_period = 3;
+
+    // Additional penalty applied to endpoints that return errors,
+    // expressed as a percentage of the utilization. For example, a value
+    // of 100 means the error rate is weighted 1.0x, and 150 means 1.5x.
+    // A value of 0 disables the penalty.
+    // Default is 0 (disabled).
+    // +kubebuilder:validation:Minimum=0
+    uint32 error_utilization_penalty_percent = 4;
+
+    // Custom ORCA metric names used to compute utilization. Check
+    // [ORCA Protocol](https://github.com/cncf/xds/blob/main/xds/data/orca/v3/orca_load_report.proto)
+    // for available metrics. For map fields in the ORCA proto,
+    // the string will be of the form `<map_field_name>.<map_key>`.
+    // For example, the string `named_metrics.foo`.
+    //
+    // If not specified, the load balancer will use the standard
+    // `application_utilization` metric.
+    // If specified, the utilization is the max of the values of
+    // the metrics specified here, when that max is greater than 0.
+    repeated string metric_names_for_computing_utilization = 5;
+  }
+
   // Upstream load balancing policy.
   oneof lb_policy {
     // Standard load balancing algorithms that require no tuning.
@@ -549,6 +619,11 @@ message LoadBalancerSettings {
 
     // Consistent Hash-based load balancing can be used to provide soft session affinity based on HTTP headers, cookies or other properties.
     ConsistentHashLB consistent_hash = 2;
+
+    // Utilization-based load balancing that uses backend-reported ORCA
+    // metrics to weight endpoints by their current load. Backends that
+    // report higher utilization receive fewer requests.
+    BackendUtilizationLB backend_utilization = 7;
   }
 
   // Locality load balancer settings. This will override mesh-wide settings in entirety, meaning no merging would be performed
@@ -845,6 +920,13 @@ message OutlierDetection {
   // if the value of `consecutiveGatewayErrors` is greater than or equal to
   // the value of `consecutive5xxErrors`, `consecutiveGatewayErrors` will have
   // no effect.
+  //
+  // Because this threshold only counts *consecutive* failures, a host whose
+  // errors are interleaved with successful requests may never reach it even
+  // if its overall failure rate is high, e.g. a host that fails every other
+  // request will never accumulate 5 consecutive errors. Use
+  // `failurePercentageThreshold` to eject hosts based on failure rate over
+  // the analysis `interval` instead of requiring consecutive failures.
   google.protobuf.UInt32Value consecutive_5xx_errors = 7;
 
   // Time interval between ejection sweep analysis. format:
@@ -885,6 +967,18 @@ message OutlierDetection {
   // +protoc-gen-crd:list-value-validation:Minimum=100
   // +protoc-gen-crd:list-value-validation:Maximum=599
   repeated uint32 outlier_detection_http_error_codes = 10;
+
+  // The failure percentage to use when determining failure percentage-based outlier detection. If
+  // the failure percentage of a given host is greater than or equal to this value, it will be
+  // ejected. Defaults to 85.
+  //
+  // Unlike `consecutive5xxErrors` and `consecutiveGatewayErrors`, this does not require failures
+  // to occur back-to-back, so it will still eject a host whose failure rate is high but whose
+  // errors are interspersed with successful requests.
+  //
+  // +kubebuilder:validation:Maximum=100
+  // +kubebuilder:validation:Minimum=0
+  google.protobuf.UInt32Value failure_percentage_threshold = 11;
 }
 
 // SSL/TLS related settings for upstream connections. See Envoy's [TLS
@@ -1001,6 +1095,18 @@ message ClientTLSSettings {
   // Otherwise the field will be applicable only at gateways, and
   // sidecars will continue to use the certificate paths.
   string credential_name = 7;
+
+  // The name of the secret or the configmap that holds CA certificates used to
+  // verify the server's certificate. Allows sourcing the trust bundle
+  // independently from `credentialName`.
+  //
+  // Applies to `SIMPLE` and `MUTUAL` TLS modes. Should be empty when using `ISTIO_MUTUAL`.
+  //
+  // **NOTE:** This field is applicable at sidecars only if
+  // `DestinationRule` has a `workloadSelector` specified.
+  // Otherwise the field will be applicable only at gateways, and
+  // sidecars will continue to use the certificate paths.
+  string ca_cert_credential_name = 10;
 
   // A list of alternate names to verify the subject identity in the
   // certificate. If specified, the proxy will verify that the server

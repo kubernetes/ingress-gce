@@ -84,9 +84,7 @@ func LoadStrategy(pth string, local, remote func(string) ([]byte, error), opts .
 
 			if isFSBacked {
 				// other fs.FS (e.g. os.DirFS) and os.Root loaders also use "/" on every platform.
-				// Path confinement is enforced by the loader, not here: the os.Root loader rebases
-				// absolute in-root paths and rejects escaping paths ("..", out-of-root absolute,
-				// escaping symlinks); an fs.FS loader rejects what its file system does not allow.
+				// Escaping paths (absolute, "..", escaping symlinks) are rejected by the loader, not rewritten here.
 				return local(filepath.ToSlash(cpth))
 			}
 

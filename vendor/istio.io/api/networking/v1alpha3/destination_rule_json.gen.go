@@ -149,6 +149,17 @@ func (this *LoadBalancerSettings_ConsistentHashLB_HTTPCookie_Attribute) Unmarsha
 	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 
+// MarshalJSON is a custom marshaler for LoadBalancerSettings_BackendUtilizationLB
+func (this *LoadBalancerSettings_BackendUtilizationLB) MarshalJSON() ([]byte, error) {
+	str, err := DestinationRuleMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for LoadBalancerSettings_BackendUtilizationLB
+func (this *LoadBalancerSettings_BackendUtilizationLB) UnmarshalJSON(b []byte) error {
+	return DestinationRuleUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
 // MarshalJSON is a custom marshaler for WarmupConfiguration
 func (this *WarmupConfiguration) MarshalJSON() ([]byte, error) {
 	str, err := DestinationRuleMarshaler.MarshalToString(this)
