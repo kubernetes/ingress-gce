@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,15 +63,15 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 	globalBsURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/backendServices/bs1", project)
 
 	testCases := []struct {
-		desc         string
-		svc          *v1.Service
-		frs          map[string]*composite.ForwardingRule
-		bss          map[string]*composite.BackendService
-		hcs          map[string]*composite.HealthCheck
-		svcNegs      []*negv1beta1.ServiceNetworkEndpointGroup
-		getBSErr     error
-		getHCErr     error
-		getHCErrName string
+		desc            string
+		svc             *v1.Service
+		forwardingRules map[string]*composite.ForwardingRule
+		backendServices map[string]*composite.BackendService
+		healthChecks    map[string]*composite.HealthCheck
+		svcNegs         []*negv1beta1.ServiceNetworkEndpointGroup
+		getBSErr        error
+		getHCErr        error
+		getHCErrName    string
 		// expect*Gets map a resource name to the expected number of GCE Get calls.
 		expectFRGets        map[string]int
 		expectBSGets        map[string]int
@@ -81,7 +82,10 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		expectEventReasons  []string
 		// absentEventReasons are checked after all expectEventReasons are found.
 		absentEventReasons []string
-		expectError        bool
+		// expectEventMessages map an event reason to a substring of its message, checked
+		// after all expectEventReasons are found.
+		expectEventMessages map[string]string
+		expectError         bool
 		// expectSystemError is checked when expectError is set: the sync error
 		// is expected to be a system error, and not a user error.
 		expectSystemError bool
@@ -104,7 +108,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -140,7 +144,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-ipv6": {
 					Name:                "fr-ipv6",
 					IPAddress:           "2600:1900:4000:1::/96",
@@ -175,7 +179,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-ipv6-noncanonical": {
 					Name:                "fr-ipv6-noncanonical",
 					IPAddress:           "2600:1900:4000:0001:0000:0000:0000:000A/96",
@@ -210,7 +214,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-ipv4": {
 					Name:                "fr-ipv4",
 					IPAddress:           "34.1.2.3",
@@ -254,7 +258,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-empty": {
 					Name:                "fr-empty",
 					IPAddress:           "",
@@ -291,9 +295,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs:         map[string]*composite.ForwardingRule{},
-			expectIPs:   nil,
-			expectError: true,
+			forwardingRules: map[string]*composite.ForwardingRule{},
+			expectIPs:       nil,
+			expectError:     true,
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
@@ -317,7 +321,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -361,7 +365,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                "global/forwardingRules/" + frName,
 					IPAddresses:         []string{"10.0.0.100", "10.0.0.101"},
@@ -396,7 +400,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                "global/forwardingRules/" + frName,
 					IPAddresses:         []string{"10.0.0.100", "10.0.0.101"},
@@ -440,7 +444,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -484,7 +488,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"global-fr": {
 					Name:                "global-fr",
 					IPAddress:           "10.0.0.200",
@@ -518,7 +522,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -555,7 +559,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -592,7 +596,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -736,7 +740,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					},
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -820,7 +824,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					},
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				frName: {
 					Name:                frName,
 					IPAddress:           frIP,
@@ -934,7 +938,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"custom-fr-1": {
 					Name:                "custom-fr-1",
 					IPAddress:           "10.0.0.100",
@@ -1070,7 +1074,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-missing-bs": {
 					Name:                "fr-missing-bs",
 					IPAddress:           frIP,
@@ -1106,7 +1110,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-404-bs": {
 					Name:                "fr-404-bs",
 					IPAddress:           frIP,
@@ -1117,7 +1121,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss:                map[string]*composite.BackendService{},
+			backendServices:    map[string]*composite.BackendService{},
 			expectIPs:          nil,
 			expectError:        true,
 			expectEventReasons: []string{"ForwardingRuleUnusable"},
@@ -1143,7 +1147,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-500-bs": {
 					Name:                "fr-500-bs",
 					IPAddress:           frIP,
@@ -1154,7 +1158,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-500": {
 					Name:    "bs-500",
 					Scope:   meta.Regional,
@@ -1189,7 +1193,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-diff-neg": {
 					Name:                "fr-diff-neg",
 					IPAddress:           frIP,
@@ -1200,7 +1204,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-other": {
 					Name:    "bs-other",
 					Scope:   meta.Regional,
@@ -1252,7 +1256,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-match-crd": {
 					Name:                "fr-match-crd",
 					IPAddress:           frIP,
@@ -1263,7 +1267,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-crd": {
 					Name:    "bs-crd",
 					Scope:   meta.Regional,
@@ -1312,7 +1316,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-match-ann": {
 					Name:                "fr-match-ann",
 					IPAddress:           frIP,
@@ -1323,7 +1327,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-ann": {
 					Name:    "bs-ann",
 					Scope:   meta.Regional,
@@ -1372,7 +1376,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-dedup-1": {
 					Name:                "fr-dedup-1",
 					IPAddress:           "10.0.0.1",
@@ -1392,7 +1396,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-dedup": {
 					Name:    "bs-dedup",
 					Scope:   meta.Regional,
@@ -1442,7 +1446,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					LoadBalancerClass: &lbClass,
 				},
 			},
-			frs: map[string]*composite.ForwardingRule{
+			forwardingRules: map[string]*composite.ForwardingRule{
 				"fr-dedup-fail-1": {
 					Name:                "fr-dedup-fail-1",
 					IPAddress:           "10.0.0.1",
@@ -1462,7 +1466,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					Version:             meta.VersionBeta,
 				},
 			},
-			bss: map[string]*composite.BackendService{
+			backendServices: map[string]*composite.BackendService{
 				"bs-dedup-failing": {
 					Name:    "bs-dedup-failing",
 					Scope:   meta.Regional,
@@ -1501,9 +1505,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Expect external health checks annotation",
 			svc:                 standaloneSvc(frName),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{frIP},
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
@@ -1511,15 +1515,104 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
 		},
 		{
+			// The NEG name changed and the backend service still uses the old NEG, which is no longer synced:
+			// the IP stays programmed so that the switch to the new NEG is not disruptive.
+			desc:                "NEG name changed, only the old NEG attached -> IP programmed with a warning",
+			svc:                 standaloneSvc(frName),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(bsWithNEGs(regionalBS("bs", "hc"), "old-neg")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
+			svcNegs:             renamedSvcNegs("old-neg"),
+			expectIPs:           []string{frIP},
+			expectEventReasons:  []string{"DrainingNEGsAttached", "SyncLoadBalancerSuccessful"},
+			expectCondition:     ipProgrammedCondition(frIP),
+			expectedAnnotations: map[string]string{annotations.ExternalHealthCheckKey: "10.0.0.100:12345"},
+		},
+		{
+			// The ServiceNetworkEndpointGroup of the previous NEG name is not always marked as being deleted, e.g. if
+			// the NEG controller restarted while the NEG name changed. The NEGs of both are accepted with a warning.
+			desc:            "Multiple ServiceNetworkEndpointGroups not being deleted -> IP programmed with a warning",
+			svc:             standaloneSvc(frName),
+			forwardingRules: frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices: bssByName(bsWithNEGs(regionalBS("bs", "hc"), "old-neg")),
+			healthChecks:    hcsByName(httpHC("hc", 12345)),
+			svcNegs: []*negv1beta1.ServiceNetworkEndpointGroup{
+				testSvcNeg(snegTestNEG, negv1beta1.NegObjectReference{SelfLink: negSelfLink(snegTestProject, snegTestZone, snegTestNEG)}),
+				testSvcNeg("old-neg", negv1beta1.NegObjectReference{SelfLink: negSelfLink(snegTestProject, snegTestZone, "old-neg")}),
+			},
+			expectIPs:           []string{frIP},
+			expectEventReasons:  []string{"MultipleServiceNetworkEndpointGroups", "SyncLoadBalancerSuccessful"},
+			absentEventReasons:  []string{"DrainingNEGsAttached"},
+			expectEventMessages: map[string]string{"MultipleServiceNetworkEndpointGroups": "Service has multiple ServiceNetworkEndpointGroups that are not being deleted."},
+			expectCondition:     ipProgrammedCondition(frIP),
+		},
+		{
+			desc:               "NEG name changed, both the old and the new NEG attached -> IP programmed",
+			svc:                standaloneSvc(frName),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(bsWithNEGs(regionalBS("bs", "hc"), "old-neg", snegTestNEG)),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
+			svcNegs:            renamedSvcNegs("old-neg"),
+			expectIPs:          []string{frIP},
+			expectEventReasons: []string{"SyncLoadBalancerSuccessful"},
+			absentEventReasons: []string{"DrainingNEGsAttached"},
+			expectCondition:    ipProgrammedCondition(frIP),
+		},
+		{
+			desc:               "NEG name changed, only the new NEG attached -> IP programmed",
+			svc:                standaloneSvc(frName),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(bsWithNEGs(regionalBS("bs", "hc"), snegTestNEG)),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
+			svcNegs:            renamedSvcNegs("old-neg"),
+			expectIPs:          []string{frIP},
+			expectEventReasons: []string{"SyncLoadBalancerSuccessful"},
+			absentEventReasons: []string{"DrainingNEGsAttached"},
+			expectCondition:    ipProgrammedCondition(frIP),
+		},
+		{
+			desc:               "NEG name changed, neither the old nor the new NEG attached -> backend not attached",
+			svc:                standaloneSvc(frName),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(bsWithNEGs(regionalBS("bs", "hc"), "other-neg")),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
+			svcNegs:            renamedSvcNegs("old-neg"),
+			expectError:        true,
+			expectEventReasons: []string{"ForwardingRuleUnusable"},
+			absentEventReasons: []string{"DrainingNEGsAttached"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionFalse,
+				Reason:  "BackendNotAttached",
+				Message: "The service NEGs are not attached to the load balancer backend service",
+			},
+		},
+		{
+			desc:                "NEGs of the service not created yet -> backend not attached",
+			svc:                 standaloneSvc(frName),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
+			expectError:         true,
+			expectEventReasons:  []string{"ForwardingRuleUnusable"},
+			expectEventMessages: map[string]string{"ForwardingRuleUnusable": "no NEGs of the service found in its ServiceNetworkEndpointGroups"},
+			expectCondition: &metav1.Condition{
+				Type:    "ExternalIPProgrammed",
+				Status:  metav1.ConditionFalse,
+				Reason:  "BackendNotAttached",
+				Message: "The service NEGs are not attached to the load balancer backend service",
+			},
+		},
+		{
 			desc: "Expect external health checks annotation multiple IPs",
 			svc:  standaloneSvc("fr1,fr2,global/forwardingRules/fr3"),
-			frs: frsByName(
+			forwardingRules: frsByName(
 				regionalFR("fr1", "10.0.0.100", "bs1"),
 				regionalFR("fr2", "10.0.0.101", "bs2"),
 				globalFR("fr3", "bs3", "10.0.0.102", "10.0.0.103"),
 			),
-			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2"), globalBS("bs3", "hc3")),
-			hcs:                 hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346), globalHTTPHC("hc3", 12347)),
+			backendServices:     bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2"), globalBS("bs3", "hc3")),
+			healthChecks:        hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346), globalHTTPHC("hc3", 12347)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{"10.0.0.100", "10.0.0.101", "10.0.0.102", "10.0.0.103"},
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
@@ -1529,9 +1622,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "External health checks port collision with a service TCP port",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345"), withServicePorts(tcpPort(12345))),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHC("hc", 12345)),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP},
 			expectEventReasons: []string{"PortCollision"},
@@ -1541,9 +1634,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "External health checks port collision skips only the colliding health check ports",
 			svc:                 standaloneSvc("fr1,fr2", withServicePorts(tcpPort(12345))),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
-			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
-			hcs:                 hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
+			backendServices:     bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
+			healthChecks:        hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{"10.0.0.100", "10.0.0.101"},
 			expectEventReasons:  []string{"PortCollision", "UpdateExternalHealthCheckSuccessful"},
@@ -1553,9 +1646,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Service UDP port does not collide with the HTTP health check port",
 			svc:                 standaloneSvc(frName, withServicePorts(udpPort(12345))),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs", withFRProtocol("UDP"))),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs", withFRProtocol("UDP"))),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{frIP},
 			expectEventReasons:  []string{"SyncLoadBalancerSuccessful"},
@@ -1566,9 +1659,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "L3_DEFAULT forwarding rule with all ports gets the external health checks annotation",
 			svc:                 standaloneSvc(frName, withServicePorts(tcpPort(80), udpPort(53))),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs", withFRProtocol("L3_DEFAULT"), withAllPorts())),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs", withFRProtocol("L3_DEFAULT"), withAllPorts())),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{frIP},
 			expectEventReasons:  []string{"SyncLoadBalancerSuccessful"},
@@ -1579,12 +1672,12 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc: "Forwarding rules sharing a VIP produce a single external health checks entry",
 			svc:  standaloneSvc("fr-tcp,fr-udp", withServicePorts(tcpPort(8080), udpPort(53))),
-			frs: frsByName(
+			forwardingRules: frsByName(
 				regionalFR("fr-tcp", frIP, "bs", withFRPorts("8080")),
 				regionalFR("fr-udp", frIP, "bs", withFRProtocol("UDP"), withFRPorts("53")),
 			),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{frIP, frIP},
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
@@ -1594,12 +1687,12 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc: "Forwarding rules sharing a VIP skip a health check port colliding with a service TCP port",
 			svc:  standaloneSvc("fr-tcp,fr-udp", withExternalHCAnnotation("10.0.0.100:8080"), withServicePorts(tcpPort(8080), udpPort(53))),
-			frs: frsByName(
+			forwardingRules: frsByName(
 				regionalFR("fr-tcp", frIP, "bs", withFRPorts("8080")),
 				regionalFR("fr-udp", frIP, "bs", withFRProtocol("UDP"), withFRPorts("53")),
 			),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHC("hc", 8080)),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHC("hc", 8080)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP, frIP},
 			expectEventReasons: []string{"PortCollision"},
@@ -1609,9 +1702,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "External health checks annotation skips health checks targeting the service health check node port",
 			svc:                 standaloneSvc("fr1,fr2", withHealthCheckNodePort(30123)),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
-			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
-			hcs:                 hcsByName(httpHC("hc", 30123), httpHC("hc2", 12345)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
+			backendServices:     bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
+			healthChecks:        hcsByName(httpHC("hc", 30123), httpHC("hc2", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{"10.0.0.100", "10.0.0.101"},
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful", "SyncLoadBalancerSuccessful"},
@@ -1622,9 +1715,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "No external health checks annotation when the health check targets the service health check node port",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:30123"), withHealthCheckNodePort(30123)),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHC("hc", 30123)),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHC("hc", 30123)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP},
 			expectEventReasons: []string{"SyncLoadBalancerSuccessful"},
@@ -1635,9 +1728,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "External health checks annotation kept when getting the health check fails",
 			svc:                 standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getHCErr:            &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectIPs:           []string{frIP},
@@ -1650,8 +1743,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "External health checks annotation removed when the health check is not found",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP},
 			expectEventReasons: []string{"NoHTTPHealthChecks"},
@@ -1661,9 +1754,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "External health checks annotation removed for non HTTP health check",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(tcpHC("hc", 12345)),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(tcpHC("hc", 12345)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP},
 			expectEventReasons: []string{"NoHTTPHealthChecks"},
@@ -1673,9 +1766,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "External health checks annotation removed for HTTP health check without a fixed port",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHCWithServingPort("hc")),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHCWithServingPort("hc")),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:          []string{frIP},
 			expectEventReasons: []string{"NoHTTPHealthChecks"},
@@ -1685,9 +1778,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "External health checks annotation not updated when getting one of the health checks fails",
 			svc:                 standaloneSvc("fr1,fr2", withExternalHCAnnotation("10.0.0.100:12345,10.0.0.101:12346")),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
-			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
-			hcs:                 hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs2")),
+			backendServices:     bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc2")),
+			healthChecks:        hcsByName(httpHC("hc", 12345), httpHC("hc2", 12346)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getHCErr:            &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			getHCErrName:        "hc2",
@@ -1701,9 +1794,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "External health checks annotation uses brackets for IPv6 addresses",
 			svc:                 standaloneSvc("fr1,fr2"),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "2001:db8::1/96", "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "2001:db8::1/96", "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{"10.0.0.100", "2001:db8::1"},
 			expectEventReasons:  []string{"UpdateExternalHealthCheckSuccessful"},
@@ -1713,9 +1806,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "External health checks annotation not removed on non user forwarding rule errors",
 			svc:                standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHC("hc", 12345)),
+			forwardingRules:    frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectError:        true,
@@ -1732,9 +1825,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Shared backend services and health checks are retrieved once",
 			svc:                 standaloneSvc("fr1,fr2,fr3"),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs1"), regionalFR("fr3", "10.0.0.102", "bs2")),
-			bss:                 bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs1"), regionalFR("fr2", "10.0.0.101", "bs1"), regionalFR("fr3", "10.0.0.102", "bs2")),
+			backendServices:     bssByName(regionalBS("bs1", "hc"), regionalBS("bs2", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectFRGets:        map[string]int{"fr1": 1, "fr2": 1, "fr3": 1},
 			expectBSGets:        map[string]int{"bs1": 1, "bs2": 1},
@@ -1747,9 +1840,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:               "Shared backend service failing with a provider error is retrieved once",
 			svc:                standaloneSvc("fr1,fr2", withExternalHCAnnotation("10.0.0.100:12345,10.0.0.101:12345")),
-			frs:                frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
-			bss:                bssByName(regionalBS("bs", "hc")),
-			hcs:                hcsByName(httpHC("hc", 12345)),
+			forwardingRules:    frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
+			backendServices:    bssByName(regionalBS("bs", "hc")),
+			healthChecks:       hcsByName(httpHC("hc", 12345)),
 			svcNegs:            standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getBSErr:           &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectBSGets:       map[string]int{"bs": 1},
@@ -1767,9 +1860,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Shared health check failing with a provider error is retrieved once",
 			svc:                 standaloneSvc("fr1,fr2", withExternalHCAnnotation("10.0.0.100:12345,10.0.0.101:12345")),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs"), regionalFR("fr2", "10.0.0.101", "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			getHCErr:            &googleapi.Error{Code: http.StatusInternalServerError, Message: "Internal Server Error"},
 			expectHCGets:        map[string]int{"hc": 1},
@@ -1783,9 +1876,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Duplicate forwarding rule references are de-duplicated",
 			svc:                 standaloneSvc(fmt.Sprintf("fr1, fr1,https://www.googleapis.com/compute/v1/projects/%s/regions/%s/forwardingRules/fr1", project, region)),
-			frs:                 frsByName(regionalFR("fr1", "10.0.0.100", "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR("fr1", "10.0.0.100", "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectFRGets:        map[string]int{"fr1": 1},
 			expectIPs:           []string{"10.0.0.100"},
@@ -1809,8 +1902,8 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Invalid health check URL in the backend service",
 			svc:                 standaloneSvc(frName, withExternalHCAnnotation("10.0.0.100:12345")),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                 bssByName(bsWithHealthCheckURL(regionalBS("bs", "hc"), fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/not-a-hc", project, region))),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(bsWithHealthCheckURL(regionalBS("bs", "hc"), fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/backendServices/not-a-hc", project, region))),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			expectIPs:           []string{frIP},
 			expectError:         true,
@@ -1821,13 +1914,13 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		},
 		{
 			// The forwarding rule is considered to have an address, but no ingress IP can be programmed.
-			desc:         "Forwarding rule with an empty address in IPAddresses",
-			svc:          standaloneSvc(fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/forwardingRules/fr1", project)),
-			frs:          frsByName(globalFR("fr1", "bs", "")),
-			bss:          bssByName(globalBS("bs", "hc")),
-			hcs:          hcsByName(globalHTTPHC("hc", 12345)),
-			svcNegs:      standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
-			expectHCGets: map[string]int{"hc": 1},
+			desc:            "Forwarding rule with an empty address in IPAddresses",
+			svc:             standaloneSvc(fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/global/forwardingRules/fr1", project)),
+			forwardingRules: frsByName(globalFR("fr1", "bs", "")),
+			backendServices: bssByName(globalBS("bs", "hc")),
+			healthChecks:    hcsByName(globalHTTPHC("hc", 12345)),
+			svcNegs:         standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
+			expectHCGets:    map[string]int{"hc": 1},
 			expectCondition: &metav1.Condition{
 				Type:    "ExternalIPProgrammed",
 				Status:  metav1.ConditionFalse,
@@ -1839,9 +1932,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 		{
 			desc:                "Status patch failure",
 			svc:                 standaloneSvc(frName),
-			frs:                 frsByName(regionalFR(frName, frIP, "bs")),
-			bss:                 bssByName(regionalBS("bs", "hc")),
-			hcs:                 hcsByName(httpHC("hc", 12345)),
+			forwardingRules:     frsByName(regionalFR(frName, frIP, "bs")),
+			backendServices:     bssByName(regionalBS("bs", "hc")),
+			healthChecks:        hcsByName(httpHC("hc", 12345)),
 			svcNegs:             standaloneSvcNegs(l4Namer.L4Backend("default", "svc")),
 			failStatusPatch:     true,
 			expectError:         true,
@@ -1886,7 +1979,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
 
 			// Populate fakeGCE client with forwarding rules defined in each test case
-			for name, fr := range tc.frs {
+			for name, fr := range tc.forwardingRules {
 				key, err := composite.CreateKey(fakeGCE, name, fr.Scope)
 				if err != nil {
 					t.Fatalf("Failed to create key for forwarding rule %s: %v", name, err)
@@ -1897,10 +1990,10 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				}
 			}
 
-			// If tc.bss is nil and tc.frs has rules with BackendService, populate default matching BS and SvcNeg for existing test cases
-			if tc.bss == nil && len(tc.frs) > 0 {
+			// If tc.backendServices is nil and tc.forwardingRules has rules with BackendService, populate default matching BS and SvcNeg for existing test cases
+			if tc.backendServices == nil && len(tc.forwardingRules) > 0 {
 				defaultBSMap := make(map[string]*composite.BackendService)
-				for _, fr := range tc.frs {
+				for _, fr := range tc.forwardingRules {
 					if fr.BackendService != "" {
 						if resID, err := cloud.ParseResourceURL(fr.BackendService); err == nil && resID.Key != nil {
 							defaultBSMap[resID.Key.Name] = &composite.BackendService{
@@ -1917,7 +2010,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					}
 				}
 				if len(defaultBSMap) > 0 {
-					tc.bss = defaultBSMap
+					tc.backendServices = defaultBSMap
 					if tc.svcNegs == nil && tc.svc != nil {
 						svcNegName := l4Namer.L4Backend(tc.svc.Namespace, tc.svc.Name)
 						tc.svcNegs = []*negv1beta1.ServiceNetworkEndpointGroup{
@@ -1932,7 +2025,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			}
 
 			// Populate fakeGCE client with health checks defined in each test case
-			for name, hc := range tc.hcs {
+			for name, hc := range tc.healthChecks {
 				key, err := composite.CreateKey(fakeGCE, name, hc.Scope)
 				t.Logf("key: %v", key)
 				if err != nil {
@@ -1945,7 +2038,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			}
 
 			// Populate fakeGCE client with backend services defined in each test case
-			for name, bs := range tc.bss {
+			for name, bs := range tc.backendServices {
 				key, err := composite.CreateKey(fakeGCE, name, bs.Scope)
 				if err != nil {
 					t.Fatalf("Failed to create key for backend service %s: %v", name, err)
@@ -2003,7 +2096,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 			c.L4Namer = l4Namer
 
 			for _, svcneg := range tc.svcNegs {
-				svcneg.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(tc.svc, tc.svc.GroupVersionKind())})
+				vmIPSvcNegOf(svcneg, tc.svc)
 				c.SvcNegInformer.GetIndexer().Add(svcneg)
 				c.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcneg.Namespace).Create(context.TODO(), svcneg, metav1.CreateOptions{})
 			}
@@ -2098,7 +2191,7 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 					}
 				}
 			}
-			if len(tc.absentEventReasons) > 0 {
+			if len(tc.absentEventReasons) > 0 || len(tc.expectEventMessages) > 0 {
 				events, err := kubeClient.CoreV1().Events(tc.svc.Namespace).List(context.Background(), metav1.ListOptions{})
 				if err != nil {
 					t.Fatalf("Failed to list events: %v", err)
@@ -2106,6 +2199,9 @@ func TestStandaloneNEGLBSync(t *testing.T) {
 				for _, e := range events.Items {
 					if slices.Contains(tc.absentEventReasons, e.Reason) {
 						t.Errorf("Unexpected %s event: %s", e.Reason, e.Message)
+					}
+					if want, ok := tc.expectEventMessages[e.Reason]; ok && !strings.Contains(e.Message, want) {
+						t.Errorf("%s event message = %q, want it to contain %q", e.Reason, e.Message, want)
 					}
 				}
 			}
@@ -2218,14 +2314,12 @@ func TestStandaloneNEGLBControllerMetrics_Success(t *testing.T) {
 		},
 	}
 	composite.CreateBackendService(fakeGCE, bsKey, bs, klog.TODO())
-	svcNeg := test.NewSvcNeg(types.NamespacedName{Namespace: "default", Name: lc.namer.L4Backend(svc.Namespace, svc.Name)}, negv1beta1.ServiceNetworkEndpointGroupStatus{
+	svcNeg := test.NewSvcNeg(types.NamespacedName{Namespace: "default", Name: lc.ctx.L4Namer.L4Backend(svc.Namespace, svc.Name)}, negv1beta1.ServiceNetworkEndpointGroupStatus{
 		NetworkEndpointGroups: []negv1beta1.NegObjectReference{
 			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
 		},
 	})
-	svcNeg.SetOwnerReferences([]metav1.OwnerReference{
-		*metav1.NewControllerRef(svc, svc.GroupVersionKind()),
-	})
+	vmIPSvcNegOf(svcNeg, svc)
 	lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg)
 
 	// Add service to informer and fake kube client
@@ -2426,14 +2520,12 @@ func TestStandaloneNEGLBControllerMetrics_Deletion(t *testing.T) {
 		},
 	}
 	composite.CreateBackendService(fakeGCE, bsKey, bs, klog.TODO())
-	svcNeg := test.NewSvcNeg(types.NamespacedName{Namespace: "default", Name: lc.namer.L4Backend(svc.Namespace, svc.Name)}, negv1beta1.ServiceNetworkEndpointGroupStatus{
+	svcNeg := test.NewSvcNeg(types.NamespacedName{Namespace: "default", Name: lc.ctx.L4Namer.L4Backend(svc.Namespace, svc.Name)}, negv1beta1.ServiceNetworkEndpointGroupStatus{
 		NetworkEndpointGroups: []negv1beta1.NegObjectReference{
 			{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/zones/us-central1-a/networkEndpointGroups/neg-1", project)},
 		},
 	})
-	svcNeg.SetOwnerReferences([]metav1.OwnerReference{
-		*metav1.NewControllerRef(svc, svc.GroupVersionKind()),
-	})
+	vmIPSvcNegOf(svcNeg, svc)
 	lc.ctx.SvcNegInformer.GetIndexer().Add(svcNeg)
 
 	// Add service to informer and fake kube client

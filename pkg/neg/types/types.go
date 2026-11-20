@@ -54,6 +54,9 @@ const (
 	NegCRManagedByKey   = "networking.gke.io/managed-by"
 	NegCRServiceNameKey = "networking.gke.io/service-name"
 	NegCRServicePortKey = "networking.gke.io/service-port"
+	// NegCRServicePortVmIp is the value of the NegCRServicePortKey label on the NEG CRs of
+	// GCE_VM_IP NEGs. These NEGs target nodes rather than ports, their service port is 0.
+	NegCRServicePortVmIp = "0"
 	// NegCRControllerValue is used as the value for the managed-by label on NEG CRs when enabled.
 	NegCRControllerValue = "neg-controller"
 

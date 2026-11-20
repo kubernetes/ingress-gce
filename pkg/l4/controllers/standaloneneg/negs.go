@@ -24,74 +24,84 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/l4/annotations"
-	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
-// serviceNEGLinks returns the keys of the NEGs of the service, read from the
-// ServiceNetworkEndpointGroup of the service. It returns nil if the
-// ServiceNetworkEndpointGroup does not exist.
-func (c *Controller) serviceNEGLinks(svc *v1.Service) (sets.Set[cloud.ResourceMapKey], error) {
-	if svc == nil {
-		return sets.New[cloud.ResourceMapKey](), nil
-	}
-	negName, err := serviceNEGName(svc, c.namer)
-	if err != nil {
-		return nil, err
-	}
-	if c.ctx.SvcNegInformer == nil {
-		return sets.New[cloud.ResourceMapKey](), nil
-	}
-
-	obj, exists, err := c.ctx.SvcNegInformer.GetIndexer().GetByKey(fmt.Sprintf("%s/%s", svc.Namespace, negName))
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, nil
-	}
-	svcNeg, ok := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
-	if !ok || svcNeg == nil {
-		return nil, fmt.Errorf("failed to retrieve ServiceNetworkEndpointGroup")
-	}
-	return serviceNEGKeys(svc, svcNeg)
+// serviceNEGs are the NEGs of the service, read from the GCE_VM_IP
+// ServiceNetworkEndpointGroups controlled by the service.
+type serviceNEGs struct {
+	// active are the NEGs synced by the NEG controller.
+	active sets.Set[cloud.ResourceMapKey]
+	// draining are the NEGs that still exist but are no longer synced by the
+	// NEG controller: the NEGs of ServiceNetworkEndpointGroups being deleted,
+	// e.g. after the NEG name of the service changed, and the NEGs in the
+	// TO_BE_DELETED state, e.g. of a removed subnet. They are accepted, with a
+	// warning, to allow switching the load balancer to the new NEGs without
+	// disruption.
+	draining sets.Set[cloud.ResourceMapKey]
+	// multipleActiveSvcNegs is set if the service has multiple
+	// ServiceNetworkEndpointGroups that are not being deleted. Only one of them
+	// is synced, the ones of a previous NEG name are not always marked as being
+	// deleted, e.g. if the NEG controller restarted while the NEG name changed.
+	multipleActiveSvcNegs bool
 }
 
-// serviceNEGName returns the name of the ServiceNetworkEndpointGroup of the
-// service, which is also the name of its NEGs.
-func serviceNEGName(svc *v1.Service, l4Namer namer.L4ResourcesNamer) (string, error) {
-	if flags.F.EnableL4CustomStandaloneNEGNames {
-		customName, err := annotations.StandaloneNEGName(svc)
-		if err != nil {
-			return "", l4utils.NewUserError(err)
+// listServiceNEGs returns the NEGs of the service, read from the GCE_VM_IP
+// ServiceNetworkEndpointGroups controlled by the service. The
+// ServiceNetworkEndpointGroups are found by ownership rather than by name, so
+// that the NEG naming (e.g. custom NEG names) stays within the NEG controller.
+func (c *Controller) listServiceNEGs(svc *v1.Service) (serviceNEGs, error) {
+	negs := serviceNEGs{
+		active:   sets.New[cloud.ResourceMapKey](),
+		draining: sets.New[cloud.ResourceMapKey](),
+	}
+	objs, err := c.ctx.SvcNegInformer.GetIndexer().ByIndex(negtypes.SvcNegServiceIndex, negtypes.SvcNegServiceIndexKey(svc.Namespace, svc.Name))
+	if err != nil {
+		return negs, fmt.Errorf("failed to list the ServiceNetworkEndpointGroups of the service: %w", err)
+	}
+	numActiveSvcNegs := 0
+	for _, obj := range objs {
+		svcNeg, ok := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
+		if !ok || !isServiceVMIPSvcNeg(svc, svcNeg) {
+			continue
 		}
-		if customName != "" {
-			return customName, nil
+		svcNegDeleted := !svcNeg.DeletionTimestamp.IsZero()
+		if !svcNegDeleted {
+			numActiveSvcNegs++
+		}
+		for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
+			negKey, ok := vmIPNEGKey(negRef)
+			if !ok {
+				continue
+			}
+			if svcNegDeleted || negRef.State == negv1beta1.ToBeDeletedState {
+				negs.draining.Insert(negKey)
+			} else {
+				negs.active.Insert(negKey)
+			}
 		}
 	}
-	return l4Namer.L4Backend(svc.Namespace, svc.Name), nil
+	negs.multipleActiveSvcNegs = numActiveSvcNegs > 1
+	return negs, nil
 }
 
-// serviceNEGKeys returns the keys of the NEGs listed in the status of the
-// ServiceNetworkEndpointGroup. The ServiceNetworkEndpointGroup must be
-// controlled by the service.
-func serviceNEGKeys(svc *v1.Service, svcNeg *negv1beta1.ServiceNetworkEndpointGroup) (sets.Set[cloud.ResourceMapKey], error) {
-	if !metav1.IsControlledBy(svcNeg, svc) {
-		err := fmt.Errorf("retrieved ServiceNetworkEndpointGroup %s is not controller by the service %s", svcNeg.Name, svc.Name)
-		return nil, l4utils.NewUserError(err)
+// isServiceVMIPSvcNeg checks if the ServiceNetworkEndpointGroup is of GCE_VM_IP
+// NEGs and is controlled by the service. The owner reference UID is checked,
+// so ServiceNetworkEndpointGroups of a previous service with the same name are
+// not matched.
+func isServiceVMIPSvcNeg(svc *v1.Service, svcNeg *negv1beta1.ServiceNetworkEndpointGroup) bool {
+	return metav1.IsControlledBy(svcNeg, svc) && svcNeg.Labels[negtypes.NegCRServicePortKey] == negtypes.NegCRServicePortVmIp
+}
+
+// vmIPNEGKey returns the key of the NEG of the reference. References that are
+// invalid or of another NEG type are skipped.
+func vmIPNEGKey(negRef negv1beta1.NegObjectReference) (cloud.ResourceMapKey, bool) {
+	if negRef.NetworkEndpointType != "" && negRef.NetworkEndpointType != negv1beta1.VmIpEndpointType {
+		return cloud.ResourceMapKey{}, false
 	}
-	negKeys := sets.New[cloud.ResourceMapKey]()
-	for _, negRef := range svcNeg.Status.NetworkEndpointGroups {
-		if negRef.SelfLink == "" {
-			continue
-		}
-		negID, err := cloud.ParseResourceURL(negRef.SelfLink)
-		if err != nil {
-			continue
-		}
-		negKeys.Insert(negID.MapKey())
+	negID, err := cloud.ParseResourceURL(negRef.SelfLink)
+	if err != nil || negID.Key == nil {
+		return cloud.ResourceMapKey{}, false
 	}
-	return negKeys, nil
+	return negID.MapKey(), true
 }

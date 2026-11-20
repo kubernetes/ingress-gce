@@ -76,8 +76,17 @@ const (
 	//
 	// In Multi Subnet Clusters, NEGs for the non-default subnets are named "<name>-<subnet hash>".
 	//
-	// Changing the annotation value causes the NEG with the previous name to be garbage collected,
-	// which will not succeed while the NEG is still referenced by a backend service.
+	// Changing the annotation value creates the NEGs with the new name, while the NEGs with the
+	// previous name are no longer synced and are garbage collected once they are no longer
+	// referenced by a backend service. The load balancer IPs stay programmed while only the
+	// previous NEGs are attached (with a DrainingNEGsAttached warning event), so the backend
+	// services can be switched without disruption: attach the new NEGs, then detach the old ones.
+	// The endpoints of the previous NEGs are not updated anymore, so the switch should be done
+	// promptly.
+	//
+	// An invalid value is reported with an InvalidNEGName event on the service and blocks the
+	// update of its NEG configuration: the NEGs created before keep being synced and the load
+	// balancer IPs stay programmed, while a new service gets no NEGs at all.
 	StandalonePassthroughLBNegNameKey = "networking.gke.io/standalone-passthrough-lb-neg-name"
 )
 

@@ -17,14 +17,15 @@ limitations under the License.
 package standaloneneg
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/resources"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestValidateForwardingRule(t *testing.T) {
@@ -195,45 +196,70 @@ func TestBackendServiceKey(t *testing.T) {
 }
 
 func TestValidateBackendServiceAttachment(t *testing.T) {
-	serviceNEG := negSelfLink(snegTestProject, snegTestZone, snegTestNEG)
+	activeNEG := negSelfLink(snegTestProject, snegTestZone, snegTestNEG)
+	drainingNEG := negSelfLink(snegTestProject, snegTestZone, "old-neg")
 	otherNEG := negSelfLink(snegTestProject, snegTestZone, "other-neg")
-	serviceNEGs := sets.New(negMapKey(t, serviceNEG))
+	negs := serviceNEGs{active: negKeys(t, activeNEG), draining: negKeys(t, drainingNEG)}
+	noNEGs := serviceNEGs{active: negKeys(t), draining: negKeys(t)}
 
 	testCases := []struct {
-		desc      string
-		backends  []*composite.Backend
-		wantError bool
+		desc     string
+		backends []*composite.Backend
+		negs     serviceNEGs
+		// wantWarning is a substring of the expected DrainingNEGsAttached warning message, if any.
+		wantWarning string
+		// wantError is a substring of the expected backend not attached user error, if any.
+		wantError string
 	}{
 		{
-			desc:     "service NEG attached",
-			backends: []*composite.Backend{{Group: otherNEG}, {Group: serviceNEG}},
+			desc:     "active NEG attached",
+			backends: []*composite.Backend{{Group: otherNEG}, {Group: activeNEG}},
+			negs:     negs,
+		},
+		{
+			desc:     "active and draining NEGs attached",
+			backends: []*composite.Backend{{Group: drainingNEG}, {Group: activeNEG}},
+			negs:     negs,
+		},
+		{
+			desc:        "only draining NEG attached",
+			backends:    []*composite.Backend{{Group: otherNEG}, {Group: drainingNEG}},
+			negs:        negs,
+			wantWarning: "Backend service bs only has NEGs attached that are no longer synced, of a previous NEG name or of a removed subnet: us-central1-a/old-neg.",
 		},
 		{
 			desc:      "service NEG not attached",
 			backends:  []*composite.Backend{{Group: otherNEG}},
-			wantError: true,
-		},
-		{
-			desc:      "no backends",
-			wantError: true,
+			negs:      negs,
+			wantError: "the service NEGs are not attached",
 		},
 		{
 			desc:      "invalid backends are skipped",
 			backends:  []*composite.Backend{nil, {Group: ""}, {Group: "invalid"}},
-			wantError: true,
+			negs:      negs,
+			wantError: "the service NEGs are not attached",
+		},
+		{
+			desc:      "no service NEGs",
+			backends:  []*composite.Backend{{Group: otherNEG}},
+			negs:      noNEGs,
+			wantError: "no NEGs of the service found in its ServiceNetworkEndpointGroups",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			err := validateBackendServiceAttachment(&composite.BackendService{Name: "bs", Backends: tc.backends}, serviceNEGs)
-			if !tc.wantError {
-				if err != nil {
-					t.Errorf("validateBackendServiceAttachment() error = %v, want nil", err)
-				}
-				return
+			warnings, err := validateBackendServiceAttachment(&composite.BackendService{Name: "bs", Backends: tc.backends}, tc.negs, klog.TODO())
+			if tc.wantError == "" && err != nil {
+				t.Errorf("validateBackendServiceAttachment() error = %v, want nil", err)
 			}
-			if !l4utils.IsBackendNotAttachedError(err) || !resources.IsUserError(err) {
-				t.Errorf("validateBackendServiceAttachment() error = %v, want a backend not attached user error", err)
+			if tc.wantError != "" && (!l4utils.IsBackendNotAttachedError(err) || !resources.IsUserError(err) || !strings.Contains(err.Error(), tc.wantError)) {
+				t.Errorf("validateBackendServiceAttachment() error = %v, want a backend not attached user error containing %q", err, tc.wantError)
+			}
+			switch {
+			case tc.wantWarning == "" && len(warnings) != 0:
+				t.Errorf("validateBackendServiceAttachment() warnings = %v, want none", warnings)
+			case tc.wantWarning != "" && (len(warnings) != 1 || warnings[0].reason != "DrainingNEGsAttached" || !strings.Contains(warnings[0].message, tc.wantWarning)):
+				t.Errorf("validateBackendServiceAttachment() warnings = %v, want one DrainingNEGsAttached warning containing %q", warnings, tc.wantWarning)
 			}
 		})
 	}

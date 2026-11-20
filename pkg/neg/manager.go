@@ -856,7 +856,7 @@ func negTypeFromCR(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, refNEGType 
 	if refNEGType != "" {
 		return refNEGType
 	}
-	if svcNegCR.GetLabels()[negtypes.NegCRServicePortKey] == "0" {
+	if svcNegCR.GetLabels()[negtypes.NegCRServicePortKey] == negtypes.NegCRServicePortVmIp {
 		return negv1beta1.VmIpEndpointType
 	}
 	return negv1beta1.VmIpPortEndpointType

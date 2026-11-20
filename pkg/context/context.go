@@ -47,6 +47,7 @@ import (
 	informerl4lbconfig "k8s.io/ingress-gce/pkg/l4lbconfig/client/informers/externalversions/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	negbindingclient "k8s.io/ingress-gce/pkg/negbinding/client/clientset/versioned"
 	informernegbinding "k8s.io/ingress-gce/pkg/negbinding/client/informers/externalversions/negbinding/v1beta1"
 	"k8s.io/ingress-gce/pkg/recorders"
@@ -217,7 +218,7 @@ func NewControllerContext(
 		ServiceInformer:         informerv1.NewServiceInformerWithOptions(kubeClient, config.Namespace, informerOptions),
 		PodInformer:             podInformer,
 		NodeInformer:            nodeInformer,
-		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, negtypes.SvcNegIndexers()),
 		recordersManager:        recorders.NewManager(eventRecorderClient, logger),
 		logger:                  logger,
 	}
