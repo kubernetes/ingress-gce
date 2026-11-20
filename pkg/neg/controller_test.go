@@ -3038,8 +3038,19 @@ func TestBuildClusterURL(t *testing.T) {
 }
 
 func TestNEGBindingUpdateRequiresSync(t *testing.T) {
+	defaultSubnet := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/default"
+	subnet2 := "https://www.googleapis.com/compute/v1/projects/mock-project/regions/us-central1/subnetworks/subnet-2"
+	neg1ZoneA := "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/neg-1"
+	neg1ZoneB := "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-b/networkEndpointGroups/neg-1"
+	neg2ZoneA := "https://www.googleapis.com/compute/v1/projects/mock-project/zones/us-central1-a/networkEndpointGroups/neg-2"
+
 	baseBinding := &negbindingv1beta1.NetworkEndpointGroupBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "binding1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:  "ns1",
+			Name:       "binding1",
+			UID:        types.UID("uid-1"),
+			Generation: 1,
+		},
 		Spec: negbindingv1beta1.NetworkEndpointGroupBindingSpec{
 			BackendRef: &negbindingv1beta1.BackendRefConfig{
 				Kind: negbindingv1beta1.ServiceKind,
@@ -3052,7 +3063,7 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 		},
 		Status: negbindingv1beta1.NetworkEndpointGroupBindingStatus{
 			NetworkEndpointGroups: []negbindingv1beta1.StatusNegRef{
-				{ResourceURL: "zones/us-central1-a/networkEndpointGroups/neg-1"},
+				{ResourceURL: neg1ZoneA, SubnetURL: defaultSubnet},
 			},
 		},
 	}
@@ -3063,6 +3074,12 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 	finalizerAdded := baseBinding.DeepCopy()
 	finalizerAdded.Finalizers = []string{NEGBindingFinalizer}
 
+	uidChanged := baseBinding.DeepCopy()
+	uidChanged.UID = types.UID("uid-2")
+
+	generationBumped := baseBinding.DeepCopy()
+	generationBumped.Generation = 2
+
 	statusOnlyUpdated := baseBinding.DeepCopy()
 	statusOnlyUpdated.Status.LastSyncTime = later
 	statusOnlyUpdated.Status.Conditions = []negbindingv1beta1.Condition{
@@ -3072,8 +3089,63 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 	emptyStatusBinding := baseBinding.DeepCopy()
 	emptyStatusBinding.Status.NetworkEndpointGroups = nil
 
+	emptyStatusLater := emptyStatusBinding.DeepCopy()
+	emptyStatusLater.Status.LastSyncTime = later
+
+	statusNEGAdded := emptyStatusBinding.DeepCopy()
+	statusNEGAdded.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg2ZoneA, SubnetURL: defaultSubnet},
+	}
+
+	statusSubnetChanged := baseBinding.DeepCopy()
+	statusSubnetChanged.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg1ZoneA, SubnetURL: subnet2},
+	}
+
+	multiZoneStatus := baseBinding.DeepCopy()
+	multiZoneStatus.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg1ZoneA, SubnetURL: defaultSubnet},
+		{ResourceURL: neg1ZoneB, SubnetURL: defaultSubnet},
+	}
+
+	multiSubnetStatus := baseBinding.DeepCopy()
+	multiSubnetStatus.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg1ZoneA, SubnetURL: defaultSubnet},
+		{ResourceURL: neg2ZoneA, SubnetURL: subnet2},
+	}
+	multiSubnetReordered := baseBinding.DeepCopy()
+	multiSubnetReordered.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg2ZoneA, SubnetURL: subnet2},
+		{ResourceURL: neg1ZoneA, SubnetURL: defaultSubnet},
+	}
+	multiSubnetDrainedOne := multiSubnetStatus.DeepCopy()
+	multiSubnetDrainedOne.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg2ZoneA, SubnetURL: subnet2},
+	}
+
+	sameNameTwoSubnets := baseBinding.DeepCopy()
+	sameNameTwoSubnets.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg1ZoneA, SubnetURL: defaultSubnet},
+		{ResourceURL: neg1ZoneB, SubnetURL: subnet2},
+	}
+	sameNameOneSubnetLeft := sameNameTwoSubnets.DeepCopy()
+	sameNameOneSubnetLeft.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: neg1ZoneB, SubnetURL: subnet2},
+	}
+
+	invalidStatusBinding := baseBinding.DeepCopy()
+	invalidStatusBinding.Status.NetworkEndpointGroups = []negbindingv1beta1.StatusNegRef{
+		{ResourceURL: "not-a-valid-url", SubnetURL: defaultSubnet},
+	}
+	invalidStatusLater := invalidStatusBinding.DeepCopy()
+	invalidStatusLater.Status.LastSyncTime = later
+
 	specUpdated := baseBinding.DeepCopy()
+	specUpdated.Generation = 2
 	specUpdated.Spec.NetworkEndpointGroups[0].Zones = []string{"us-central1-a", "us-central1-b"}
+
+	specUpdatedSameGeneration := baseBinding.DeepCopy()
+	specUpdatedSameGeneration.Spec.NetworkEndpointGroups[0].Zones = []string{"us-central1-a", "us-central1-b"}
 
 	deletingWithNEGs := baseBinding.DeepCopy()
 	deletingWithNEGs.DeletionTimestamp = &now
@@ -3083,6 +3155,11 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 
 	deletingStatusUpdatedStillWithNEGs := deletingWithNEGs.DeepCopy()
 	deletingStatusUpdatedStillWithNEGs.Status.LastSyncTime = later
+
+	deletingMultiNEG := multiSubnetStatus.DeepCopy()
+	deletingMultiNEG.DeletionTimestamp = &now
+	deletingMultiNEGDrainedOne := multiSubnetDrainedOne.DeepCopy()
+	deletingMultiNEGDrainedOne.DeletionTimestamp = &now
 
 	deletingDrained := deletingWithNEGs.DeepCopy()
 	deletingDrained.Status.NetworkEndpointGroups = nil
@@ -3106,22 +3183,106 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 			want: false,
 		},
 		{
+			desc: "active binding finalizer removed requires sync",
+			old:  finalizerAdded,
+			cur:  baseBinding,
+			want: true,
+		},
+		{
 			desc: "status-only update (e.g. LastSyncTime or Conditions) does not require sync",
 			old:  baseBinding,
 			cur:  statusOnlyUpdated,
 			want: false,
 		},
 		{
-			desc: "status NEGs dropping to 0 while not deleting does not require sync",
+			desc: "UID change with identical Spec requires sync",
 			old:  baseBinding,
-			cur:  emptyStatusBinding,
+			cur:  uidChanged,
+			want: true,
+		},
+		{
+			desc: "Generation increment with identical Spec requires sync",
+			old:  baseBinding,
+			cur:  generationBumped,
+			want: true,
+		},
+		{
+			desc: "status-only update with empty Status.NetworkEndpointGroups does not require sync",
+			old:  emptyStatusBinding,
+			cur:  emptyStatusLater,
 			want: false,
 		},
 		{
-			desc: "spec change requires sync",
+			desc: "status NEG added while active requires sync",
+			old:  emptyStatusBinding,
+			cur:  statusNEGAdded,
+			want: true,
+		},
+		{
+			desc: "partial multi-zone drain removing a zone requires sync",
+			old:  multiZoneStatus,
+			cur:  baseBinding,
+			want: true,
+		},
+		{
+			desc: "reordered status NEGs with identical entries does not require sync",
+			old:  multiSubnetStatus,
+			cur:  multiSubnetReordered,
+			want: false,
+		},
+		{
+			desc: "same-length status NEG replaced at same location requires sync",
+			old:  baseBinding,
+			cur:  statusNEGAdded,
+			want: true,
+		},
+		{
+			desc: "same-length status NEG subnet URL changed requires sync",
+			old:  baseBinding,
+			cur:  statusSubnetChanged,
+			want: true,
+		},
+		{
+			desc: "active binding status NEG removed (drained old NEG) requires sync",
+			old:  baseBinding,
+			cur:  emptyStatusBinding,
+			want: true,
+		},
+		{
+			desc: "active binding removes one of multiple NEGs across subnets requires sync",
+			old:  multiSubnetStatus,
+			cur:  multiSubnetDrainedOne,
+			want: true,
+		},
+		{
+			desc: "active binding removes one subnet sharing same NEG name requires sync",
+			old:  sameNameTwoSubnets,
+			cur:  sameNameOneSubnetLeft,
+			want: true,
+		},
+		{
+			desc: "unchanged unparseable status URL does not require sync",
+			old:  invalidStatusBinding,
+			cur:  invalidStatusLater,
+			want: false,
+		},
+		{
+			desc: "removed unparseable status URL requires sync",
+			old:  invalidStatusBinding,
+			cur:  emptyStatusBinding,
+			want: true,
+		},
+		{
+			desc: "spec change with Generation increment requires sync",
 			old:  baseBinding,
 			cur:  specUpdated,
 			want: true,
+		},
+		{
+			desc: "spec change without Generation increment does not require sync",
+			old:  baseBinding,
+			cur:  specUpdatedSameGeneration,
+			want: false,
 		},
 		{
 			desc: "deletion started (DeletionTimestamp set) requires sync",
@@ -3140,6 +3301,12 @@ func TestNEGBindingUpdateRequiresSync(t *testing.T) {
 			old:  deletingWithNEGs,
 			cur:  deletingStatusUpdatedStillWithNEGs,
 			want: false,
+		},
+		{
+			desc: "partial drain during deletion removing one NEG requires sync",
+			old:  deletingMultiNEG,
+			cur:  deletingMultiNEGDrainedOne,
+			want: true,
 		},
 		{
 			desc: "draining completed during deletion (Status.NetworkEndpointGroups cleared) requires sync",

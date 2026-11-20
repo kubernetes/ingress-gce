@@ -19,7 +19,7 @@ package neg
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,21 +183,37 @@ func (c *Controller) nodeUpdateRequiresResync(oldNode, currentNode *apiv1.Node) 
 // negBindingUpdateRequiresSync reports whether the change from old to cur
 // requires enqueuing the NEGBinding for processing. Every syncer execution
 // patches Status (e.g. LastSyncTime and Conditions), which triggers an
-// informer Update event. Avoid enqueuing on status-only updates so we do not
-// trigger EnsureSyncerForNEGBinding -> syncer.Sync() in a self-reinforcing
-// loop that bypasses syncer exponential backoff and retries indefinitely
-// after maxRetries.
+// informer Update event. Avoid enqueuing on status-only updates that do not
+// change Status.NetworkEndpointGroups so we do not trigger
+// EnsureSyncerForNEGBinding -> syncer.Sync() in a self-reinforcing loop that
+// bypasses syncer exponential backoff and retries indefinitely after maxRetries.
 func negBindingUpdateRequiresSync(old, cur *negbindingv1beta1.NetworkEndpointGroupBinding) bool {
-	specChanged := !reflect.DeepEqual(old.Spec, cur.Spec)
-	deletionStarted := (old.DeletionTimestamp == nil) != (cur.DeletionTimestamp == nil)
-	// During deletion, the syncer clears Status.NetworkEndpointGroups once
-	// endpoint draining completes; we must enqueue this transition so
-	// ReconcileDeletion can remove the finalizer.
-	drainingCompleted := cur.DeletionTimestamp != nil &&
-		len(old.Status.NetworkEndpointGroups) > 0 &&
-		len(cur.Status.NetworkEndpointGroups) == 0
+	if old.UID != cur.UID {
+		return true
+	}
+	if old.Generation != cur.Generation {
+		return true
+	}
 
-	return specChanged || deletionStarted || drainingCompleted
+	if (old.DeletionTimestamp == nil) != (cur.DeletionTimestamp == nil) {
+		return true
+	}
+	if cur.DeletionTimestamp == nil &&
+		slices.Contains(old.Finalizers, NEGBindingFinalizer) &&
+		!slices.Contains(cur.Finalizers, NEGBindingFinalizer) {
+		return true
+	}
+
+	// Enqueue when Status.NetworkEndpointGroups changes (e.g. active NEG
+	// renaming, draining progress/completion, or external status NEG edits) so
+	// ownership and syncer state stay reconciled.
+	if len(old.Status.NetworkEndpointGroups) != len(cur.Status.NetworkEndpointGroups) {
+		return true
+	}
+	if len(old.Status.NetworkEndpointGroups) == 0 {
+		return false
+	}
+	return !sets.New(old.Status.NetworkEndpointGroups...).Equal(sets.New(cur.Status.NetworkEndpointGroups...))
 }
 
 func buildClusterURL(cloud negtypes.NetworkEndpointGroupCloud) (string, error) {
