@@ -736,7 +736,8 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 			deleteByZone = true
 			continue
 		}
-		negDeleted := manager.deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, svcNegCR, &errList)
+		negType := negTypeFromCR(svcNegCR, negRef.NetworkEndpointType)
+		negDeleted := manager.deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, svcNegCR, negType, &errList)
 		if negDeleted {
 			deletedNegs[negtypes.NegInfo{Name: resourceID.Key.Name, Zone: resourceID.Key.Zone}] = struct{}{}
 		}
@@ -744,9 +745,11 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 	}
 
 	if deleteByZone {
+		// There are no NEG references with the NEG type, so it must be inferred from the CR labels.
+		negType := negTypeFromCR(svcNegCR, "")
 		manager.logger.V(2).Info("Deletion candidate has 0 NEG reference", "svcneg", klog.KObj(svcNegCR), "svcNegCR", svcNegCR)
 		for _, zone := range zones {
-			negDeleted := manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, &errList)
+			negDeleted := manager.deleteNegOrReportErr(svcNegCR.Name, zone, svcNegCR, negType, &errList)
 			if negDeleted {
 				deletedNegs[negtypes.NegInfo{Name: svcNegCR.Name, Zone: zone}] = struct{}{}
 			}
@@ -803,12 +806,18 @@ func (manager *syncerManager) processNEGDeletionCandidate(candidate deletionCand
 // cloud. Successful deletion is indicated by returning `true` and a failure
 // would return `false`. In addition, if the deletion failed, the error will be
 // reported as an event on the given CR and added to the passed `errList`.
-func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, errList *[]error) bool {
-	expectedDesc := &utils.StandardNEGDescription{
+func (manager *syncerManager) deleteNegOrReportErr(name, zone string, svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, negType negv1beta1.NetworkEndpointType, errList *[]error) bool {
+	standardDesc := utils.StandardNEGDescription{
 		ClusterUID:  string(manager.kubeSystemUID),
 		Namespace:   svcNegCR.Namespace,
 		ServiceName: svcNegCR.GetLabels()[negtypes.NegCRServiceNameKey],
 		Port:        svcNegCR.GetLabels()[negtypes.NegCRServicePortKey],
+	}
+	var expectedDesc utils.NEGDescription = standardDesc
+	if manager.isCustomNamedVmIpNEGCR(svcNegCR, negType) {
+		// Custom named GCE_VM_IP NEGs could have been created outside of the cluster,
+		// they must only be deleted if the description proves the service owns them.
+		expectedDesc = utils.CustomL4PassthroughNEGDescription{Desc: standardDesc}
 	}
 	if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, expectedDesc); err != nil {
 		err = fmt.Errorf("failed to delete NEG %s in %s: %s", name, zone, err)
@@ -840,8 +849,34 @@ func ensureExistingNegRef(neg *negv1beta1.ServiceNetworkEndpointGroup, deletedNe
 	return errList
 }
 
-// ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
-func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.StandardNEGDescription) error {
+// negTypeFromCR returns the type of the NEGs tracked by the svcneg CR. The type stored in
+// the NEG reference is used if available. Otherwise it is inferred from the service port
+// label, since GCE_VM_IP NEGs are the only ones with service port 0.
+func negTypeFromCR(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, refNEGType negv1beta1.NetworkEndpointType) negv1beta1.NetworkEndpointType {
+	if refNEGType != "" {
+		return refNEGType
+	}
+	if svcNegCR.GetLabels()[negtypes.NegCRServicePortKey] == negtypes.NegCRServicePortVmIp {
+		return negv1beta1.VmIpEndpointType
+	}
+	return negv1beta1.VmIpPortEndpointType
+}
+
+// isCustomNamedVmIpNEGCR returns true if the svcneg CR tracks GCE_VM_IP NEGs which name
+// was provided by the user (L4 Standalone NEG services with the custom NEG name annotation).
+// The CR is named after the base NEG name, which is the custom name or the generated L4
+// backend name. The CR name is used instead of the NEG name, since NEGs in non-default
+// subnets have names derived from the base name and the subnet.
+func (manager *syncerManager) isCustomNamedVmIpNEGCR(svcNegCR *negv1beta1.ServiceNetworkEndpointGroup, negType negv1beta1.NetworkEndpointType) bool {
+	if negType != negv1beta1.VmIpEndpointType {
+		return false
+	}
+	return svcNegCR.Name != manager.l4Namer.L4Backend(svcNegCR.Namespace, svcNegCR.GetLabels()[negtypes.NegCRServiceNameKey])
+}
+
+// ensureDeleteNetworkEndpointGroup ensures neg is delete from zone.
+// If expectedDesc is set, the NEG is only deleted if its description matches it.
+func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc utils.NEGDescription) error {
 	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA, manager.logger)
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {

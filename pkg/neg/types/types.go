@@ -54,6 +54,9 @@ const (
 	NegCRManagedByKey   = "networking.gke.io/managed-by"
 	NegCRServiceNameKey = "networking.gke.io/service-name"
 	NegCRServicePortKey = "networking.gke.io/service-port"
+	// NegCRServicePortVmIp is the value of the NegCRServicePortKey label on the NEG CRs of
+	// GCE_VM_IP NEGs. These NEGs target nodes rather than ports, their service port is 0.
+	NegCRServicePortVmIp = "0"
 	// NegCRControllerValue is used as the value for the managed-by label on NEG CRs when enabled.
 	NegCRControllerValue = "neg-controller"
 
@@ -65,6 +68,10 @@ const (
 
 	// NEG CRD Enabled Garbage Collection Event Reasons
 	NegGCError = "NegCRError"
+
+	// NegNameConflict is the Service event reason used when a NEG with the user requested
+	// name already exists but is not owned by the service.
+	NegNameConflict = "NEGNameConflict"
 
 	// L4LBTypes are used to mark what type of LB the calculator is determinig endpoints for.
 	L4InternalLB = L4LBType("INTERNAL")

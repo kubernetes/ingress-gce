@@ -108,7 +108,7 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 		EndpointInformer:           informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		EndpointSliceInformer:      discoveryinformer.NewEndpointSliceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		NodeInformer:               informerv1.NewNodeInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
-		SvcNegInformer:             informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:             informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, SvcNegIndexers()),
 		NetworkInformer:            informernetwork.NewNetworkInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
 		GKENetworkParamSetInformer: informergkenetworkparamset.NewGKENetworkParamSetInformer(networkClient, resyncPeriod, utils.NewNamespaceIndexer()),
 		NodeTopologyInformer:       informernodetopology.NewNodeTopologyInformer(nodeTopologyClient, resyncPeriod, utils.NewNamespaceIndexer()),

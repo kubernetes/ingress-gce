@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -41,6 +40,15 @@ type usableFR struct {
 	// hcPort is the port of the HTTP health check of the backend service of
 	// the forwarding rule, 0 if there is no usable HTTP health check.
 	hcPort int64
+}
+
+// multipleActiveSvcNegsWarning is reported for services with multiple
+// ServiceNetworkEndpointGroups that are not being deleted.
+var multipleActiveSvcNegsWarning = syncWarning{
+	reason: "MultipleServiceNetworkEndpointGroups",
+	message: "Service has multiple ServiceNetworkEndpointGroups that are not being deleted. Only the NEGs of the current NEG name are synced, " +
+		"the NEGs of a previous NEG name are no longer updated and are deleted once they are detached from the load balancer. " +
+		"Make sure the backend services use the NEGs of the current NEG name.",
 }
 
 // unusableHealthCheck is a health check that can't be used to redirect the
@@ -67,9 +75,16 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (s
 		errs = append(errs, l4utils.NewUserError(parseErr))
 	}
 	refs = c.limitFRRefs(svc, refs)
-	serviceNEGs, err := c.serviceNEGLinks(svc)
+	negs, err := c.listServiceNEGs(svc)
 	if err != nil {
-		errs = append(errs, err)
+		// The NEG attachment can't be validated, the status is left as it is.
+		return nil, err
+	}
+	// warnings are reported after the loop, once each, as backend services can be
+	// shared by multiple forwarding rules.
+	warnings := sets.New[syncWarning]()
+	if negs.multipleActiveSvcNegs {
+		warnings.Insert(multipleActiveSvcNegsWarning)
 	}
 
 	fetcher := newSyncFetcher(c.ctx.Cloud, svcLogger)
@@ -82,7 +97,7 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (s
 	// can be shared by multiple backend services.
 	var unusableHCs []unusableHealthCheck
 	for _, ref := range refs {
-		fr, bs, err := c.resolveFR(fetcher, ref, serviceNEGs, svcLogger)
+		fr, bs, frWarnings, err := c.resolveFR(fetcher, ref, negs, svcLogger)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -91,6 +106,7 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (s
 			errs = append(errs, l4utils.NewUserError(fmt.Errorf("forwarding rule %s has no IP address", ref.raw)))
 			continue
 		}
+		warnings.Insert(frWarnings...)
 		schemes.Insert(fr.LoadBalancingScheme)
 
 		hcPort, notUsableReason, err := resolveHealthCheck(fetcher, bs)
@@ -106,6 +122,7 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (s
 	}
 
 	c.reportUnusableHealthChecks(svc, unusableHCs, svcLogger)
+	c.reportWarnings(svc, warnings, svcLogger)
 	hcAddrs, collisions := externalHealthCheckAddrs(svc, usable)
 	c.reportHealthCheckPortCollisions(svc, collisions)
 	// Do not update the annotation if some of its entries could not be determined because
@@ -130,33 +147,34 @@ func (c *Controller) syncLoadBalancer(svc *v1.Service, svcLogger klog.Logger) (s
 
 // resolveFR retrieves the forwarding rule and its backend service, and checks
 // that they can be used for the service. A non-nil error means the forwarding
-// rule can't be used.
-func (c *Controller) resolveFR(fetcher *syncFetcher, ref frRef, serviceNEGs sets.Set[cloud.ResourceMapKey], svcLogger klog.Logger) (*composite.ForwardingRule, *composite.BackendService, error) {
+// rule can't be used, warnings are problems that don't make it unusable.
+func (c *Controller) resolveFR(fetcher *syncFetcher, ref frRef, negs serviceNEGs, svcLogger klog.Logger) (*composite.ForwardingRule, *composite.BackendService, []syncWarning, error) {
 	fr, err := fetcher.forwardingRule(ref)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := validateForwardingRule(fr, ref.raw); err != nil {
 		svcLogger.Error(err, "invalid forwarding rule", "frName", ref.raw)
-		return nil, nil, l4utils.NewUserError(err)
+		return nil, nil, nil, l4utils.NewUserError(err)
 	}
 
 	var bs *composite.BackendService
+	var warnings []syncWarning
 	bsKey, err := backendServiceKey(fr)
 	if err == nil {
 		bs, err = fetcher.backendService(fr.BackendService, bsKey)
 	}
 	if err == nil {
-		err = validateBackendServiceAttachment(bs, serviceNEGs)
+		warnings, err = validateBackendServiceAttachment(bs, negs)
 	}
 	if err != nil {
 		// Backend services can be shared by multiple forwarding rules, the forwarding
 		// rule name is added to make the errors of each rule distinguishable.
 		err = fmt.Errorf("forwarding rule %s: %w", ref.raw, err)
 		svcLogger.Error(err, "invalid backend service for forwarding rule", "frName", ref.raw, "bsURL", fr.BackendService)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return fr, bs, nil
+	return fr, bs, warnings, nil
 }
 
 // resolveHealthCheck returns the port of the HTTP health check of the backend
@@ -220,6 +238,14 @@ func (c *Controller) reportUnusableHealthChecks(svc *v1.Service, unusableHCs []u
 		reported.Insert(hc.url)
 		c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "NoHTTPHealthChecks", "Backend service %s has no usable HTTP health check: %s", hc.bsName, hc.reason)
 		svcLogger.V(4).Info("Backend service has no usable HTTP health check", "backendService", hc.bsName, "reason", hc.reason)
+	}
+}
+
+// reportWarnings reports the warnings as events on the service.
+func (c *Controller) reportWarnings(svc *v1.Service, warnings sets.Set[syncWarning], svcLogger klog.Logger) {
+	for warning := range warnings {
+		c.ctx.Recorder(svc.Namespace).Event(svc, v1.EventTypeWarning, warning.reason, warning.message)
+		svcLogger.V(2).Info("Load balancer warning", "reason", warning.reason, "message", warning.message)
 	}
 }
 

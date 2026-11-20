@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -576,6 +577,90 @@ func TestVerifyNEGDescription(t *testing.T) {
 			err := verifyNEGDescription(tc.neg, negtypes.TestZone1, expectedDesc, tc.customName, klog.TODO())
 			if (err != nil) != tc.wantErr {
 				t.Errorf("verifyNEGDescription() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestVerifyNEGDescriptionCustomL4PassthroughNEG(t *testing.T) {
+	t.Parallel()
+	standardDesc := utils.StandardNEGDescription{
+		ClusterUID:  "kube-system-uid",
+		Namespace:   "test-ns",
+		ServiceName: "test-svc",
+		Port:        "0",
+	}
+	customDesc := utils.CustomL4PassthroughNEGDescription{Desc: standardDesc}
+	descWithoutPort := `{"cluster-uid":"kube-system-uid","namespace":"test-ns","service-name":"test-svc"}`
+
+	testCases := []struct {
+		desc         string
+		negDesc      string
+		expectedDesc utils.NEGDescription
+		customName   bool
+		wantErr      bool
+		wantErrUsed  bool
+	}{
+		{
+			desc:         "matching description",
+			negDesc:      standardDesc.String(),
+			expectedDesc: customDesc,
+			customName:   true,
+		},
+		{
+			desc:         "matching description without port",
+			negDesc:      descWithoutPort,
+			expectedDesc: customDesc,
+			customName:   true,
+		},
+		{
+			desc:         "empty description",
+			negDesc:      "",
+			expectedDesc: customDesc,
+			customName:   true,
+			wantErr:      true,
+		},
+		{
+			desc:         "malformed description",
+			negDesc:      "created by terraform",
+			expectedDesc: customDesc,
+			customName:   true,
+			wantErr:      true,
+		},
+		{
+			desc:         "NEG from another cluster",
+			negDesc:      `{"cluster-uid":"other","namespace":"test-ns","service-name":"test-svc"}`,
+			expectedDesc: customDesc,
+			customName:   true,
+			wantErr:      true,
+		},
+		{
+			desc:         "NEG from another service",
+			negDesc:      `{"cluster-uid":"kube-system-uid","namespace":"test-ns","service-name":"other"}`,
+			expectedDesc: customDesc,
+			customName:   true,
+			wantErr:      true,
+			wantErrUsed:  true,
+		},
+		{
+			desc:         "standard description: malformed description is still accepted",
+			negDesc:      "created by terraform",
+			expectedDesc: standardDesc,
+			customName:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			neg := &composite.NetworkEndpointGroup{Name: "custom-neg", Description: tc.negDesc}
+			err := verifyNEGDescription(neg, negtypes.TestZone1, tc.expectedDesc, tc.customName, klog.TODO())
+			if (err != nil) != tc.wantErr {
+				t.Errorf("verifyNEGDescription() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if gotUsed := errors.Is(err, utils.ErrNEGUsedByAnotherSyncer); gotUsed != tc.wantErrUsed {
+				t.Errorf("verifyNEGDescription() error = %v, want wrapping ErrNEGUsedByAnotherSyncer = %v", err, tc.wantErrUsed)
 			}
 		})
 	}
@@ -4840,9 +4925,6 @@ func getTestEmptyEndpointSlices(name, namespace string) []*discovery.EndpointSli
 func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 	t.Parallel()
 
-	flags.F.EnableL4CustomStandaloneNEGNames = true
-	defer func() { flags.F.EnableL4CustomStandaloneNEGNames = false }()
-
 	var (
 		testZone          = "test-zone"
 		testNamedPort     = "named-port"
@@ -4882,7 +4964,13 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 		existingDesc string
 		// customName mirrors the syncer flag: true when the NEG name came from a user annotation.
 		customName bool
-		expectErr  bool
+		// negType is the NEG type expected by the syncer, defaults to GCE_VM_IP.
+		negType negtypes.NetworkEndpointType
+		// existingNEGType is the type of the existing NEG, defaults to negType.
+		existingNEGType negtypes.NetworkEndpointType
+		expectErr       bool
+		// expectTypeMismatch is set when the NEG is rejected because of its type, not its description.
+		expectTypeMismatch bool
 		// expectUsedByAnotherSyncer asserts the error is recognizable as an intra-cluster conflict,
 		// which callers use to avoid overwriting the NEG CR status.
 		expectUsedByAnotherSyncer bool
@@ -4919,6 +5007,48 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 			expectErr:    false,
 		},
 		{
+			desc:         "NEG description matches this service but omits the port: adopted",
+			existingDesc: `{"cluster-uid":"cluster-uid","namespace":"test-ns","service-name":"test-svc"}`,
+			customName:   true,
+			expectErr:    false,
+		},
+		{
+			desc:         "custom named NEG with malformed description: must not be adopted",
+			existingDesc: "created by terraform",
+			customName:   true,
+			expectErr:    true,
+		},
+		{
+			desc:         "custom named NEG with empty JSON description: must not be adopted",
+			existingDesc: "{}",
+			customName:   true,
+			expectErr:    true,
+		},
+		{
+			desc:               "custom named NEG with matching description but GCE_VM_IP_PORT type: must not be adopted",
+			existingDesc:       negDesc(testKubesystemUID, testNamespace, testServiceName, testPort),
+			customName:         true,
+			existingNEGType:    negtypes.VmIpPortEndpointType,
+			expectErr:          true,
+			expectTypeMismatch: true,
+		},
+		{
+			// L7 custom named NEGs keep the lenient description matching and get no NEGNameConflict event.
+			desc:         "custom named GCE_VM_IP_PORT NEG with malformed description: adopted",
+			existingDesc: "created by terraform",
+			customName:   true,
+			negType:      negtypes.VmIpPortEndpointType,
+			expectErr:    false,
+		},
+		{
+			desc:                      "custom named GCE_VM_IP_PORT NEG of another service: no NEGNameConflict event",
+			existingDesc:              negDesc(testKubesystemUID, testNamespace, "another-svc", testPort),
+			customName:                true,
+			negType:                   negtypes.VmIpPortEndpointType,
+			expectErr:                 true,
+			expectUsedByAnotherSyncer: true,
+		},
+		{
 			desc:         "generated name with empty description: adopted (guard is specific to custom names)",
 			existingDesc: "",
 			customName:   false,
@@ -4931,6 +5061,15 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
+			negType := tc.negType
+			if negType == "" {
+				negType = negtypes.VmIpEndpointType
+			}
+			existingNEGType := tc.existingNEGType
+			if existingNEGType == "" {
+				existingNEGType = negType
+			}
+
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			negtypes.MockNetworkEndpointAPIs(fakeGCE)
 			fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnet, metrics.FakeNegMetrics())
@@ -4941,7 +5080,7 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 			existingNEG := &composite.NetworkEndpointGroup{
 				Version:             apiVersion,
 				Name:                negName,
-				NetworkEndpointType: string(negtypes.VmIpEndpointType),
+				NetworkEndpointType: string(existingNEGType),
 				Network:             testNetwork,
 				Subnetwork:          testSubnet,
 				Description:         tc.existingDesc,
@@ -4950,17 +5089,29 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 				t.Fatalf("Failed to seed existing NEG: %v", err)
 			}
 
+			serviceLister := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			if err := serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: testServiceName}}); err != nil {
+				t.Fatalf("Failed to add service to the lister: %v", err)
+			}
+			recorder := record.NewFakeRecorder(10)
+
+			// Mirror the transaction syncer: custom named GCE_VM_IP NEGs use the strict description.
+			var desc utils.NEGDescription = expectedDesc
+			if isCustomNamedVmIpNEG(tc.customName, negType) {
+				desc = utils.CustomL4PassthroughNEGDescription{Desc: expectedDesc}
+			}
+
 			_, err := ensureNetworkEndpointGroup(
 				testNamespace,
 				testServiceName,
 				negName,
 				testZone,
 				testNamedPort,
-				expectedDesc,
-				negtypes.VmIpEndpointType,
+				desc,
+				negType,
 				fakeCloud,
-				nil,
-				nil,
+				serviceLister,
+				recorder,
 				apiVersion,
 				tc.customName,
 				true,
@@ -4977,6 +5128,26 @@ func TestEnsureNetworkEndpointGroupNoHijackOfExistingNEG(t *testing.T) {
 			}
 			if !tc.expectUsedByAnotherSyncer && errors.Is(err, utils.ErrNEGUsedByAnotherSyncer) {
 				t.Errorf("ensureNetworkEndpointGroup() unexpectedly wrapped ErrNEGUsedByAnotherSyncer: %v", err)
+			}
+
+			// A conflicting custom named GCE_VM_IP NEG must be reported on the service, with the
+			// description that would let the controller use it or with the type mismatch.
+			gotConflictEvent := false
+			close(recorder.Events)
+			for event := range recorder.Events {
+				if strings.Contains(event, negtypes.NegNameConflict) {
+					gotConflictEvent = true
+					want := `{"cluster-uid":"cluster-uid","namespace":"test-ns","service-name":"test-svc"}`
+					if tc.expectTypeMismatch {
+						want = string(existingNEGType)
+					}
+					if !strings.Contains(event, want) {
+						t.Errorf("%s event = %q, want it to contain %s", negtypes.NegNameConflict, event, want)
+					}
+				}
+			}
+			if wantConflictEvent := tc.expectErr && isCustomNamedVmIpNEG(tc.customName, negType); gotConflictEvent != wantConflictEvent {
+				t.Errorf("got %s event = %v, want %v", negtypes.NegNameConflict, gotConflictEvent, wantConflictEvent)
 			}
 
 			// Whatever the outcome, the pre-existing NEG must still be there, unmodified:

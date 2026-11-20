@@ -18,15 +18,19 @@ package standaloneneg
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
 func TestStandaloneNEGLBControllerEventHandlers_Add(t *testing.T) {
@@ -283,6 +287,169 @@ func TestServiceEventHandlers(t *testing.T) {
 			}
 			if got := c.svcQueue.Len(); got != wantLen {
 				t.Errorf("queue length = %d, want %d", got, wantLen)
+			}
+		})
+	}
+}
+
+// recordingQueue is a TaskQueue recording the keys of the enqueued objects.
+type recordingQueue struct {
+	keys []string
+}
+
+func (q *recordingQueue) Run()      {}
+func (q *recordingQueue) Shutdown() {}
+func (q *recordingQueue) Len() int  { return len(q.keys) }
+func (q *recordingQueue) NumRequeues(obj interface{}) int {
+	return 0
+}
+func (q *recordingQueue) Enqueue(objs ...interface{}) {
+	for _, obj := range objs {
+		key, err := cache.MetaNamespaceKeyFunc(obj)
+		if err != nil {
+			key = fmt.Sprintf("invalid object %T", obj)
+		}
+		q.keys = append(q.keys, key)
+	}
+}
+
+func TestSvcNegEventHandlers(t *testing.T) {
+	lbClass := annotations.StandalonePassthroughNegLoadBalancerClass
+	otherClass := "other-class"
+	standalone := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: "default", UID: "svc-uid"},
+		Spec:       v1.ServiceSpec{Type: v1.ServiceTypeLoadBalancer, LoadBalancerClass: &lbClass},
+	}
+	otherLB := standalone.DeepCopy()
+	otherLB.Name = "other-lb"
+	otherLB.UID = "other-lb-uid"
+	otherLB.Spec.LoadBalancerClass = &otherClass
+	// A previous service with the same name as the standalone service.
+	previous := standalone.DeepCopy()
+	previous.UID = "previous-uid"
+
+	neg := negSelfLink(snegTestProject, snegTestZone, "neg")
+	newSvcNeg := func(owner *v1.Service, negRefs ...negv1beta1.NegObjectReference) *negv1beta1.ServiceNetworkEndpointGroup {
+		return vmIPSvcNegOf(testSvcNeg("neg", negRefs...), owner)
+	}
+	svcNeg := newSvcNeg(standalone)
+	svcNegWithNEG := newSvcNeg(standalone, negv1beta1.NegObjectReference{SelfLink: neg})
+	deleting := deletingSvcNeg(newSvcNeg(standalone, negv1beta1.NegObjectReference{SelfLink: neg}))
+	l7SvcNeg := testSvcNeg("l7-neg")
+	l7SvcNeg.Labels = map[string]string{negtypes.NegCRServicePortKey: "80"}
+	l7SvcNeg = vmIPSvcNegOf(l7SvcNeg, standalone)
+	noOwner := newSvcNeg(standalone)
+	noOwner.OwnerReferences = nil
+	// The ServiceNetworkEndpointGroup of the previous service, moved by the NEG controller to the service
+	// recreated with the same name.
+	previousOwner := newSvcNeg(previous, negv1beta1.NegObjectReference{SelfLink: neg})
+	movedToNewOwner := newSvcNeg(standalone, negv1beta1.NegObjectReference{SelfLink: neg})
+	missing := standalone.DeepCopy()
+	missing.Name = "missing"
+	missing.UID = "missing-uid"
+
+	testCases := []struct {
+		desc        string
+		handle      func(c *Controller)
+		wantEnqueue bool
+	}{
+		{
+			desc:        "add ServiceNetworkEndpointGroup of a standalone NEG LB service",
+			handle:      func(c *Controller) { c.onSvcNegAdd(svcNegWithNEG) },
+			wantEnqueue: true,
+		},
+		{
+			desc:   "add ServiceNetworkEndpointGroup of a service with another load balancer class",
+			handle: func(c *Controller) { c.onSvcNegAdd(newSvcNeg(otherLB)) },
+		},
+		{
+			desc:   "add ServiceNetworkEndpointGroup of a previous service with the same name",
+			handle: func(c *Controller) { c.onSvcNegAdd(newSvcNeg(previous)) },
+		},
+		{
+			desc:   "add GCE_VM_IP_PORT ServiceNetworkEndpointGroup",
+			handle: func(c *Controller) { c.onSvcNegAdd(l7SvcNeg) },
+		},
+		{
+			desc:   "add ServiceNetworkEndpointGroup without a controller owner",
+			handle: func(c *Controller) { c.onSvcNegAdd(noOwner) },
+		},
+		{
+			desc:   "add ServiceNetworkEndpointGroup of a service not in the informer",
+			handle: func(c *Controller) { c.onSvcNegAdd(newSvcNeg(missing)) },
+		},
+		{
+			desc:   "add unexpected object",
+			handle: func(c *Controller) { c.onSvcNegAdd("not a ServiceNetworkEndpointGroup") },
+		},
+		{
+			desc:        "update NEGs of the ServiceNetworkEndpointGroup",
+			handle:      func(c *Controller) { c.onSvcNegUpdate(svcNeg, svcNegWithNEG) },
+			wantEnqueue: true,
+		},
+		{
+			desc:        "ServiceNetworkEndpointGroup being deleted, its NEGs become draining",
+			handle:      func(c *Controller) { c.onSvcNegUpdate(svcNegWithNEG, deleting) },
+			wantEnqueue: true,
+		},
+		{
+			desc:        "controller owner changed to the service recreated with the same name",
+			handle:      func(c *Controller) { c.onSvcNegUpdate(previousOwner, movedToNewOwner) },
+			wantEnqueue: true,
+		},
+		{
+			desc: "labels changed",
+			handle: func(c *Controller) {
+				withoutLabels := svcNegWithNEG.DeepCopy()
+				withoutLabels.Labels = nil
+				c.onSvcNegUpdate(withoutLabels, svcNegWithNEG)
+			},
+			wantEnqueue: true,
+		},
+		{
+			desc:   "update without changes of the NEGs",
+			handle: func(c *Controller) { c.onSvcNegUpdate(svcNegWithNEG, svcNegWithNEG.DeepCopy()) },
+		},
+		{
+			desc:        "delete ServiceNetworkEndpointGroup",
+			handle:      func(c *Controller) { c.onSvcNegDelete(deleting) },
+			wantEnqueue: true,
+		},
+		{
+			desc: "delete ServiceNetworkEndpointGroup tombstone",
+			handle: func(c *Controller) {
+				c.onSvcNegDelete(cache.DeletedFinalStateUnknown{Key: "default/neg", Obj: deleting})
+			},
+			wantEnqueue: true,
+		},
+		{
+			desc: "delete unexpected tombstone",
+			handle: func(c *Controller) {
+				c.onSvcNegDelete(cache.DeletedFinalStateUnknown{Key: "default/neg", Obj: "not a ServiceNetworkEndpointGroup"})
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			_, _, c, stopCh := setupControllerContext(t)
+			defer close(stopCh)
+			for _, svc := range []*v1.Service{standalone, otherLB} {
+				if err := c.ctx.ServiceInformer.GetIndexer().Add(svc); err != nil {
+					t.Fatalf("Failed to add service %s: %v", svc.Name, err)
+				}
+			}
+
+			queue := &recordingQueue{}
+			c.svcQueue = queue
+
+			tc.handle(c)
+
+			var wantKeys []string
+			if tc.wantEnqueue {
+				wantKeys = []string{"default/svc"}
+			}
+			if diff := cmp.Diff(wantKeys, queue.keys); diff != "" {
+				t.Errorf("enqueued keys mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
