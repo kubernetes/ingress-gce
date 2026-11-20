@@ -1821,6 +1821,12 @@ type EnvoyFilter_ListenerMatch_FilterChainMatch struct {
 	//
 	// * `raw_buffer` - default, used when no transport protocol is detected.
 	// * `tls` - set when TLS protocol is detected by the TLS inspector.
+	//
+	// Note that this is a *match condition* of the filter chain: it
+	// describes the traffic the filter chain accepts, not how that
+	// traffic is processed. A filter chain matching `tls` does not
+	// necessarily terminate TLS. Use `transportSocket` to match on
+	// whether the filter chain terminates TLS.
 	TransportProtocol string `protobuf:"bytes,3,opt,name=transport_protocol,json=transportProtocol,proto3" json:"transport_protocol,omitempty"`
 	// Applies only to sidecars. If non-empty, a comma separated set
 	// of application protocols to consider when determining a
@@ -1837,6 +1843,34 @@ type EnvoyFilter_ListenerMatch_FilterChainMatch struct {
 	// The destination_port value used by a filter chain's match condition.
 	// This condition will evaluate to false if the filter chain has no destination_port match.
 	DestinationPort uint32 `protobuf:"varint,6,opt,name=destination_port,json=destinationPort,proto3" json:"destination_port,omitempty"`
+	// If non-empty, the name of the transport socket the filter chain
+	// is configured with. This condition will evaluate to false if the
+	// filter chain uses a different transport socket.
+	//
+	// While `transportProtocol` is part of the filter chain's match
+	// criteria - the protocol Envoy expects to detect on the wire with
+	// the `tls_inspector` listener filter - this field matches the
+	// transport socket that actually processes the bytes of a matched
+	// connection. The two are independent: a filter chain can match
+	// `tls` traffic and still hand the encrypted bytes to the
+	// application, for example an inbound port declared as TLS or HTTPS,
+	// in which case the filter chain has a `raw_buffer` transport
+	// socket. Matching on `envoy.transport_sockets.tls` therefore
+	// selects only the filter chains that terminate TLS, which
+	// `transportProtocol` on its own cannot express.
+	//
+	// Accepted values include:
+	//
+	// * `envoy.transport_sockets.raw_buffer` - the connection bytes are
+	//   passed through unmodified. This also matches filter chains with
+	//   no transport socket explicitly configured, since that is Envoy's
+	//   default.
+	// * `envoy.transport_sockets.tls` - the filter chain terminates TLS,
+	//   for example an inbound filter chain terminating mTLS, or a
+	//   gateway HTTPS/TLS server that is not in passthrough mode.
+	// * `envoy.transport_sockets.quic` - the filter chain terminates
+	//   QUIC, including the TLS handshake carried within it.
+	TransportSocket string `protobuf:"bytes,7,opt,name=transport_socket,json=transportSocket,proto3" json:"transport_socket,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1911,6 +1945,13 @@ func (x *EnvoyFilter_ListenerMatch_FilterChainMatch) GetDestinationPort() uint32
 		return x.DestinationPort
 	}
 	return 0
+}
+
+func (x *EnvoyFilter_ListenerMatch_FilterChainMatch) GetTransportSocket() string {
+	if x != nil {
+		return x.TransportSocket
+	}
+	return ""
 }
 
 // Conditions to match a specific filter within a filter chain.
@@ -2181,7 +2222,7 @@ var File_networking_v1alpha3_envoy_filter_proto protoreflect.FileDescriptor
 
 const file_networking_v1alpha3_envoy_filter_proto_rawDesc = "" +
 	"\n" +
-	"&networking/v1alpha3/envoy_filter.proto\x12\x19istio.networking.v1alpha3\x1a\x1cgoogle/protobuf/struct.proto\x1a!networking/v1alpha3/sidecar.proto\x1a\x1btype/v1beta1/selector.proto\"\xc5\x1f\n" +
+	"&networking/v1alpha3/envoy_filter.proto\x12\x19istio.networking.v1alpha3\x1a\x1cgoogle/protobuf/struct.proto\x1a!networking/v1alpha3/sidecar.proto\x1a\x1btype/v1beta1/selector.proto\"\xf0\x1f\n" +
 	"\vEnvoyFilter\x12X\n" +
 	"\x11workload_selector\x18\x03 \x01(\v2+.istio.networking.v1alpha3.WorkloadSelectorR\x10workloadSelector\x12I\n" +
 	"\n" +
@@ -2222,21 +2263,22 @@ const file_networking_v1alpha3_envoy_filter_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\vdomain_name\x18\x03 \x01(\tR\n" +
 	"domainName\x12_\n" +
-	"\x05route\x18\x02 \x01(\v2I.istio.networking.v1alpha3.EnvoyFilter.RouteConfigurationMatch.RouteMatchR\x05route\x1a\xc6\x05\n" +
+	"\x05route\x18\x02 \x01(\v2I.istio.networking.v1alpha3.EnvoyFilter.RouteConfigurationMatch.RouteMatchR\x05route\x1a\xf1\x05\n" +
 	"\rListenerMatch\x12\x1f\n" +
 	"\vport_number\x18\x01 \x01(\rR\n" +
 	"portNumber\x12\x1b\n" +
 	"\tport_name\x18\x02 \x01(\tR\bportName\x12h\n" +
 	"\ffilter_chain\x18\x03 \x01(\v2E.istio.networking.v1alpha3.EnvoyFilter.ListenerMatch.FilterChainMatchR\vfilterChain\x12'\n" +
 	"\x0flistener_filter\x18\x05 \x01(\tR\x0elistenerFilter\x12\x12\n" +
-	"\x04name\x18\x04 \x01(\tR\x04name\x1a\xa1\x02\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x1a\xcc\x02\n" +
 	"\x10FilterChainMatch\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03sni\x18\x02 \x01(\tR\x03sni\x12-\n" +
 	"\x12transport_protocol\x18\x03 \x01(\tR\x11transportProtocol\x123\n" +
 	"\x15application_protocols\x18\x04 \x01(\tR\x14applicationProtocols\x12X\n" +
 	"\x06filter\x18\x05 \x01(\v2@.istio.networking.v1alpha3.EnvoyFilter.ListenerMatch.FilterMatchR\x06filter\x12)\n" +
-	"\x10destination_port\x18\x06 \x01(\rR\x0fdestinationPort\x1a\x85\x01\n" +
+	"\x10destination_port\x18\x06 \x01(\rR\x0fdestinationPort\x12)\n" +
+	"\x10transport_socket\x18\a \x01(\tR\x0ftransportSocket\x1a\x85\x01\n" +
 	"\vFilterMatch\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12b\n" +
 	"\n" +

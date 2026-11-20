@@ -664,6 +664,12 @@ message EnvoyFilter {
       //
       // * `raw_buffer` - default, used when no transport protocol is detected.
       // * `tls` - set when TLS protocol is detected by the TLS inspector.
+      //
+      // Note that this is a *match condition* of the filter chain: it
+      // describes the traffic the filter chain accepts, not how that
+      // traffic is processed. A filter chain matching `tls` does not
+      // necessarily terminate TLS. Use `transportSocket` to match on
+      // whether the filter chain terminates TLS.
       string transport_protocol = 3;
 
       // Applies only to sidecars. If non-empty, a comma separated set
@@ -683,6 +689,35 @@ message EnvoyFilter {
       // The destination_port value used by a filter chain's match condition.
       // This condition will evaluate to false if the filter chain has no destination_port match.
       uint32 destination_port = 6;
+
+      // If non-empty, the name of the transport socket the filter chain
+      // is configured with. This condition will evaluate to false if the
+      // filter chain uses a different transport socket.
+      //
+      // While `transportProtocol` is part of the filter chain's match
+      // criteria - the protocol Envoy expects to detect on the wire with
+      // the `tls_inspector` listener filter - this field matches the
+      // transport socket that actually processes the bytes of a matched
+      // connection. The two are independent: a filter chain can match
+      // `tls` traffic and still hand the encrypted bytes to the
+      // application, for example an inbound port declared as TLS or HTTPS,
+      // in which case the filter chain has a `raw_buffer` transport
+      // socket. Matching on `envoy.transport_sockets.tls` therefore
+      // selects only the filter chains that terminate TLS, which
+      // `transportProtocol` on its own cannot express.
+      //
+      // Accepted values include:
+      //
+      // * `envoy.transport_sockets.raw_buffer` - the connection bytes are
+      //   passed through unmodified. This also matches filter chains with
+      //   no transport socket explicitly configured, since that is Envoy's
+      //   default.
+      // * `envoy.transport_sockets.tls` - the filter chain terminates TLS,
+      //   for example an inbound filter chain terminating mTLS, or a
+      //   gateway HTTPS/TLS server that is not in passthrough mode.
+      // * `envoy.transport_sockets.quic` - the filter chain terminates
+      //   QUIC, including the TLS handshake carried within it.
+      string transport_socket = 7;
     }
 
     // Conditions to match a specific filter within a filter chain.

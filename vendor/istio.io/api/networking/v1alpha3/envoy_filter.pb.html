@@ -881,6 +881,11 @@ the <code>tls_inspector</code> listener filter.</p>
 <li><code>raw_buffer</code> - default, used when no transport protocol is detected.</li>
 <li><code>tls</code> - set when TLS protocol is detected by the TLS inspector.</li>
 </ul>
+<p>Note that this is a <em>match condition</em> of the filter chain: it
+describes the traffic the filter chain accepts, not how that
+traffic is processed. A filter chain matching <code>tls</code> does not
+necessarily terminate TLS. Use <code>transportSocket</code> to match on
+whether the filter chain terminates TLS.</p>
 
 </td>
 </tr>
@@ -916,6 +921,40 @@ patch to the HTTP connection manager.</p>
 <td>
 <p>The destination_port value used by a filter chain&rsquo;s match condition.
 This condition will evaluate to false if the filter chain has no destination_port match.</p>
+
+</td>
+</tr>
+<tr id="EnvoyFilter-ListenerMatch-FilterChainMatch-transport_socket">
+<td><div class="field"><div class="name"><code><a href="#EnvoyFilter-ListenerMatch-FilterChainMatch-transport_socket">transportSocket</a></code></div>
+<div class="type">string</div>
+</div></td>
+<td>
+<p>If non-empty, the name of the transport socket the filter chain
+is configured with. This condition will evaluate to false if the
+filter chain uses a different transport socket.</p>
+<p>While <code>transportProtocol</code> is part of the filter chain&rsquo;s match
+criteria - the protocol Envoy expects to detect on the wire with
+the <code>tls_inspector</code> listener filter - this field matches the
+transport socket that actually processes the bytes of a matched
+connection. The two are independent: a filter chain can match
+<code>tls</code> traffic and still hand the encrypted bytes to the
+application, for example an inbound port declared as TLS or HTTPS,
+in which case the filter chain has a <code>raw_buffer</code> transport
+socket. Matching on <code>envoy.transport_sockets.tls</code> therefore
+selects only the filter chains that terminate TLS, which
+<code>transportProtocol</code> on its own cannot express.</p>
+<p>Accepted values include:</p>
+<ul>
+<li><code>envoy.transport_sockets.raw_buffer</code> - the connection bytes are
+passed through unmodified. This also matches filter chains with
+no transport socket explicitly configured, since that is Envoy&rsquo;s
+default.</li>
+<li><code>envoy.transport_sockets.tls</code> - the filter chain terminates TLS,
+for example an inbound filter chain terminating mTLS, or a
+gateway HTTPS/TLS server that is not in passthrough mode.</li>
+<li><code>envoy.transport_sockets.quic</code> - the filter chain terminates
+QUIC, including the TLS handshake carried within it.</li>
+</ul>
 
 </td>
 </tr>

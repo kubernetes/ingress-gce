@@ -375,7 +375,7 @@ type HTTPHealthCheckConfig struct {
 	// "Host" in httpHeaders instead.
 	Host string `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
 	// HTTP or HTTPS, defaults to HTTP
-	// +kubebuilder:validation:XValidation:message="scheme must be one of [HTTP, HTTPS]",rule="self in [”, 'HTTP', 'HTTPS']"
+	// +kubebuilder:validation:XValidation:message="scheme must be one of [HTTP, HTTPS]",rule="self in ['', 'HTTP', 'HTTPS']"
 	Scheme string `protobuf:"bytes,4,opt,name=scheme,proto3" json:"scheme,omitempty"`
 	// Headers the proxy will pass on to make the request.
 	// Allows repeated headers.

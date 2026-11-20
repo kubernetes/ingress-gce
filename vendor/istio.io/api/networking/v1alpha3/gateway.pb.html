@@ -636,6 +636,29 @@ backend can verify the certificate.</p>
 
 </td>
 </tr>
+<tr id="ServerTLSSettings-ecdh_curves">
+<td><div class="field"><div class="name"><code><a href="#ServerTLSSettings-ecdh_curves">ecdhCurves</a></code></div>
+<div class="type">string[]</div>
+</div></td>
+<td>
+<p>If specified, only support the specified ecdh curves.
+Otherwise default to the default ecdh list supported by Envoy
+as specified <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/common.proto">here</a>.</p>
+
+</td>
+</tr>
+<tr id="ServerTLSSettings-alpn_protocols">
+<td><div class="field"><div class="name"><code><a href="#ServerTLSSettings-alpn_protocols">alpnProtocols</a></code></div>
+<div class="type">string[]</div>
+</div></td>
+<td>
+<p>If specified, the ALPN protocols advertised by the proxy during
+the TLS handshake are overridden with this list.</p>
+<p>Note: Setting an ALPN list that is incompatible with the protocol
+configured for the server port may break the traffic served by this port.</p>
+
+</td>
+</tr>
 </tbody>
 </table>
 </section>

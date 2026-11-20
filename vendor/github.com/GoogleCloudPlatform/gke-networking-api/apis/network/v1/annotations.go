@@ -63,7 +63,7 @@ const (
 	AutoGenAnnotationValTrue = "true"
 	// NorthInterfacesAnnotationKey is the annotation key used to hold interfaces data per node.
 	NorthInterfacesAnnotationKey = "networking.gke.io/north-interfaces"
-	// NICInfoAnnotationKey specifies the mapping between the fist IP address and the PCI BDF number on the node.
+	// NICInfoAnnotationKey specifies the mapping between the primary IP addresses (IPv4 and/or IPv6) and the PCI BDF number on the node.
 	NICInfoAnnotationKey = "networking.gke.io/nic-info"
 	// InterfaceStatusAnnotationKey is the key of the annotation which shows information of each interface of a pod.
 	InterfaceStatusAnnotationKey = "networking.gke.io/interface-status"
@@ -91,12 +91,14 @@ type InterfaceRef struct {
 // +kubebuilder:object:generate:=false
 type NICInfoAnnotation []NICInfoRef
 
-// NICInfoRef specifies the mapping between a NIC's first IP and its
+// NICInfoRef specifies the mapping between a NIC's primary IP addresses and its
 // PCI address on the node.
 // +kubebuilder:object:generate:=false
 type NICInfoRef struct {
-	// First IP address of the interface.
+	// BirthIP is the primary IPv4 address assigned to this interface at node boot time.
 	BirthIP string `json:"birthIP,omitempty"`
+	// BirthIPv6 is the primary IPv6 address assigned to this interface at node boot time.
+	BirthIPv6 string `json:"birthIPv6,omitempty"`
 	// PCI address of this device on the node.
 	PCIAddress string `json:"pciAddress,omitempty"`
 	// Name is the birth name of this interface at node boot time.
@@ -203,6 +205,9 @@ type InterfaceStatus struct {
 
 	// Gateway4 defines the gateway IPv4 address for the network this interface connects to.
 	Gateway4 *string `json:"gateway4,omitempty"`
+
+	// Gateway6 defines the gateway IPv6 address for the network this interface connects to.
+	Gateway6 *string `json:"gateway6,omitempty"`
 
 	// DNSConfig specifies the DNS configuration of the network this interface connects to.
 	DNSConfig *DNSConfig `json:"dnsConfig,omitempty"`

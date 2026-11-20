@@ -638,9 +638,9 @@ type ServiceEntry struct {
 	// Kubernetes service if applicable. Currently, only the following
 	// additional properties will be considered by `istiod`:
 	//
-	//  1. subjectAltNames: In addition to verifying the SANs of the
-	//     service accounts associated with the pods of the service, the
-	//     SANs specified here will also be verified.
+	// 1. subjectAltNames: In addition to verifying the SANs of the
+	//    service accounts associated with the pods of the service, the
+	//    SANs specified here will also be verified.
 	//
 	// **NOTE 3:** Ztunnel and Waypoint proxies do not support wildcard hosts.
 	//
