@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
@@ -43,12 +44,16 @@ const (
 	prefix96range = "/96"
 )
 
-func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL, ipv6AddressToUse string) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
+// ensureIPv6ForwardingRule creates the IPv6 forwarding rule of the ILB Service, if it does
+// not exist, and re-creates it if it changed. The existing forwarding rule is only deleted
+// and re-created while ipv6 is reserved (see forwardingrules.IsRecreateAllowed); otherwise
+// an error is returned and the sync is retried.
+func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, existingIPv6FwdRule *composite.ForwardingRule, subnetworkURL string, ipv6 address.IPToUse) (*composite.ForwardingRule, l4utils.ResourceSyncStatus, error) {
 	start := time.Now()
 
-	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, subnetworkURL, ipv6AddressToUse)
+	expectedIPv6FwdRule, err := l4.buildExpectedIPv6ForwardingRule(bsLink, options, subnetworkURL, ipv6.IP)
 	if err != nil {
-		return nil, l4utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s, %s) returned error %w, want nil", bsLink, options, subnetworkURL, ipv6AddressToUse, err)
+		return nil, l4utils.ResourceResync, fmt.Errorf("l4.buildExpectedIPv6ForwardingRule(%s, %v, %s, %s) returned error %w, want nil", bsLink, options, subnetworkURL, ipv6.IP, err)
 	}
 
 	frLogger := l4.svcLogger.WithValues("forwardingRuleName", expectedIPv6FwdRule.Name)
@@ -66,7 +71,7 @@ func (l4 *L4) ensureIPv6ForwardingRule(bsLink string, options gce.ILBOptions, ex
 			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping update of unchanged ipv6 forwarding rule")
 			return existingIPv6FwdRule, l4utils.ResourceResync, nil
 		}
-		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule)
+		err = l4.deleteChangedIPv6ForwardingRule(existingIPv6FwdRule, expectedIPv6FwdRule, ipv6.Reserved)
 		if err != nil {
 			return nil, l4utils.ResourceUpdate, err
 		}
@@ -125,7 +130,13 @@ func (l4 *L4) buildExpectedIPv6ForwardingRule(bsLink string, options gce.ILBOpti
 	return fr, nil
 }
 
-func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule) error {
+// deleteChangedIPv6ForwardingRule deletes the existing forwarding rule so that it can be
+// re-created as expectedFwdRule. If ipReserved is false outside a legacy network, the
+// rule is left in place and an error wrapping ErrIPNotReserved is returned.
+func (l4 *L4) deleteChangedIPv6ForwardingRule(existingFwdRule *composite.ForwardingRule, expectedFwdRule *composite.ForwardingRule, ipReserved bool) error {
+	if !forwardingrules.IsRecreateAllowed(l4.cloud, ipReserved) {
+		return forwardingrules.NewIPNotReservedError(existingFwdRule)
+	}
 	frDiff := cmp.Diff(existingFwdRule, expectedFwdRule, cmpopts.IgnoreFields(composite.ForwardingRule{}, "IPAddress"))
 	l4.svcLogger.V(2).Info("IPv6 forwarding rule changed. Deleting existing ipv6 forwarding rule.",
 		"existingForwardingRule", fmt.Sprintf("%+v", existingFwdRule), "newForwardingRule", fmt.Sprintf("%+v", expectedFwdRule), "diff", frDiff)
@@ -226,6 +237,14 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	// Only for IPv6, address reservation is not supported on Standard Tier
 	if !l4netlb.cloud.IsLegacyNetwork() && netTier == cloud.NetworkTierPremium {
+		// Reserving the address only protects the IP while the forwarding rule is deleted and
+		// re-created. When the existing rule already matches the Service nothing is deleted, so
+		// skip the reservation (and its release) to avoid two address mutations on every resync.
+		if l4netlb.isIPv6ForwardingRuleUpToDate(existingIPv6FwdRule, toDeleteIPv6FwdRule, bsLink, ipv6AddrToUse, subnetworkURL, ipCollection, netTier, frLogger) {
+			frLogger.V(2).Info("ensureIPv6ForwardingRule: Skipping address reservation and update of unchanged ipv6 forwarding rule")
+			return existingIPv6FwdRule, l4utils.ResourceResync, nil
+		}
+
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
 		addrMgr := address.NewManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), subnetworkURL, expectedIPv6FrName, ipv6AddressName, ipv6AddrToUse, cloud.SchemeExternal, netTier, address.IPv6Version, frLogger)
 		addrMgr.SetIPCollection(ipCollection)
@@ -244,6 +263,13 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			return nil, l4utils.ResourceResync, err
 		}
 		frLogger.V(2).Info("ensureIPv6ForwardingRule: reserved IP for the forwarding rule", "ip", ipv6AddrToUse)
+		defer func() {
+			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+			if err := addrMgr.ReleaseAddress(); err != nil {
+				frLogger.Error(err, "ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan")
+			}
+		}()
 		// We delete the alt Forwarding Rule as it is not needed when switching from single to mixed and vice versa
 		if toDeleteIPv6FwdRule != nil {
 			err = l4netlb.forwardingRules.Delete(toDeleteIPv6FwdRule.Name)
@@ -254,13 +280,6 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "External ForwardingRule %q deleted", toDeleteIPv6FwdRule.Name)
 			toDeleteIPv6FwdRule = nil
 		}
-		defer func() {
-			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
-			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
-			if err := addrMgr.ReleaseAddress(); err != nil {
-				frLogger.Error(err, "ensureIPv6ForwardingRule: failed to release address reservation, possibly causing an orphan")
-			}
-		}()
 	} else if existingIPv6FwdRule != nil && existingIPv6FwdRule.NetworkTier != netTier.ToGCEValue() {
 		frLogger.V(2).Info("deleting forwarding rule for service due to network tier mismatch", "existingTier", existingIPv6FwdRule.NetworkTier, "expectedTier", netTier)
 		err := l4netlb.forwardingRules.Delete(existingIPv6FwdRule.Name)
@@ -303,6 +322,36 @@ func (l4netlb *L4NetLB) ensureIPv6ForwardingRule(bsLink string) (*composite.Forw
 
 	createdFr, err := l4netlb.forwardingRules.Get(expectedIPv6FwdRule.Name)
 	return createdFr, l4utils.ResourceUpdate, err
+}
+
+// isIPv6ForwardingRuleUpToDate reports whether the existing IPv6 forwarding rule already
+// matches what ensureIPv6ForwardingRule would create for the Service, so that the sync
+// will neither create nor delete any IPv6 forwarding rule.
+//
+// It is intentionally conservative: whenever it can't prove that nothing will change (no
+// existing rule, a rule with the alternate single/mixed protocol name that has to be
+// deleted, an IP that is being reset or that differs from the one of the existing rule,
+// or an error while building or comparing the rules), it returns false and lets the
+// regular path reserve the address and report any error.
+func (l4netlb *L4NetLB) isIPv6ForwardingRuleUpToDate(existingFwdRule, toDeleteFwdRule *composite.ForwardingRule, bsLink, ipv6AddressToUse, subnetworkURL, ipCollection string, netTier cloud.NetworkTier, frLogger klog.Logger) bool {
+	if existingFwdRule == nil || toDeleteFwdRule != nil {
+		return false
+	}
+	// EqualIPv6 doesn't compare addresses, make sure the rule already uses the selected one.
+	if !address.IsSameIPv6(ipv6AddressToUse, existingFwdRule.IPAddress) {
+		return false
+	}
+	wantedFwdRule, err := l4netlb.buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL, ipCollection, netTier)
+	if err != nil {
+		frLogger.V(2).Info("isIPv6ForwardingRuleUpToDate: failed to build expected forwarding rule, assuming it changed", "err", err)
+		return false
+	}
+	equal, err := forwardingrules.EqualIPv6(existingFwdRule, wantedFwdRule)
+	if err != nil {
+		frLogger.V(2).Info("isIPv6ForwardingRuleUpToDate: failed to compare forwarding rules, assuming they differ", "err", err)
+		return false
+	}
+	return equal
 }
 
 func (l4netlb *L4NetLB) buildExpectedIPv6ForwardingRule(bsLink, ipv6AddressToUse, subnetworkURL, ipCollection string, netTier cloud.NetworkTier) (*composite.ForwardingRule, error) {

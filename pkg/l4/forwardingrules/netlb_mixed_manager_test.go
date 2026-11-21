@@ -32,6 +32,7 @@ const (
 	ip            = "1.2.3.4"
 	tcpName       = "k8s2-tcp-axyqjz2d-test-ns-test-svc-pyn67fp6"
 	udpName       = "k8s2-udp-axyqjz2d-test-ns-test-svc-pyn67fp6"
+	l3Name        = "k8s2-l3-axyqjz2d-test-ns-test-svc-pyn67fp6"
 	bsLink        = "http://compute.googleapis.com/projects/test/regions/us-central1/backendServices/bs1"
 	legacyName    = "aksuid123"
 )
@@ -484,28 +485,296 @@ func TestMixedManagerNetLB_EnsureIPv4_L3Default(t *testing.T) {
 	}
 }
 
+// addressRecorder counts the address inserts and deletes of a fake cloud.
+type addressRecorder struct {
+	mu      sync.Mutex
+	inserts int
+	deletes int
+}
+
+// recordAddressMutations installs hooks on fakeGCE that count address inserts and
+// deletes. It also drops the controller address that arrange() fakes, which would
+// satisfy a reservation without an insert.
+func recordAddressMutations(fakeGCE *gce.Cloud) *addressRecorder {
+	r := &addressRecorder{}
+	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+	mockGCE.MockAddresses.GetHook = nil
+	mockGCE.MockAddresses.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.inserts++
+		return false, nil
+	}
+	mockGCE.MockAddresses.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockAddresses, options ...cloud.Option) (bool, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.deletes++
+		return false, nil
+	}
+	return r
+}
+
+func (r *addressRecorder) counts() (inserts, deletes int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inserts, r.deletes
+}
+
+// ruleName returns the name of fr, or "" if fr is nil.
+func ruleName(fr *composite.ForwardingRule) string {
+	if fr == nil {
+		return ""
+	}
+	return fr.Name
+}
+
 // TestMixedManagerNetLB_EnsureIPv4_Resync verifies that in case of
 // no changes, the resync will not update any resources.
 func TestMixedManagerNetLB_EnsureIPv4_Resync(t *testing.T) {
 	t.Parallel()
 
-	// Arrange
 	ports := []api_v1.ServicePort{{Protocol: api_v1.ProtocolTCP, Port: 80}, {Protocol: api_v1.ProtocolUDP, Port: 53}}
-	_, mgr := arrange(ports, true)
-	// Run first to create resources
-	if _, err := mgr.EnsureIPv4(bsLink); err != nil {
-		t.Fatalf("EnsureIPv4() error = %v", err)
+	testCases := []struct {
+		desc             string
+		l3DefaultEnabled bool
+		wantL3           string
+		wantTCP          string
+		wantUDP          string
+	}{
+		{
+			desc:             "split rules",
+			l3DefaultEnabled: false,
+			wantTCP:          tcpName,
+			wantUDP:          udpName,
+		},
+		{
+			desc:             "L3_DEFAULT rule",
+			l3DefaultEnabled: true,
+			wantL3:           l3Name,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			fakeGCE, mgr := arrange(ports, tc.l3DefaultEnabled)
+			// Run first to create resources
+			if _, err := mgr.EnsureIPv4(bsLink); err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+			// The forwarding rules are up to date, so the resync must not reserve
+			// (and release) the IP again.
+			addresses := recordAddressMutations(fakeGCE)
+
+			// Act
+			result, err := mgr.EnsureIPv4(bsLink)
+			// Assert
+			if err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+
+			if result.SyncStatus != l4utils.ResourceResync {
+				t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceResync)
+			}
+			gotL3, gotTCP, gotUDP := ruleName(result.L3FwdRule), ruleName(result.TCPFwdRule), ruleName(result.UDPFwdRule)
+			if gotL3 != tc.wantL3 || gotTCP != tc.wantTCP || gotUDP != tc.wantUDP {
+				t.Errorf("EnsureIPv4() returned L3, TCP, UDP rules %q, %q, %q, want %q, %q, %q", gotL3, gotTCP, gotUDP, tc.wantL3, tc.wantTCP, tc.wantUDP)
+			}
+			if result.IPManaged != address.IPAddrManaged {
+				t.Errorf("EnsureIPv4() IPManaged = %v, want %v", result.IPManaged, address.IPAddrManaged)
+			}
+			if inserts, deletes := addresses.counts(); inserts != 0 || deletes != 0 {
+				t.Errorf("EnsureIPv4() on resync made %d address inserts and %d address deletes, want 0 and 0", inserts, deletes)
+			}
+		})
+	}
+}
+
+// TestMixedManagerNetLB_EnsureIPv4_ReservesAddressOnTransition verifies that the IP
+// is still reserved when existing forwarding rules have to be deleted because the
+// Service transitions between single protocol, split and L3_DEFAULT rules.
+func TestMixedManagerNetLB_EnsureIPv4_ReservesAddressOnTransition(t *testing.T) {
+	t.Parallel()
+
+	ports := []api_v1.ServicePort{{Protocol: api_v1.ProtocolTCP, Port: 80}, {Protocol: api_v1.ProtocolUDP, Port: 53}}
+	l3Rule := &compute.ForwardingRule{
+		Name:           l3Name,
+		IPAddress:      ip,
+		IPProtocol:     "L3_DEFAULT",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		AllPorts:       true,
+	}
+	tcpRule := &compute.ForwardingRule{
+		Name:           tcpName,
+		IPAddress:      ip,
+		IPProtocol:     "TCP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"80"},
+	}
+	udpRule := &compute.ForwardingRule{
+		Name:           udpName,
+		IPAddress:      ip,
+		IPProtocol:     "UDP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"53"},
+	}
+	legacyRule := &compute.ForwardingRule{
+		Name:           legacyName,
+		IPAddress:      ip,
+		IPProtocol:     "TCP",
+		NetworkTier:    "PREMIUM",
+		BackendService: bsLink,
+		Ports:          []string{"80"},
 	}
 
-	// Act
-	result, err := mgr.EnsureIPv4(bsLink)
-	// Assert
-	if err != nil {
-		t.Fatalf("EnsureIPv4() error = %v", err)
+	testCases := []struct {
+		desc             string
+		existingRules    []*compute.ForwardingRule
+		l3DefaultEnabled bool
+		// wantDeleted are the names of the existing rules that the transition deletes.
+		wantDeleted []string
+		wantL3      string
+		wantTCP     string
+		wantUDP     string
+	}{
+		{
+			desc:             "split rules to L3_DEFAULT rule",
+			existingRules:    []*compute.ForwardingRule{tcpRule, udpRule},
+			l3DefaultEnabled: true,
+			wantDeleted:      []string{tcpName, udpName},
+			wantL3:           l3Name,
+		},
+		{
+			desc:             "L3_DEFAULT rule to split rules",
+			existingRules:    []*compute.ForwardingRule{l3Rule},
+			l3DefaultEnabled: false,
+			wantDeleted:      []string{l3Name},
+			wantTCP:          tcpName,
+			wantUDP:          udpName,
+		},
+		{
+			desc:             "single protocol rule to split rules",
+			existingRules:    []*compute.ForwardingRule{legacyRule},
+			l3DefaultEnabled: false,
+			wantDeleted:      []string{legacyName},
+			wantTCP:          tcpName,
+			wantUDP:          udpName,
+		},
+		{
+			desc:             "single protocol rule to L3_DEFAULT rule",
+			existingRules:    []*compute.ForwardingRule{legacyRule},
+			l3DefaultEnabled: true,
+			wantDeleted:      []string{legacyName},
+			wantL3:           l3Name,
+		},
 	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
 
-	if result.SyncStatus != l4utils.ResourceResync {
-		t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceResync)
+			// Arrange
+			fakeGCE, mgr := arrange(ports, tc.l3DefaultEnabled)
+			for _, rule := range tc.existingRules {
+				// CreateRegionForwardingRule writes to the rule, and the subtests share it.
+				rule := *rule
+				if err := fakeGCE.CreateRegionForwardingRule(&rule, fakeGCE.Region()); err != nil {
+					t.Fatalf("CreateRegionForwardingRule(%v) returned error %v, want nil", rule, err)
+				}
+			}
+			addresses := recordAddressMutations(fakeGCE)
+
+			// Act
+			result, err := mgr.EnsureIPv4(bsLink)
+			// Assert
+			if err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+			if result.SyncStatus != l4utils.ResourceUpdate {
+				t.Errorf("EnsureIPv4() sync status = %v, want %v", result.SyncStatus, l4utils.ResourceUpdate)
+			}
+			gotL3, gotTCP, gotUDP := ruleName(result.L3FwdRule), ruleName(result.TCPFwdRule), ruleName(result.UDPFwdRule)
+			if gotL3 != tc.wantL3 || gotTCP != tc.wantTCP || gotUDP != tc.wantUDP {
+				t.Errorf("EnsureIPv4() returned L3, TCP, UDP rules %q, %q, %q, want %q, %q, %q", gotL3, gotTCP, gotUDP, tc.wantL3, tc.wantTCP, tc.wantUDP)
+			}
+			for _, name := range tc.wantDeleted {
+				if got, err := mgr.Provider.Get(name); err != nil || got != nil {
+					t.Errorf("Provider.Get(%q) = %v, %v, want the rule deleted", name, got, err)
+				}
+			}
+			if inserts, _ := addresses.counts(); inserts == 0 {
+				t.Errorf("EnsureIPv4() reserved %d addresses while deleting forwarding rules, want at least 1", inserts)
+			}
+		})
+	}
+}
+
+// TestMixedManagerNetLB_EnsureIPv4_ReservesAddressToDeleteLeftoverRule verifies that the
+// IP is still reserved when the rules the Service wants are up to date, but a rule of
+// another protocol mode is left over and has to be deleted.
+func TestMixedManagerNetLB_EnsureIPv4_ReservesAddressToDeleteLeftoverRule(t *testing.T) {
+	t.Parallel()
+
+	ports := []api_v1.ServicePort{{Protocol: api_v1.ProtocolTCP, Port: 80}, {Protocol: api_v1.ProtocolUDP, Port: 53}}
+	testCases := []struct {
+		desc             string
+		l3DefaultEnabled bool
+		leftover         *composite.ForwardingRule
+	}{
+		{
+			desc:             "single protocol rule next to split rules",
+			l3DefaultEnabled: false,
+			leftover:         fwdRule(legacyName, "TCP", []string{"80"}),
+		},
+		{
+			desc:             "single protocol rule next to L3_DEFAULT rule",
+			l3DefaultEnabled: true,
+			leftover:         fwdRule(legacyName, "TCP", []string{"80"}),
+		},
+		{
+			desc:             "split rule next to L3_DEFAULT rule",
+			l3DefaultEnabled: true,
+			leftover:         fwdRule(tcpName, "TCP", []string{"80"}),
+		},
+		{
+			desc:             "L3_DEFAULT rule next to split rules",
+			l3DefaultEnabled: false,
+			leftover:         fwdRule(l3Name, "L3_DEFAULT", nil),
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			fakeGCE, mgr := arrange(ports, tc.l3DefaultEnabled)
+			if _, err := mgr.EnsureIPv4(bsLink); err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+			if err := mgr.Provider.Create(tc.leftover); err != nil {
+				t.Fatalf("Provider.Create(%v) returned error %v, want nil", tc.leftover, err)
+			}
+			addresses := recordAddressMutations(fakeGCE)
+
+			// Act
+			if _, err := mgr.EnsureIPv4(bsLink); err != nil {
+				t.Fatalf("EnsureIPv4() error = %v", err)
+			}
+
+			// Assert
+			if inserts, _ := addresses.counts(); inserts == 0 {
+				t.Errorf("EnsureIPv4() reserved %d addresses while deleting the leftover rule, want at least 1", inserts)
+			}
+			if got, err := mgr.Provider.Get(tc.leftover.Name); err != nil || got != nil {
+				t.Errorf("Provider.Get(%q) = %v, %v, want the leftover rule deleted", tc.leftover.Name, got, err)
+			}
+		})
 	}
 }
 

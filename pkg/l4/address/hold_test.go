@@ -203,6 +203,11 @@ func TestHoldExternalIPv4(t *testing.T) {
 			cfg := arrange(t, tC.existingRules, tC.service)
 
 			// Act
+			var err error
+			cfg.IP, cfg.AddressName, err = address.ExternalIPv4ToUse(cfg.Cloud, &record.FakeRecorder{}, cfg.Service, cfg.ExistingRules)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
 			got, err := address.HoldExternalIPv4(cfg)
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
@@ -256,6 +261,43 @@ func TestHoldExternalIPv4(t *testing.T) {
 	}
 }
 
+func TestManagementTypeFromSpec(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc        string
+		svc         *api_v1.Service
+		addressName string
+		want        address.IPAddressType
+	}{
+		{
+			desc: "no address requested",
+			svc:  &api_v1.Service{},
+			want: address.IPAddrManaged,
+		},
+		{
+			desc:        "static address from annotation",
+			svc:         &api_v1.Service{},
+			addressName: reservedIPv4Name,
+			want:        address.IPAddrUnmanaged,
+		},
+		{
+			desc: "static address from spec",
+			svc:  &api_v1.Service{Spec: api_v1.ServiceSpec{LoadBalancerIP: reservedIPv4}},
+			want: address.IPAddrUnmanaged,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			if got := address.ManagementTypeFromSpec(tc.svc, tc.addressName); got != tc.want {
+				t.Errorf("address.ManagementTypeFromSpec(_, %q) = %v, want %v", tc.addressName, got, tc.want)
+			}
+		})
+	}
+}
+
 func arrange(t *testing.T, existingRules []*composite.ForwardingRule, service *api_v1.Service) address.HoldConfig {
 	t.Helper()
 
@@ -296,7 +338,6 @@ func arrange(t *testing.T, existingRules []*composite.ForwardingRule, service *a
 
 	return address.HoldConfig{
 		Cloud:                 fakeGCE,
-		Recorder:              &record.FakeRecorder{},
 		Logger:                klog.TODO(),
 		ExistingRules:         existingRules,
 		Service:               service,
