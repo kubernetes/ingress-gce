@@ -1668,7 +1668,8 @@ func TestEnqueueEndpoints(t *testing.T) {
 }
 
 func TestServiceIPFamilies(t *testing.T) {
-	t.Parallel()
+	// Not parallel: the test cases set flags.F.EnableIPV6OnlyNEG, which the
+	// controllers of the parallel tests of this package read.
 	singleStack := apiv1.IPFamilyPolicySingleStack
 	preferDualStack := apiv1.IPFamilyPolicyPreferDualStack
 	requireDualStack := apiv1.IPFamilyPolicyRequireDualStack

@@ -42,29 +42,36 @@ type GCEResources struct {
 	BackendService  *compute.BackendService
 }
 
-// Create creates resources in the specified cloud
+// Create creates resources in the specified cloud.
+//
+// The fake cloud keeps and modifies the objects it is given, so it gets copies
+// and r can be shared by parallel tests.
 func (r GCEResources) Create(cloud *gce.Cloud) error {
 	if r.BackendService != nil {
-		if err := cloud.CreateRegionBackendService(r.BackendService, cloud.Region()); err != nil {
+		bs := *r.BackendService
+		if err := cloud.CreateRegionBackendService(&bs, cloud.Region()); err != nil {
 			return fmt.Errorf("fakeGCE.CreateBackendService() returned error %w", err)
 		}
 	}
 
 	if r.HealthCheck != nil {
 		provider := healthchecks.NewHealthChecks(cloud, meta.VersionGA, klog.TODO())
-		if err := provider.Create(r.HealthCheck); err != nil {
+		hc := *r.HealthCheck
+		if err := provider.Create(&hc); err != nil {
 			return fmt.Errorf("healthCheckProvider.Create() returned error %w", err)
 		}
 	}
 
 	for _, fw := range r.Firewalls {
-		if err := cloud.CreateFirewall(fw); err != nil {
+		fw := *fw
+		if err := cloud.CreateFirewall(&fw); err != nil {
 			return fmt.Errorf("fakeGCE.CreateFirewall() returned error %w", err)
 		}
 	}
 
 	for _, fr := range r.ForwardingRules {
-		if err := cloud.CreateRegionForwardingRule(fr, cloud.Region()); err != nil {
+		fr := *fr
+		if err := cloud.CreateRegionForwardingRule(&fr, cloud.Region()); err != nil {
 			return fmt.Errorf("fakeGCE.CreateForwardingRule() returned error %w", err)
 		}
 	}

@@ -3,6 +3,7 @@ package dualstack
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -417,8 +418,8 @@ func TestContinue_InputError(t *testing.T) {
 	if migrator.isPaused() {
 		t.Errorf("Continue(err) didn't unpause the migrator; want migrator to be unpaused before Continue(err) returns")
 	}
-	if syncable.syncCount != 0 {
-		t.Errorf("Continue(err) triggered sync %v times; want no syncs triggered", syncable.syncCount)
+	if got := syncable.syncCount.Load(); got != 0 {
+		t.Errorf("Continue(err) triggered sync %v times; want no syncs triggered", got)
 	}
 }
 
@@ -441,7 +442,7 @@ func TestContinue_NoInputError(t *testing.T) {
 	time.Sleep(migrator.migrationWaitDuration)
 
 	if err := wait.PollImmediate(migrator.migrationWaitDuration/10, migrator.migrationWaitDuration, func() (done bool, err error) {
-		if syncable.syncCount == 0 {
+		if syncable.syncCount.Load() == 0 {
 			return false, nil
 		}
 		if migrator.isPaused() {
@@ -471,17 +472,18 @@ func TestContinue_NoInputError_MultipleInvocationsShouldSyncOnce(t *testing.T) {
 	// We wait for some time to ensure that if multiple Continues attempted to
 	// resync, atleast one of those go routines finished.
 	time.Sleep(10 * time.Millisecond)
-	if syncable.syncCount != 1 {
-		t.Errorf("Continue(nil) triggered %v syncs; want exactly 1 sync", syncable.syncCount)
+	if got := syncable.syncCount.Load(); got != 1 {
+		t.Errorf("Continue(nil) triggered %v syncs; want exactly 1 sync", got)
 	}
 }
 
 type fakeSyncable struct {
-	syncCount int
+	// syncCount is incremented by the goroutines that Migrator.Continue starts.
+	syncCount atomic.Int32
 }
 
 func (f *fakeSyncable) Sync() bool {
-	f.syncCount++
+	f.syncCount.Add(1)
 	return true
 }
 
