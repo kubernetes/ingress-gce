@@ -56,6 +56,11 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 	flags.Register()
 	flags.F.GKEClusterName = cloudgce.DefaultTestClusterValues().ClusterName
+	// The flags are set once, before any test starts a controller: controllers
+	// keep reading them from goroutines that can outlive the test that started
+	// them.
+	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
+	flags.F.ResyncPeriod = 10000 * time.Second
 
 	// Set klog verbosity based on test verbosity
 	fs := flag.NewFlagSet("mock-flags", flag.PanicOnError)
@@ -72,8 +77,6 @@ func TestMain(m *testing.M) {
 // TestStartProviderConfigIntegration creates ProviderConfig, Services inside,
 // and verifies that the actual NEG is created and the Service is updated with the NEG status.
 func TestStartProviderConfigIntegration(t *testing.T) {
-	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
-
 	providerConfigName1 := "test-pc1"
 	providerConfigName2 := "test-pc2"
 
@@ -211,8 +214,6 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			flags.F.ResyncPeriod = 10000 * time.Second
-
 			// Build fake clients.
 			kubeClient := fake.NewSimpleClientset()
 			pcClient := pcclientfake.NewSimpleClientset()
@@ -370,9 +371,6 @@ func TestStartProviderConfigIntegration(t *testing.T) {
 // 4) Create pc-3 → works.
 // Verify: a NEW Service in pc-2 (created AFTER pc-1 stops) works, and a Service in pc-3 works.
 func TestSharedInformers_PC1Stops_PC2AndPC3KeepWorking(t *testing.T) {
-	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
-	flags.F.ResyncPeriod = 0
-
 	// Fake clients / factories
 	kubeClient := fake.NewSimpleClientset()
 	pcClient := pcclientfake.NewSimpleClientset()
@@ -969,9 +967,6 @@ func waitForProviderConfigFinalizerRemoved(
 
 // TestProviderConfigErrorCases tests error handling for invalid or missing ProviderConfig scenarios.
 func TestProviderConfigErrorCases(t *testing.T) {
-	flags.F.ProviderConfigNameLabelKey = "cloud.gke.io/provider-config-name"
-	flags.F.ResyncPeriod = 10000 * time.Second
-
 	testCases := []struct {
 		desc                   string
 		providerConfig         *providerconfigv1.ProviderConfig

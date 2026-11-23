@@ -229,7 +229,9 @@ func TestMixedManagerNetLB_EnsureIPv4_SplitRules(t *testing.T) {
 				region := fakeGCE.Region()
 				for _, rule := range []*compute.ForwardingRule{start.legacy, start.tcp, start.udp} {
 					if rule != nil {
-						if err := fakeGCE.CreateRegionForwardingRule(rule, region); err != nil {
+						// The fake keeps and modifies the rule, which parallel subtests share.
+						rule := *rule
+						if err := fakeGCE.CreateRegionForwardingRule(&rule, region); err != nil {
 							t.Fatalf("Couldn't set up forwarding rule %v for test", rule)
 						}
 					}
@@ -456,7 +458,9 @@ func TestMixedManagerNetLB_EnsureIPv4_L3Default(t *testing.T) {
 				region := fakeGCE.Region()
 				for _, rule := range start.forwardingRules {
 					if rule != nil {
-						if err := fakeGCE.CreateRegionForwardingRule(rule, region); err != nil {
+						// The fake keeps and modifies the rule, which parallel subtests share.
+						rule := *rule
+						if err := fakeGCE.CreateRegionForwardingRule(&rule, region); err != nil {
 							t.Fatalf("Couldn't set up forwarding rule %v for test", rule)
 						}
 					}
@@ -580,7 +584,9 @@ func TestMixedManagerNetLB_AllRules(t *testing.T) {
 			region := fakeGCE.Region()
 			for _, rule := range []*compute.ForwardingRule{tc.tcp, tc.udp, tc.legacy} {
 				if rule != nil {
-					fakeGCE.CreateRegionForwardingRule(rule, region)
+					// The fake keeps and modifies the rule, which parallel subtests share.
+					rule := *rule
+					fakeGCE.CreateRegionForwardingRule(&rule, region)
 				}
 			}
 
@@ -721,7 +727,9 @@ func TestMixedManagerNetLB_DeleteIPv4(t *testing.T) {
 			region := fakeGCE.Region()
 			for _, rule := range []*compute.ForwardingRule{tc.tcp, tc.udp, tc.legacy} {
 				if rule != nil {
-					fakeGCE.CreateRegionForwardingRule(rule, region)
+					// The fake keeps and modifies the rule, which parallel subtests share.
+					rule := *rule
+					fakeGCE.CreateRegionForwardingRule(&rule, region)
 				}
 			}
 

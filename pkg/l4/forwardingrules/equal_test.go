@@ -11,7 +11,10 @@ import (
 )
 
 func TestEqualIPv4(t *testing.T) {
-	t.Parallel()
+	// Not parallel: the test cases set flags.F.EnableDiscretePortForwarding,
+	// which the parallel tests of this package read.
+	oldEnableDiscretePortForwarding := flags.F.EnableDiscretePortForwarding
+	t.Cleanup(func() { flags.F.EnableDiscretePortForwarding = oldEnableDiscretePortForwarding })
 
 	fwdRuleTCP := &composite.ForwardingRule{
 		Name:                "tcp-fwd-rule",

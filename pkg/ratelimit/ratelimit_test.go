@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"k8s.io/klog/v2"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,7 +241,8 @@ func TestStrategyRateLimiterGroupBlock(t *testing.T) {
 		Operation: "test",
 	}
 
-	finished := 0
+	// finished is incremented by the goroutines running acceptAndVerify.
+	var finished atomic.Int32
 	acceptAndVerify := func() {
 		go func() {
 			// This and subsequent sleep calls are needed to allow the goroutine switch and
@@ -251,7 +253,7 @@ func TestStrategyRateLimiterGroupBlock(t *testing.T) {
 			fakeClock.Step(0)
 		}()
 		err := rl.Accept(context.Background(), rlk)
-		finished++
+		finished.Add(1)
 		verifyError(t, "StrategyRateLimiter.Accept()", err, nil)
 	}
 
@@ -260,19 +262,19 @@ func TestStrategyRateLimiterGroupBlock(t *testing.T) {
 
 	strategy.setDelay(testDelay)
 	strategy.setDelayRequested(false)
-	finished = 0
+	finished.Store(0)
 
 	// Second request, should block subsequent requests until delay has passed
 	go acceptAndVerify()
 	err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) { return strategy.isDelayRequested(), nil })
 	verifyError(t, "wait.PollImmediate()", err, nil)
 	time.Sleep(2 * time.Second)
-	verifyBlocked(t, finished == 0)
+	verifyBlocked(t, finished.Load() == 0)
 	strategy.setDelay(0)
 
 	// Third request
 	go acceptAndVerify()
-	if finished != 0 {
+	if finished.Load() != 0 {
 		t.Errorf("Some calls to StrategyRateLimiter.Accept() were not blocked, but were expected to")
 	}
 
@@ -280,10 +282,10 @@ func TestStrategyRateLimiterGroupBlock(t *testing.T) {
 	fakeClock.Step(testDelay)
 	err = wait.PollImmediate(time.Second, 10*time.Second, func() (bool, error) {
 		fakeClock.Step(0)
-		return finished == 2, nil
+		return finished.Load() == 2, nil
 	})
 	verifyError(t, "wait.PollImmediate() for finished requests", err, nil)
-	if finished != 2 {
-		t.Errorf("Expected 2 finished requests, but got %v", finished)
+	if got := finished.Load(); got != 2 {
+		t.Errorf("Expected 2 finished requests, but got %v", got)
 	}
 }
