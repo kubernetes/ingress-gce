@@ -43,6 +43,7 @@ type SyncerMetricsCollector interface {
 	SetNegService(svcKey string, negState NegServiceState)
 	// DeleteNegService removes the given service key.
 	DeleteNegService(svcKey string)
+	UpdateL4BackendPods(key negtypes.NegSyncerKey, readyPodsPerNode map[string]int)
 }
 
 type SyncerMetrics struct {
@@ -69,8 +70,8 @@ type SyncerMetrics struct {
 	//Stores the number of NEGs the NEG controller is managed based on location
 	syncerNegCount map[negtypes.NegSyncerKey]map[string]int
 	// negMap is a map between service key to neg state
-	negMap map[string]NegServiceState
-
+	negMap        map[string]NegServiceState
+	l4BackendPods map[negtypes.NegSyncerKey]map[string]int
 	// logger logs message related to NegMetricsCollector
 	logger klog.Logger
 
@@ -89,6 +90,10 @@ type SyncerMetrics struct {
 	syncerSyncResult                            mtmetrics.CounterVec
 	negsManagedCount                            mtmetrics.GaugeVec
 	networkEndpointGroupCount                   mtmetrics.GaugeVec
+	l4PodChurnEvents                            mtmetrics.ObserverVec
+	l4PodChurnZeroTransitionEvents              mtmetrics.ObserverVec
+	l4ServicesByNodes                           mtmetrics.GaugeVec
+	l4ServicesByPods                            mtmetrics.GaugeVec
 }
 
 // NewNegMetricsCollector creates a SyncerMetrics using the default Prometheus registerer.
@@ -108,6 +113,7 @@ func NewNegMetricsCollectorWithFactory(exportInterval time.Duration, factory mtm
 		endpointsCountPerType:       make(map[negtypes.NegSyncerKey]map[string]int),
 		syncerNegCount:              make(map[negtypes.NegSyncerKey]map[string]int),
 		negMap:                      make(map[string]NegServiceState),
+		l4BackendPods:               make(map[negtypes.NegSyncerKey]map[string]int),
 		clock:                       clock.RealClock{},
 		metricsInterval:             exportInterval,
 		logger:                      logger.WithName("NegMetricsCollector"),
@@ -192,6 +198,8 @@ func (sm *SyncerMetrics) export() {
 		sm.networkEndpointGroupCount.WithLabelValues(feature.String()).Set(float64(count))
 	}
 	sm.logger.V(3).Info("Exported NEG usage metrics", "NEG count", fmt.Sprintf("%#v", negCount))
+
+	sm.exportL4ServicesSize()
 }
 
 // UpdateSyncerStatusInMetrics update the status of syncer based on the error
@@ -251,6 +259,7 @@ func (sm *SyncerMetrics) DeleteSyncer(key negtypes.NegSyncerKey) {
 	delete(sm.dualStackMigrationEndTime, key)
 	delete(sm.endpointsCountPerType, key)
 	delete(sm.syncerNegCount, key)
+	delete(sm.l4BackendPods, key)
 }
 
 // computeLabelMetrics aggregates label propagation metrics.
