@@ -69,19 +69,25 @@ func NewCleanupSyncer(
 func (s *cleanupSyncer) Start() error {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
+
 	if !s.stopped {
 		return nil
 	}
 	s.stopped = false
-	s.stopCh = make(chan struct{})
-	s.syncCh = make(chan struct{}, 1)
-	go s.loop()
+	stopCh := make(chan struct{})
+	syncCh := make(chan struct{}, 1)
+	s.stopCh = stopCh
+	s.syncCh = syncCh
+
+	go s.loop(stopCh, syncCh)
+
 	return nil
 }
 
 func (s *cleanupSyncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
+
 	if !s.stopped {
 		s.stopped = true
 		close(s.stopCh)
@@ -89,7 +95,10 @@ func (s *cleanupSyncer) Stop() {
 }
 
 func (s *cleanupSyncer) Sync() bool {
-	if s.IsStopped() {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	if s.stopped {
 		return false
 	}
 	select {
@@ -103,6 +112,7 @@ func (s *cleanupSyncer) Sync() bool {
 func (s *cleanupSyncer) IsStopped() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
+
 	return s.stopped
 }
 
@@ -110,31 +120,47 @@ func (s *cleanupSyncer) IsShuttingDown() bool {
 	return false
 }
 
-func (s *cleanupSyncer) loop() {
+func (s *cleanupSyncer) loop(stopCh <-chan struct{}, syncCh <-chan struct{}) {
 	for {
 		select {
-		case <-s.stopCh:
+		case <-stopCh:
 			return
-		case <-s.syncCh:
+		case <-syncCh:
 			err := s.cleanUp()
 			_, reportErr := s.statusHandler.ReportSyncStatus(err)
 			if reportErr != nil {
 				s.logger.Error(reportErr, "Failed to report sync status")
 			}
 			if err != nil {
-				s.logger.Error(err, "Cleanup failed, will retry", "delay", s.retryDelay)
-				time.AfterFunc(s.retryDelay, func() { s.Sync() })
-				s.retryDelay = s.retryDelay * 2
-				if s.retryDelay > maxRetryDelay {
-					s.retryDelay = maxRetryDelay
-				}
+				delay := s.nextRetryDelay()
+				s.logger.Error(err, "Cleanup failed, will retry", "delay", delay)
+				time.AfterFunc(delay, func() { s.Sync() })
 			} else {
-				s.retryDelay = minRetryDelay
+				s.resetRetryDelay()
 				s.logger.Info("Cleanup successful")
 				s.Stop()
 			}
 		}
 	}
+}
+
+// nextRetryDelay returns the delay before the next cleanup retry and doubles
+// the stored delay (capped at maxRetryDelay) for the following attempt.
+func (s *cleanupSyncer) nextRetryDelay() time.Duration {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	delay := s.retryDelay
+	s.retryDelay = min(s.retryDelay*2, maxRetryDelay)
+	return delay
+}
+
+// resetRetryDelay resets the retry delay to minRetryDelay after a successful cleanup.
+func (s *cleanupSyncer) resetRetryDelay() {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	s.retryDelay = minRetryDelay
 }
 
 func (s *cleanupSyncer) cleanUp() error {
@@ -145,7 +171,6 @@ func (s *cleanupSyncer) cleanUp() error {
 	}
 	if !exists {
 		s.logger.Info("NEGBinding no longer exists, stopping cleanup", "binding", bindingKey)
-		s.Stop()
 		return nil
 	}
 	binding := bindingObj.(*negbindingv1beta1.NetworkEndpointGroupBinding)
