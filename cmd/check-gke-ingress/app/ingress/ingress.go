@@ -107,15 +107,16 @@ func RunChecks(ingresses []networkingv1.Ingress, client kubernetes.Interface, be
 
 		// Get the names of the services referenced by the ingress.
 		svcNames := []string{}
+		seenServices := make(map[string]struct{})
 		if ingress.Spec.DefaultBackend != nil {
-			svcNames = append(svcNames, ingress.Spec.DefaultBackend.Service.Name)
+			svcNames = appendUnique(svcNames, seenServices, ingress.Spec.DefaultBackend.Service.Name)
 		}
 		if ingress.Spec.Rules != nil {
 			for _, rule := range ingress.Spec.Rules {
 				if rule.HTTP != nil {
 					for _, path := range rule.HTTP.Paths {
 						if path.Backend.Service != nil {
-							svcNames = append(svcNames, path.Backend.Service.Name)
+							svcNames = appendUnique(svcNames, seenServices, path.Backend.Service.Name)
 						}
 					}
 				}
@@ -138,12 +139,13 @@ func RunChecks(ingresses []networkingv1.Ingress, client kubernetes.Interface, be
 
 			// Get all the BackendConfigs referenced by the service.
 			beconfigNames := []string{}
+			seenBackendConfigs := make(map[string]struct{})
 			if serviceChecker.beConfigs != nil {
 				if serviceChecker.beConfigs.Default != "" {
-					beconfigNames = append(beconfigNames, serviceChecker.beConfigs.Default)
+					beconfigNames = appendUnique(beconfigNames, seenBackendConfigs, serviceChecker.beConfigs.Default)
 				}
 				for _, beconfig := range serviceChecker.beConfigs.Ports {
-					beconfigNames = append(beconfigNames, beconfig)
+					beconfigNames = appendUnique(beconfigNames, seenBackendConfigs, beconfig)
 				}
 			}
 			// BackendConfig related rules
@@ -173,4 +175,12 @@ func addCheckResult(ingressRes *report.Resource, checkName, msg, res string) {
 		Message: msg,
 		Result:  res,
 	})
+}
+
+func appendUnique(names []string, seen map[string]struct{}, name string) []string {
+	if _, ok := seen[name]; ok {
+		return names
+	}
+	seen[name] = struct{}{}
+	return append(names, name)
 }
