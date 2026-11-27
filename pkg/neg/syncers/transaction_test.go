@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,6 +31,7 @@ import (
 
 	nodetopologyv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/nodetopology/v1"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
@@ -253,13 +255,35 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
 				},
 			},
+			{
+				desc: "add more than MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints in a single sync",
+				addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("10.0.0.1"), MAX_NETWORK_ENDPOINTS_PER_BATCH+1, testInstance1, targetPort)),
+				},
+				removeEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+				expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)).Union(generateEndpointSet(net.ParseIP("10.0.0.1"), MAX_NETWORK_ENDPOINTS_PER_BATCH+1, testInstance1, targetPort)),
+					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				},
+			},
+			{
+				desc:         "remove more than MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints in a single sync",
+				addEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{},
+				removeEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("10.0.0.1"), MAX_NETWORK_ENDPOINTS_PER_BATCH+1, testInstance1, targetPort)),
+				},
+				expectEndpoints: map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+					{Zone: testZone1, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, targetPort)),
+					{Zone: testZone2, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, targetPort)),
+				},
+			},
 		}
 
 		for _, tc := range testCases {
 			// TODO(gauravkghildiyal): When the DualStack Migrator is fully
 			// implemented, check if we need to cover scenarios where `migrationZone`
 			// is not empty.
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{})
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{}, false)
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -509,7 +533,7 @@ func TestTransactionSyncNetworkEndpointsMSC(t *testing.T) {
 			// TODO(gauravkghildiyal): When the DualStack Migrator is fully
 			// implemented, check if we need to cover scenarios where `migrationZone`
 			// is not empty.
-			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{})
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{}, false)
 			if err != nil {
 				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
@@ -656,7 +680,7 @@ func TestNegNameMultiNetworking(t *testing.T) {
 	addEndpoints := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
 		{Zone: negtypes.TestZone1, Subnet: subnetInDefaultNetwork}: generateEndpointSet(net.ParseIP("1.1.1.1"), wantEndpointsCount, "instance-name", "8080"),
 	}
-	err = transactionSyncer.syncNetworkEndpoints(addEndpoints, nil, nil, negtypes.NEGLocation{})
+	err = transactionSyncer.syncNetworkEndpoints(addEndpoints, nil, nil, negtypes.NEGLocation{}, false)
 	if err != nil {
 		t.Errorf("syncNetworkEndpoints(...) returned unexpected error: %v", err)
 	}
@@ -820,7 +844,7 @@ func TestSyncNetworkEndpointLabel(t *testing.T) {
 		if _, err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
-		err = transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.NEGLocation{})
+		err = transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{}, tc.endpointPodLabelMap, negtypes.NEGLocation{}, false)
 		if err != nil {
 			t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 		}
@@ -853,7 +877,7 @@ func TestCommitTransaction(t *testing.T) {
 	}
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
-	testRetryer := &testRetryHandler{testSyncer, 0}
+	testRetryer := &testRetryHandler{ts: testSyncer}
 	transactionSyncer.syncer = testSyncer
 	// assume NEG is initialized
 	transactionSyncer.needInit = false
@@ -1013,7 +1037,7 @@ func TestCommitTransaction(t *testing.T) {
 
 	for _, tc := range testCases {
 		transactionSyncer.transactions = tc.table()
-		transactionSyncer.commitTransaction(tc.operation, tc.err, tc.endpointMap)
+		transactionSyncer.commitTransaction(tc.operation, tc.err, tc.endpointMap, &syncWave{pending: 1})
 		if transactionSyncer.needInit != tc.expectNeedInit {
 			t.Errorf("For case %q, endpointSets needInit == %v, but got %v", tc.desc, tc.expectNeedInit, transactionSyncer.needInit)
 		}
@@ -1033,6 +1057,520 @@ func TestCommitTransaction(t *testing.T) {
 			t.Errorf("For case %q, endpointSets retry count == %v, but got %v", tc.desc, tc.expectRetryCount, testRetryer.RetryCount)
 		}
 
+	}
+}
+
+// TestCommitTransactionNeedInit verifies which failed NEG operations make the
+// next sync initialize the NEGs again.
+func TestCommitTransactionNeedInit(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	vals.SubnetworkURL = defaultTestSubnetURL
+	s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals), negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+	if err != nil {
+		t.Fatalf("failed to initialize transaction syncer: %v", err)
+	}
+	testSyncer := &testSyncer{syncer: s.(*syncer)}
+	transactionSyncer.syncer = testSyncer
+	transactionSyncer.retry = &testRetryHandler{ts: testSyncer}
+
+	badRequest := &googleapi.Error{Code: http.StatusBadRequest, Message: "invalid endpoint"}
+	testCases := []struct {
+		desc                string
+		err                 error
+		operation           transactionOp
+		startedInErrorState bool
+		wantNeedInit        bool
+	}{
+		{
+			desc:         "bad request on attach, sync did not start in error state",
+			err:          checkEndpointBatchErr(badRequest, attachOp),
+			operation:    attachOp,
+			wantNeedInit: false,
+		},
+		{
+			desc:                "bad request on attach, sync started in error state",
+			err:                 checkEndpointBatchErr(badRequest, attachOp),
+			operation:           attachOp,
+			startedInErrorState: true,
+			wantNeedInit:        true,
+		},
+		{
+			desc:                "bad request on detach, sync started in error state",
+			err:                 checkEndpointBatchErr(badRequest, detachOp),
+			operation:           detachOp,
+			startedInErrorState: true,
+			wantNeedInit:        false,
+		},
+		{
+			desc:                "quota exceeded",
+			err:                 &googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"},
+			operation:           attachOp,
+			startedInErrorState: true,
+			wantNeedInit:        false,
+		},
+		{
+			desc:         "strategy quota error",
+			err:          negtypes.StrategyQuotaError{Err: errors.New("quota exceeded")},
+			operation:    attachOp,
+			wantNeedInit: false,
+		},
+		{
+			desc:         "NEG not found",
+			err:          &googleapi.Error{Code: http.StatusNotFound, Message: "NEG not found"},
+			operation:    attachOp,
+			wantNeedInit: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			transactionSyncer.needInit = false
+			transactionSyncer.commitTransaction(tc.operation, tc.err, nil, &syncWave{startedInErrorState: tc.startedInErrorState, pending: 1})
+			if transactionSyncer.needInit != tc.wantNeedInit {
+				t.Errorf("commitTransaction(%v, %v) in wave with startedInErrorState=%t: needInit = %t, want %t", tc.operation, tc.err, tc.startedInErrorState, transactionSyncer.needInit, tc.wantNeedInit)
+			}
+		})
+	}
+}
+
+// TestCommitTransactionRetryBackoff verifies that the retry backoff is reset
+// only once the last transaction of a wave is committed and no transaction of
+// that wave has failed, whatever order its transactions commit in and also
+// when transactions of two waves are committed interleaved.
+func TestCommitTransactionRetryBackoff(t *testing.T) {
+	t.Parallel()
+	quotaErr := &googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"}
+	type commit struct {
+		wave int
+		err  error
+	}
+	testCases := []struct {
+		desc           string
+		wavePending    []int
+		commits        []commit
+		wantRetryCount int
+		wantResetCount int
+	}{
+		{
+			desc:           "all transactions of a wave succeed",
+			wavePending:    []int{2},
+			commits:        []commit{{wave: 0}, {wave: 0}},
+			wantResetCount: 1,
+		},
+		{
+			desc:           "failure, then success in the same wave",
+			wavePending:    []int{2},
+			commits:        []commit{{wave: 0, err: quotaErr}, {wave: 0}},
+			wantRetryCount: 1,
+			wantResetCount: 0,
+		},
+		{
+			desc:           "success, then failure in the same wave",
+			wavePending:    []int{2},
+			commits:        []commit{{wave: 0}, {wave: 0, err: quotaErr}},
+			wantRetryCount: 1,
+			wantResetCount: 0,
+		},
+		{
+			desc:           "wave without failures completes while another wave has failed",
+			wavePending:    []int{2, 1},
+			commits:        []commit{{wave: 0, err: quotaErr}, {wave: 1}, {wave: 0}},
+			wantRetryCount: 1,
+			wantResetCount: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			vals := gce.DefaultTestClusterValues()
+			vals.SubnetworkURL = defaultTestSubnetURL
+			s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(vals), negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			testSyncer := &testSyncer{syncer: s.(*syncer)}
+			testRetryer := &testRetryHandler{ts: testSyncer}
+			transactionSyncer.syncer = testSyncer
+			transactionSyncer.retry = testRetryer
+
+			var waves []*syncWave
+			for _, pending := range tc.wavePending {
+				waves = append(waves, &syncWave{pending: pending})
+			}
+			for i, c := range tc.commits {
+				ip := net.ParseIP(fmt.Sprintf("1.1.%d.1", i+1))
+				generateTransaction(transactionSyncer.transactions, transactionEntry{Zone: testZone1, Operation: attachOp}, ip, 5, testInstance1, "8080")
+				endpoints := generateEndpointBatch(generateEndpointSet(ip, 5, testInstance1, "8080"), labels.EndpointPodLabelMap{})
+				transactionSyncer.commitTransaction(attachOp, c.err, endpoints, waves[c.wave])
+			}
+			if testRetryer.RetryCount != tc.wantRetryCount || testRetryer.ResetCount != tc.wantResetCount {
+				t.Errorf("RetryCount = %d, ResetCount = %d, want RetryCount = %d, ResetCount = %d", testRetryer.RetryCount, testRetryer.ResetCount, tc.wantRetryCount, tc.wantResetCount)
+			}
+		})
+	}
+}
+
+// TestApplyEndpointBatchesSkipsCancelledDetaches verifies that, with detach
+// cancellation in L4 Local mode, an endpoint that a later sync re-attaches
+// while the first detach batch is in flight is not sent in a later detach
+// batch and stays in the NEG, whether the re-attach is still in flight or has
+// already committed.
+func TestApplyEndpointBatchesSkipsCancelledDetaches(t *testing.T) {
+	t.Parallel()
+	detachEntry := transactionEntry{Zone: testZone1, Subnet: defaultTestSubnet, Operation: detachOp}
+	attachEntry := transactionEntry{Zone: testZone1, Subnet: defaultTestSubnet, Operation: attachOp}
+	ep21 := negtypes.NetworkEndpoint{IP: "10.0.1.1", Node: testInstance1}
+	ep22 := negtypes.NetworkEndpoint{IP: "10.0.1.2", Node: testInstance1}
+
+	testCases := []struct {
+		desc             string
+		onFirstBatch     func(s *transactionSyncer)
+		wantRequests     [][]string
+		wantRemainingIPs []string
+		wantTransactions func() networkEndpointTransactionTable
+	}{
+		{
+			desc: "re-attach still in flight",
+			onFirstBatch: func(s *transactionSyncer) {
+				s.transactions.Put(ep21, attachEntry)
+			},
+			wantRequests:     [][]string{{"10.0.0.1", "10.0.0.2"}, {"10.0.1.2"}},
+			wantRemainingIPs: []string{"10.0.1.1"},
+			wantTransactions: func() networkEndpointTransactionTable {
+				table := NewTransactionTable()
+				table.Put(ep21, attachEntry)
+				return table
+			},
+		},
+		{
+			desc: "re-attach already committed",
+			onFirstBatch: func(s *transactionSyncer) {
+				s.transactions.Put(ep21, attachEntry)
+				s.clearTransactions(attachOp, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{ep21: nil})
+			},
+			wantRequests:     [][]string{{"10.0.0.1", "10.0.0.2"}, {"10.0.1.2"}},
+			wantRemainingIPs: []string{"10.0.1.1"},
+			wantTransactions: NewTransactionTable,
+		},
+		{
+			desc: "all endpoints of second batch re-attached and committed",
+			onFirstBatch: func(s *transactionSyncer) {
+				s.transactions.Put(ep21, attachEntry)
+				s.transactions.Put(ep22, attachEntry)
+				s.clearTransactions(attachOp, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{ep21: nil, ep22: nil})
+			},
+			wantRequests:     [][]string{{"10.0.0.1", "10.0.0.2"}},
+			wantRemainingIPs: []string{"10.0.1.1", "10.0.1.2"},
+			wantTransactions: NewTransactionTable,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
+			_, transactionSyncer, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpEndpointType, "")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			transactionSyncer.enableL4NEGDetachCancel = true
+			createAndAddMockSvcNEG(t, transactionSyncer)
+			if _, err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+				t.Fatalf("ensureNetworkEndpointGroups() = %v, want nil", err)
+			}
+
+			// Seed the NEG and two detach batches (10.0.0.1-2 and 10.0.1.1-2).
+			var batches []map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint
+			var seeded []*composite.NetworkEndpoint
+			for _, beforeFirstIP := range []string{"10.0.0.0", "10.0.1.0"} {
+				endpointSet := generateEndpointSet(net.ParseIP(beforeFirstIP), 2, testInstance1, "")
+				for _, ep := range endpointSet.List() {
+					transactionSyncer.transactions.Put(ep, detachEntry)
+				}
+				batch, err := makeEndpointBatch(endpointSet, negtypes.VmIpEndpointType, labels.EndpointPodLabelMap{}, klog.TODO())
+				if err != nil {
+					t.Fatalf("makeEndpointBatch() = %v, want nil", err)
+				}
+				for _, ne := range batch {
+					seeded = append(seeded, ne)
+				}
+				batches = append(batches, batch)
+			}
+			if err := fakeCloud.AttachNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, testZone1, seeded, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO()); err != nil {
+				t.Fatalf("AttachNetworkEndpoints() = %v, want nil", err)
+			}
+
+			var gotRequests [][]string
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.DetachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsDetachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
+				var ips []string
+				for _, ne := range obj.NetworkEndpoints {
+					ips = append(ips, ne.IpAddress)
+				}
+				sort.Strings(ips)
+				gotRequests = append(gotRequests, ips)
+				if len(gotRequests) == 1 {
+					transactionSyncer.syncLock.Lock()
+					tc.onFirstBatch(transactionSyncer)
+					transactionSyncer.syncLock.Unlock()
+				}
+				return negtypes.MockDetachNetworkEndpointsHook(ctx, key, obj, m)
+			}
+
+			loc := negtypes.NEGLocation{Zone: testZone1, Subnet: defaultTestSubnet}
+			pending, err := transactionSyncer.applyEndpointBatches(detachOp, loc, batches)
+			if err != nil || len(pending) != 0 {
+				t.Fatalf("applyEndpointBatches() = %v, %v, want no pending endpoints and nil error", pending, err)
+			}
+			transactionSyncer.syncLock.Lock()
+			transactionSyncer.clearTransactions(detachOp, pending)
+			transactionSyncer.syncLock.Unlock()
+
+			if diff := cmp.Diff(tc.wantRequests, gotRequests); diff != "" {
+				t.Errorf("detach requests mismatch (-want +got):\n%s", diff)
+			}
+			gotList, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, testZone1, false, transactionSyncer.NegSyncerKey.GetAPIVersion(), klog.TODO())
+			if err != nil {
+				t.Fatalf("ListNetworkEndpoints() = %v, want nil", err)
+			}
+			var gotRemainingIPs []string
+			for _, ep := range gotList {
+				gotRemainingIPs = append(gotRemainingIPs, ep.NetworkEndpoint.IpAddress)
+			}
+			sort.Strings(gotRemainingIPs)
+			if diff := cmp.Diff(tc.wantRemainingIPs, gotRemainingIPs); diff != "" {
+				t.Errorf("remaining NEG endpoints mismatch (-want +got):\n%s", diff)
+			}
+			validateTransactionTableEquality(t, tc.desc, transactionSyncer.transactions, tc.wantTransactions())
+		})
+	}
+}
+
+// TestSyncNetworkEndpointsRetryBackoff verifies that syncNetworkEndpoints
+// counts only non-empty endpoint sets in the wave: the backoff is reset when
+// all non-empty operations succeed (ignoring empty sets), and is not reset when
+// an earlier zone commits before a later zone of the same wave fails.
+func TestSyncNetworkEndpointsRetryBackoff(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc           string
+		failZone       string
+		wantRetryCount int
+		wantResetCount int
+	}{
+		{
+			desc:           "all non-empty zones succeed and empty zone is ignored",
+			wantRetryCount: 0,
+			wantResetCount: 1,
+		},
+		{
+			desc:           "first zone commits before second zone fails",
+			failZone:       testZone2,
+			wantRetryCount: 1,
+			wantResetCount: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			testSyncer := &testSyncer{syncer: s.(*syncer)}
+			testRetryer := &testRetryHandler{ts: testSyncer}
+			transactionSyncer.syncer = testSyncer
+			transactionSyncer.retry = testRetryer
+			createAndAddMockSvcNEG(t, transactionSyncer)
+			if _, err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+				t.Fatalf("ensureNetworkEndpointGroups() = %v, want nil", err)
+			}
+
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
+				if key.Zone == tc.failZone {
+					if err := wait.PollImmediate(time.Millisecond, 5*time.Second, func() (bool, error) {
+						transactionSyncer.syncLock.Lock()
+						defer transactionSyncer.syncLock.Unlock()
+						return testSyncer.SyncCount >= 1, nil
+					}); err != nil {
+						return err
+					}
+					return &googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"}
+				}
+				return negtypes.MockAttachNetworkEndpointsHook(ctx, key, obj, m)
+			}
+
+			addEndpoints := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: generateEndpointSet(net.ParseIP("10.0.0.0"), 2, testInstance1, "8080"),
+				{Zone: testZone2, Subnet: defaultTestSubnet}: generateEndpointSet(net.ParseIP("10.0.1.0"), 2, testInstance3, "8080"),
+			}
+			removeEndpoints := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: negtypes.TestZone4, Subnet: defaultTestSubnet}: negtypes.NewNetworkEndpointSet(),
+			}
+			transactionSyncer.syncLock.Lock()
+			err = transactionSyncer.syncNetworkEndpoints(addEndpoints, removeEndpoints, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{}, false)
+			transactionSyncer.syncLock.Unlock()
+			if err != nil {
+				t.Fatalf("syncNetworkEndpoints() = %v, want nil", err)
+			}
+			if err := wait.PollImmediate(time.Millisecond, 5*time.Second, func() (bool, error) {
+				transactionSyncer.syncLock.Lock()
+				defer transactionSyncer.syncLock.Unlock()
+				return testSyncer.SyncCount == 2 && len(transactionSyncer.transactions.Keys()) == 0, nil
+			}); err != nil {
+				t.Fatalf("transactions did not commit: %v", err)
+			}
+
+			transactionSyncer.syncLock.Lock()
+			defer transactionSyncer.syncLock.Unlock()
+			if testRetryer.RetryCount != tc.wantRetryCount || testRetryer.ResetCount != tc.wantResetCount {
+				t.Errorf("RetryCount = %d, ResetCount = %d, want RetryCount = %d, ResetCount = %d", testRetryer.RetryCount, testRetryer.ResetCount, tc.wantRetryCount, tc.wantResetCount)
+			}
+		})
+	}
+}
+
+// TestSyncNeedInit verifies that sync() sets needInit when syncInternal fails,
+// except on quota errors.
+func TestSyncNeedInit(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc         string
+		listErr      error
+		wantNeedInit bool
+	}{
+		{
+			desc:         "quota exceeded",
+			listErr:      &googleapi.Error{Code: http.StatusTooManyRequests, Message: "quota exceeded"},
+			wantNeedInit: false,
+		},
+		{
+			desc:         "strategy quota error",
+			listErr:      negtypes.StrategyQuotaError{Err: errors.New("quota exceeded")},
+			wantNeedInit: false,
+		},
+		{
+			desc:         "backend error",
+			listErr:      &googleapi.Error{Code: http.StatusInternalServerError, Message: "backend error"},
+			wantNeedInit: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.ListNetworkEndpointsHook = func(context.Context, *meta.Key, *compute.NetworkEndpointGroupsListEndpointsRequest, *filter.F, *cloud.MockNetworkEndpointGroups, ...cloud.Option) ([]*compute.NetworkEndpointWithHealthStatus, error) {
+				return nil, tc.listErr
+			}
+
+			_, s, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, "neg-sync-need-init")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			seedInitializedSvcNEG(t, fakeCloud, s)
+
+			if err := s.sync(); err == nil {
+				t.Fatal("sync() = nil, want error")
+			}
+			if s.needInit != tc.wantNeedInit {
+				t.Errorf("needInit = %t, want %t", s.needInit, tc.wantNeedInit)
+			}
+		})
+	}
+}
+
+// TestSyncNetworkEndpointsBatches verifies that the endpoints of one NEG are
+// sent in batches of at most MAX_NETWORK_ENDPOINTS_PER_BATCH endpoints, one
+// request at a time, that the transactions of a batch are cleared as soon as
+// its request succeeds, and that a failed request stops the remaining batches.
+func TestSyncNetworkEndpointsBatches(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc string
+		// failRequest is the 1-based attach request that fails, 0 for none.
+		failRequest      int
+		wantRequestSizes []int
+		// wantPendingTransactions is the size of the transaction table when
+		// each request is sent.
+		wantPendingTransactions []int
+		wantRetryCount          int
+	}{
+		{
+			desc:                    "all requests succeed",
+			wantRequestSizes:        []int{500, 500, 200},
+			wantPendingTransactions: []int{1200, 700, 200},
+			wantRetryCount:          0,
+		},
+		{
+			desc:                    "second request fails",
+			failRequest:             2,
+			wantRequestSizes:        []int{500, 500},
+			wantPendingTransactions: []int{1200, 700},
+			wantRetryCount:          1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			s, transactionSyncer, err := newTestTransactionSyncer(negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics), negtypes.VmIpPortEndpointType, "")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			testSyncer := &testSyncer{syncer: s.(*syncer)}
+			testRetryer := &testRetryHandler{ts: testSyncer}
+			transactionSyncer.syncer = testSyncer
+			transactionSyncer.retry = testRetryer
+			createAndAddMockSvcNEG(t, transactionSyncer)
+			if _, err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+				t.Fatalf("ensureNetworkEndpointGroups() = %v, want nil", err)
+			}
+
+			// The requests of one NEG are sent by a single go routine and are
+			// read below only after its transactions are committed.
+			var gotRequestSizes, gotPendingTransactions []int
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockNetworkEndpointGroups, options ...cloud.Option) error {
+				gotRequestSizes = append(gotRequestSizes, len(obj.NetworkEndpoints))
+				gotPendingTransactions = append(gotPendingTransactions, len(transactionSyncer.transactions.Keys()))
+				if len(gotRequestSizes) == tc.failRequest {
+					return &googleapi.Error{Code: http.StatusInternalServerError, Message: "backend error"}
+				}
+				return negtypes.MockAttachNetworkEndpointsHook(ctx, key, obj, m)
+			}
+
+			addEndpoints := map[negtypes.NEGLocation]negtypes.NetworkEndpointSet{
+				{Zone: testZone1, Subnet: defaultTestSubnet}: generateEndpointSet(net.ParseIP("10.0.0.1"), 1200, testInstance1, "8080"),
+			}
+			if err := transactionSyncer.syncNetworkEndpoints(addEndpoints, nil, labels.EndpointPodLabelMap{}, negtypes.NEGLocation{}, false); err != nil {
+				t.Fatalf("syncNetworkEndpoints() = %v, want nil", err)
+			}
+			if err := waitForTransactions(transactionSyncer); err != nil {
+				t.Fatalf("waitForTransactions() = %v, want nil", err)
+			}
+
+			// Wait for commitTransaction to return before reading what it wrote.
+			transactionSyncer.syncLock.Lock()
+			defer transactionSyncer.syncLock.Unlock()
+			if diff := cmp.Diff(tc.wantRequestSizes, gotRequestSizes); diff != "" {
+				t.Errorf("attach request sizes mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantPendingTransactions, gotPendingTransactions); diff != "" {
+				t.Errorf("pending transactions at each attach request mismatch (-want +got):\n%s", diff)
+			}
+			if testRetryer.RetryCount != tc.wantRetryCount {
+				t.Errorf("RetryCount = %d, want %d", testRetryer.RetryCount, tc.wantRetryCount)
+			}
+		})
 	}
 }
 
@@ -3570,6 +4108,63 @@ func getErrorState(s *transactionSyncer) bool {
 	return errorState
 }
 
+// TestAttachBadRequestInErrorStateTriggersNEGInit verifies that a NEG that
+// keeps rejecting valid endpoints is re-initialized: the first 400 only moves
+// the syncer to error state, and a 400 in a sync that started in error state
+// sets needInit.
+func TestAttachBadRequestInErrorStateTriggersNEGInit(t *testing.T) {
+	for _, enableDegradedMode := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enableDegradedMode=%t", enableDegradedMode), func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(test.DefaultTestClusterValues())
+			negtypes.MockNetworkEndpointAPIs(fakeGCE)
+			fakeCloud := negtypes.NewAdapter(fakeGCE, negtypes.NewTestContext().NegMetrics)
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(context.Context, *meta.Key, *compute.NetworkEndpointGroupsAttachEndpointsRequest, *cloud.MockNetworkEndpointGroups, ...cloud.Option) error {
+				return &googleapi.Error{Code: http.StatusBadRequest, Message: "network mismatch"}
+			}
+
+			_, s, err := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, "neg-rejecting-attach")
+			if err != nil {
+				t.Fatalf("failed to initialize transaction syncer: %v", err)
+			}
+			s.enableDegradedMode = enableDegradedMode
+			seedInitializedSvcNEG(t, fakeCloud, s)
+			addPodsToLister(s.podLister, getDefaultEndpointSlices())
+			for i := 1; i <= 4; i++ {
+				s.nodeLister.Add(&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("instance%v", i)},
+					Spec: corev1.NodeSpec{
+						PodCIDR:  fmt.Sprintf("10.100.%v.0/24", i),
+						PodCIDRs: []string{fmt.Sprintf("200%v:db8::/48", i), fmt.Sprintf("10.100.%v.0/24", i)},
+					},
+				})
+			}
+			s.serviceLister.Add(&corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName},
+				Spec:       corev1.ServiceSpec{Selector: map[string]string{"run": "foo"}},
+			})
+			for _, eps := range getDefaultEndpointSlices()[:1] {
+				s.endpointSliceLister.Add(eps)
+			}
+
+			for i, wantNeedInit := range []bool{false, true} {
+				if err := s.syncInternal(); err != nil {
+					t.Fatalf("sync %d: syncInternal() = %v, want nil", i+1, err)
+				}
+				if err := waitForTransactions(s); err != nil {
+					t.Fatalf("sync %d: waitForTransactions() = %v, want nil", i+1, err)
+				}
+				s.syncLock.Lock()
+				gotNeedInit := s.needInit
+				s.syncLock.Unlock()
+				if gotNeedInit != wantNeedInit {
+					t.Errorf("sync %d: needInit = %t, want %t", i+1, gotNeedInit, wantNeedInit)
+				}
+			}
+		})
+	}
+}
+
 func TestCheckEndpointBatchErr(t *testing.T) {
 	requestError := &googleapi.Error{
 		Code: http.StatusBadRequest,
@@ -4627,6 +5222,7 @@ func (s *testSyncer) Sync() bool {
 type testRetryHandler struct {
 	ts         *testSyncer
 	RetryCount int
+	ResetCount int
 }
 
 func (r *testRetryHandler) Retry() error {
@@ -4636,6 +5232,7 @@ func (r *testRetryHandler) Retry() error {
 }
 
 func (r *testRetryHandler) Reset() {
+	r.ResetCount++
 }
 
 // negMeta references a GCE NEG resource
@@ -5023,6 +5620,40 @@ func createAndAddMockSvcNEG(t *testing.T, s *transactionSyncer) {
 	if err != nil {
 		t.Fatalf("Failed to add SvcCRD to lister: %v", err)
 	}
+}
+
+// seedInitializedSvcNEG creates the default zonal NEGs in fakeCloud, registers
+// an Initialized SvcNEG CR so ReportSyncStatus does not request initialization,
+// and marks s as started and initialized.
+func seedInitializedSvcNEG(t *testing.T, fakeCloud negtypes.NetworkEndpointGroupCloud, s *transactionSyncer) {
+	t.Helper()
+	var objRefs []negv1beta1.NegObjectReference
+	for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4} {
+		if err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: s.NegName, Version: meta.VersionGA}, zone, klog.TODO()); err != nil {
+			t.Fatalf("CreateNetworkEndpointGroup(%q, %q) = %v, want nil", s.NegName, zone, err)
+		}
+		neg, err := fakeCloud.GetNetworkEndpointGroup(s.NegName, zone, meta.VersionGA, klog.TODO())
+		if err != nil {
+			t.Fatalf("GetNetworkEndpointGroup(%q, %q) = %v, want nil", s.NegName, zone, err)
+		}
+		objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink})
+	}
+	svcNEG := &negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: s.NegName, Namespace: testServiceNamespace},
+		Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+			NetworkEndpointGroups: objRefs,
+			Conditions:            []negv1beta1.Condition{{Type: negv1beta1.Initialized, Status: corev1.ConditionTrue}},
+		},
+	}
+	statusHandler := s.statusHandler.(*negstatushandler.TestSvcNegStatusHandler)
+	if _, err := statusHandler.SvcNEGClient().NetworkingV1beta1().ServiceNetworkEndpointGroups(testServiceNamespace).Create(context.Background(), svcNEG, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create SvcNEG: %v", err)
+	}
+	if err := statusHandler.SvcNEGLister().Add(svcNEG); err != nil {
+		t.Fatalf("failed to add SvcNEG to lister: %v", err)
+	}
+	s.needInit = false
+	(s.syncer.(*syncer)).stopped = false
 }
 
 // TestNEGPreprovisioningTransition tests the complete lifecycle transition of NEG pre-provisioning:
