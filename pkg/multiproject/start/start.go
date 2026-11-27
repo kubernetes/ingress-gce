@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"time"
 
 	networkclient "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned"
 	nodetopologyclient "github.com/GoogleCloudPlatform/gke-networking-api/client/nodetopology/clientset/versioned"
@@ -36,6 +37,7 @@ import (
 const multiProjectLeaderElectionLockName = "ingress-gce-multi-project-lock"
 
 // StartWithLeaderElection starts the ProviderConfig controller with leader election.
+// resyncPeriod is the resync period of all informers created by the controller.
 func StartWithLeaderElection(
 	parentCtx context.Context,
 	leaderElectKubeClient kubernetes.Interface,
@@ -51,13 +53,14 @@ func StartWithLeaderElection(
 	providerConfigClient providerconfigclient.Interface,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
+	resyncPeriod time.Duration,
 	stopCh <-chan struct{},
 ) error {
 	logger.V(1).Info("Starting multi-project controller with leader election", "host", hostname)
 
 	recordersManager := recorders.NewManager(eventRecorderKubeClient, logger)
 
-	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer)
+	leConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, hostname, recordersManager, logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, resyncPeriod)
 	if err != nil {
 		return err
 	}
@@ -90,6 +93,7 @@ func makeLeaderElectionConfig(
 	providerConfigClient providerconfigclient.Interface,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
+	resyncPeriod time.Duration,
 ) (*leaderelection.LeaderElectionConfig, error) {
 	recorder := recordersManager.Recorder(flags.F.LeaderElection.LockObjectNamespace)
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
@@ -118,7 +122,7 @@ func makeLeaderElectionConfig(
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				logger.Info("Became leader, starting multi-project controller")
-				Start(logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, ctx.Done())
+				Start(logger, kubeClient, svcNegClient, negBindingClient, networkClient, nodeTopologyClient, kubeSystemUID, eventRecorderKubeClient, providerConfigClient, gceCreator, rootNamer, resyncPeriod, ctx.Done())
 			},
 			OnStoppedLeading: func() {
 				logger.Info("Stop running multi-project leader election")
@@ -131,6 +135,7 @@ func makeLeaderElectionConfig(
 
 // Start starts the ProviderConfig controller.
 // It creates SharedIndexInformers directly and starts the controller.
+// resyncPeriod is the resync period of all informers created here.
 func Start(
 	logger klog.Logger,
 	kubeClient kubernetes.Interface,
@@ -143,6 +148,7 @@ func Start(
 	providerConfigClient providerconfigclient.Interface,
 	gceCreator gce.GCECreator,
 	rootNamer *namer.Namer,
+	resyncPeriod time.Duration,
 	stopCh <-chan struct{},
 ) {
 	logger.V(1).Info("Starting ProviderConfig controller")
@@ -161,7 +167,7 @@ func Start(
 		negBindingClient,
 		networkClient,
 		nodeTopologyClient,
-		metav1.Duration{Duration: flags.F.ResyncPeriod},
+		metav1.Duration{Duration: resyncPeriod},
 	)
 
 	// Start all informers
@@ -189,7 +195,7 @@ func Start(
 	)
 
 	// Create ProviderConfig informer
-	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, flags.F.ResyncPeriod).Cloud().V1().ProviderConfigs().Informer()
+	providerConfigInformer := providerconfiginformers.NewSharedInformerFactory(providerConfigClient, resyncPeriod).Cloud().V1().ProviderConfigs().Informer()
 	logger.V(2).Info("Starting ProviderConfig informer")
 	go providerConfigInformer.Run(stopCh)
 
