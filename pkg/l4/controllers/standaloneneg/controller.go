@@ -46,7 +46,9 @@ import (
 	ccontext "k8s.io/ingress-gce/pkg/context"
 	l4metrics "k8s.io/ingress-gce/pkg/l4/metrics"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
 )
@@ -66,10 +68,14 @@ type Controller struct {
 	namer     namer.L4ResourcesNamer
 	stopCh    <-chan struct{}
 	hasSynced func() bool
+
+	// serviceConsistencyStore records the Service writes of the L4 controllers so
+	// that a sync can wait until the informer has observed them.
+	serviceConsistencyStore consistency.ConsistencyStore
 }
 
 // NewController creates a new instance of Controller.
-func NewController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *Controller {
+func NewController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logger klog.Logger, serviceConsistencyStore consistency.ConsistencyStore) *Controller {
 	logger = logger.WithName("StandaloneNEGLBController")
 	c := &Controller{
 		ctx:       ctx,
@@ -77,6 +83,8 @@ func NewController(ctx *ccontext.ControllerContext, stopCh <-chan struct{}, logg
 		namer:     ctx.L4Namer,
 		hasSynced: ctx.HasSynced,
 		logger:    logger,
+
+		serviceConsistencyStore: serviceConsistencyStore,
 	}
 	c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("standalone-l4-neg-lb", "services", defaultNumWorkers, c.syncWrapper, logger)
 
@@ -124,6 +132,13 @@ func (c *Controller) syncWrapper(key string) (err error) {
 func (c *Controller) sync(key string, svcLogger klog.Logger) error {
 	start := time.Now()
 	l4metrics.PublishL4controllerLastSyncTime(controllerName)
+
+	// Do not reconcile from a cache that has not yet observed the L4
+	// controllers' own writes to the service; the returned stall has the
+	// key requeued.
+	if err := serviceconsistency.EnsureCacheReady(c.serviceConsistencyStore, key); err != nil {
+		return err
+	}
 
 	obj, exists, err := c.ctx.ServiceInformer.GetIndexer().GetByKey(key)
 	if err != nil {

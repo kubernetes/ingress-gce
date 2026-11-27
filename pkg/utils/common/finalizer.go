@@ -103,9 +103,10 @@ func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, f
 
 // EnsureServiceFinalizer patches the service to add finalizer.
 // This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
-func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed.
+func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) (*corev1.Service, error) {
 	if HasGivenFinalizer(service.ObjectMeta, key) {
-		return nil
+		return service, nil
 	}
 
 	// Make a copy of object metadata so we don't mutate the shared informer cache.
@@ -118,9 +119,10 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 
 // EnsureDeleteServiceFinalizer patches the service to remove finalizer.
 // This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
-func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed.
+func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClient kubernetes.Interface, svcLogger klog.Logger) (*corev1.Service, error) {
 	if !HasGivenFinalizer(service.ObjectMeta, key) {
-		return nil
+		return service, nil
 	}
 
 	// Make a copy of object metadata so we don't mutate the shared informer cache.
@@ -134,7 +136,8 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 // EnsureServiceDeleteFinalizers patches the service to ensure the specified finalizers are not present in the service finalizers list.
 // This function is needed if more than one finalizer has to be removed since you can't invoke the 1 param version multiple times.
 // This function will not modify the service object passed as the argument. Instead, a deep copy will be used to do a patch.
-func EnsureServiceDeleteFinalizers(service *corev1.Service, ensureRemoveKeys []string, kubeClient kubernetes.Interface, svcLogger klog.Logger) error {
+// It returns the patched service, or the passed-in service if no patch was needed.
+func EnsureServiceDeleteFinalizers(service *corev1.Service, ensureRemoveKeys []string, kubeClient kubernetes.Interface, svcLogger klog.Logger) (*corev1.Service, error) {
 	var needToRemove []string
 	for _, key := range ensureRemoveKeys {
 		if HasGivenFinalizer(service.ObjectMeta, key) {
@@ -142,7 +145,7 @@ func EnsureServiceDeleteFinalizers(service *corev1.Service, ensureRemoveKeys []s
 		}
 	}
 	if len(needToRemove) == 0 {
-		return nil
+		return service, nil
 	}
 
 	// Make a copy of object metadata so we don't mutate the shared informer cache.

@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
-	"k8s.io/ingress-gce/pkg/utils/patch"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	"k8s.io/klog/v2"
 )
 
@@ -125,7 +125,7 @@ func (c *Controller) updateExternalHealthCheckAnnotation(svc *v1.Service, addrs 
 		newObjectMeta.Annotations[annotations.ExternalHealthCheckKey] = newValue
 	}
 	svcLogger.V(3).Info("Updating external health check annotation of service", "annotationKey", annotations.ExternalHealthCheckKey, "addresses", addrs)
-	if err := patch.PatchServiceObjectMetadata(c.ctx.KubeClient.CoreV1(), svc, *newObjectMeta); err != nil {
+	if err := serviceconsistency.PatchMetadata(c.ctx.KubeClient.CoreV1(), c.serviceConsistencyStore, svc, *newObjectMeta); err != nil {
 		return false, err
 	}
 	return true, nil

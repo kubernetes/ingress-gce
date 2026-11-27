@@ -17,10 +17,18 @@ limitations under the License.
 package servicestatus
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
+	"k8s.io/klog/v2"
 )
 
 func TestConditionsEqual(t *testing.T) {
@@ -325,5 +333,60 @@ func TestMergeConditions_Sorting(t *testing.T) {
 		if cond.Type != expectedOrder[i] {
 			t.Errorf("At index %d: got Type %q, expected %q", i, cond.Type, expectedOrder[i])
 		}
+	}
+}
+
+func TestUpdate_RecordsWriteInConsistencyStore(t *testing.T) {
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "test-ns",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+		},
+	}
+	stored := svc.DeepCopy()
+	stored.ResourceVersion = "150"
+	kubeClient := fake.NewSimpleClientset(stored)
+	store, getter := consistency.NewStoreWithFakeRV(serviceconsistency.GroupResource, "100")
+	ref := serviceconsistency.Ref(svc.Namespace, svc.Name)
+
+	status := &v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{{IP: "10.0.0.1"}}}
+	if err := Update(kubeClient.CoreV1(), store, svc, status, nil, nil, klog.TODO()); err != nil {
+		t.Fatalf("Update() = %v, want nil", err)
+	}
+	if err := store.EnsureReady(ref); !consistency.IsStall(err) {
+		t.Errorf("EnsureReady(%v) after Update() = %v, want a consistency stall at ResourceVersion 150", ref, err)
+	}
+	getter.SetRV("150")
+	if err := store.EnsureReady(ref); err != nil {
+		t.Errorf("EnsureReady(%v) after informer caught up = %v, want nil", ref, err)
+	}
+}
+
+func TestUpdate_SkipsFailedWrite(t *testing.T) {
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:       "test-ns",
+			Name:            "test-svc",
+			UID:             "test-uid",
+			ResourceVersion: "100",
+		},
+	}
+	stored := svc.DeepCopy()
+	stored.ResourceVersion = "150"
+	kubeClient := fake.NewSimpleClientset(stored)
+	kubeClient.PrependReactor("patch", "services", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, stored, errors.New("apiserver unavailable")
+	})
+	store, _ := consistency.NewStoreWithFakeRV(serviceconsistency.GroupResource, "100")
+
+	status := &v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{{IP: "10.0.0.1"}}}
+	if err := Update(kubeClient.CoreV1(), store, svc, status, nil, nil, klog.TODO()); err == nil {
+		t.Fatal("Update() = nil, want reactor error")
+	}
+	ref := serviceconsistency.Ref(svc.Namespace, svc.Name)
+	if err := store.EnsureReady(ref); err != nil {
+		t.Errorf("EnsureReady(%v) after failed Update() = %v, want nil", ref, err)
 	}
 }

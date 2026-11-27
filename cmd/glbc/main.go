@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4/controllers"
 	"k8s.io/ingress-gce/pkg/l4/controllers/standaloneneg"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	"k8s.io/ingress-gce/pkg/l4lbconfig"
 	l4lbconfigclient "k8s.io/ingress-gce/pkg/l4lbconfig/client/clientset/versioned"
 	multiprojectgce "k8s.io/ingress-gce/pkg/multiproject/common/gce"
@@ -646,8 +647,10 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 		go collectLockAvailabilityMetrics(l4LockName, flags.F.GKEClusterType, option.stopCh, logger)
 	}
 
+	serviceConsistencyStore := serviceconsistency.NewStore(ctx.ServiceInformer, flags.F.EnableConsistencyStore, logger)
+
 	if flags.F.RunL4Controller {
-		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger)
+		l4Controller := controllers.NewILBController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4ILBControllerName, l4Controller.SystemHealth)
 		runWithWg(l4Controller.Run, option.wg)
 		logger.V(0).Info("L4 controller started")
@@ -675,7 +678,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {
-		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger)
+		l4netlbController := controllers.NewL4NetLBController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		systemHealth.AddHealthCheck(controllers.L4NetLBControllerName, l4netlbController.SystemHealth)
 
 		runWithWg(l4netlbController.Run, option.wg)
@@ -683,7 +686,7 @@ func runL4Controllers(ctx *ingctx.ControllerContext, systemHealth *systemhealth.
 	}
 
 	if flags.F.RunL4StandaloneNEGController {
-		standaloneNEGLBController := standaloneneg.NewController(ctx, option.stopCh, logger)
+		standaloneNEGLBController := standaloneneg.NewController(ctx, option.stopCh, logger, serviceConsistencyStore)
 		runWithWg(standaloneNEGLBController.Run, option.wg)
 		logger.V(0).Info("L4 Standalone NEG LB controller started")
 	}
@@ -794,6 +797,7 @@ func createNEGController(ctx *ingctx.ControllerContext, systemHealth *systemheal
 		logger,
 		negMetrics,
 		syncerMetrics,
+		negtypes.NewSvcNegConsistencyStore(ctx.SvcNegInformer, flags.F.EnableConsistencyStore, logger),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NEG controller: %w", err)

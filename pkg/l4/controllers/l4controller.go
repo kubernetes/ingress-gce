@@ -27,6 +27,7 @@ import (
 	l4lbconfigv1 "k8s.io/ingress-gce/pkg/apis/l4lbconfig/v1"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	"k8s.io/ingress-gce/pkg/l4/servicestatus"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -49,6 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/zonegetter"
 	"k8s.io/klog/v2"
@@ -89,10 +91,14 @@ type L4Controller struct {
 	serviceVersions *serviceVersionsTracker
 
 	logger klog.Logger
+
+	// serviceConsistencyStore records the Service writes of the L4 controllers so
+	// that a sync can wait until the informer has observed them.
+	serviceConsistencyStore consistency.ConsistencyStore
 }
 
 // NewILBController creates a new instance of the L4 ILB controller.
-func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, logger klog.Logger) *L4Controller {
+func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, logger klog.Logger, serviceConsistencyStore consistency.ConsistencyStore) *L4Controller {
 	logger = logger.WithName("L4Controller")
 	if ctx.NumL4Workers <= 0 {
 		logger.Info("L4 Internal LB Service worker count has not been set, setting to 1")
@@ -110,6 +116,8 @@ func NewILBController(ctx *context.ControllerContext, stopCh <-chan struct{}, lo
 		serviceVersions: NewServiceVersionsTracker(),
 		logger:          logger,
 		hasSynced:       ctx.HasSynced,
+
+		serviceConsistencyStore: serviceConsistencyStore,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud, negtypes.NoopMetricsCollector{}), ctx.Cloud, ctx.SvcNegInformer.GetIndexer(), logger)
@@ -346,7 +354,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	}()
 
 	// Ensure v2 finalizer
-	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
+	if err := ensureServiceFinalizer(l4c.ctx, l4c.serviceConsistencyStore, service, common.ILBFinalizerV2, svcLogger); err != nil {
 		return &resources.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %v", service.Namespace, service.Name, err)}
 	}
 	nodes, err := l4c.zoneGetter.ListNodes(zonegetter.CandidateNodesFilter, svcLogger)
@@ -400,7 +408,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 		syncResult.Error = err
 		return syncResult
 	}
-	err = servicestatus.Update(l4c.ctx.KubeClient.CoreV1(), service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
+	err = servicestatus.Update(l4c.ctx.KubeClient.CoreV1(), l4c.serviceConsistencyStore, service, syncResult.Status, syncResult.Conditions, nil, svcLogger)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error updating load balancer status: %v", err)
@@ -409,7 +417,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	}
 	if l4c.enableDualStack {
 		l4c.emitEnsuredDualStackEvent(service)
-		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
+		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, l4c.serviceConsistencyStore, service, syncResult.Annotations, svcLogger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update Dual Stack annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set Dual Stack resource annotations, err: %w", err)
@@ -418,7 +426,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service, svcLo
 	} else {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 			"Successfully ensured load balancer resources")
-		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations, svcLogger); err != nil {
+		if err = updateL4ResourcesAnnotations(l4c.ctx, l4c.serviceConsistencyStore, service, syncResult.Annotations, svcLogger); err != nil {
 			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 				"Failed to update annotations for load balancer, err: %v", err)
 			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -472,7 +480,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	// Reset the loadbalancer status first, before resetting annotations.
 	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
-	if err := servicestatus.Update(l4c.ctx.KubeClient.CoreV1(), svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
+	if err := servicestatus.Update(l4c.ctx.KubeClient.CoreV1(), l4c.serviceConsistencyStore, svc, &v1.LoadBalancerStatus{}, []metav1.Condition{}, nil, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
@@ -480,14 +488,14 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 	}
 	// Also remove any ILB annotations from the service metadata
 	if l4c.enableDualStack {
-		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil, svcLogger); err != nil {
+		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, l4c.serviceConsistencyStore, svc, nil, svcLogger); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error resetting DualStack resource annotations for load balancer: %v", err)
 			result.Error = fmt.Errorf("failed to reset DualStack resource annotations, err: %w", err)
 			return result
 		}
 	} else {
-		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil, svcLogger); err != nil {
+		if err := updateL4ResourcesAnnotations(l4c.ctx, l4c.serviceConsistencyStore, svc, nil, svcLogger); err != nil {
 			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 				"Error resetting resource annotations for load balancer: %v", err)
 			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
@@ -495,7 +503,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service, svc
 		}
 	}
 
-	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient, svcLogger); err != nil {
+	if err := ensureDeleteServiceFinalizer(l4c.ctx, l4c.serviceConsistencyStore, svc, common.ILBFinalizerV2, svcLogger); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
 		result.Error = fmt.Errorf("failed to remove ILB finalizer, err: %w", err)
@@ -538,6 +546,13 @@ func (l4c *L4Controller) syncWrapper(key string) (err error) {
 func (l4c *L4Controller) sync(key string, svcLogger klog.Logger) error {
 	l4c.syncTracker.Track()
 	metrics.PublishL4controllerLastSyncTime(L4ILBControllerName)
+
+	// Do not reconcile from a cache that has not yet observed the L4
+	// controllers' own writes to the service; the returned stall has the
+	// key requeued.
+	if err := serviceconsistency.EnsureCacheReady(l4c.serviceConsistencyStore, key); err != nil {
+		return err
+	}
 
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {

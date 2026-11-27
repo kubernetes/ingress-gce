@@ -29,6 +29,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/l4/annotations"
 	"k8s.io/ingress-gce/pkg/l4/resources"
+	"k8s.io/ingress-gce/pkg/utils/consistency"
 
 	networkv1 "github.com/GoogleCloudPlatform/gke-networking-api/apis/network/v1"
 	netfake "github.com/GoogleCloudPlatform/gke-networking-api/client/network/clientset/versioned/fake"
@@ -62,6 +63,7 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/l4/forwardingrules"
+	"k8s.io/ingress-gce/pkg/l4/serviceconsistency"
 	l4utils "k8s.io/ingress-gce/pkg/l4/utils"
 	"k8s.io/ingress-gce/pkg/network"
 	"k8s.io/ingress-gce/pkg/test"
@@ -379,7 +381,7 @@ func createL4NetLBServiceController(vals gce.TestClusterValues, readOnlyMode boo
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	lc := NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc := NewL4NetLBController(ctx, stopCh, klog.TODO(), consistency.NewNoopConsistencyStore())
 	lc.hasSynced = func() bool { return true }
 	return lc
 }
@@ -2552,5 +2554,56 @@ func TestEnsureReadOnlyModeDoesNotProvision(t *testing.T) {
 			verifyNetLBServiceNotProvisioned(t, svc)
 			deleteNetLBService(lc, svc)
 		})
+	}
+}
+
+// TestNetLBSyncStallsUntilCacheIsConsistent verifies the ConsistencyStore
+// integration end to end: a sync records the ResourceVersion its writes
+// return, the next sync stalls while the informer has not observed them,
+// resumes once it has, and the record is dropped when the informer observes
+// the deletion of the service.
+func TestNetLBSyncStallsUntilCacheIsConsistent(t *testing.T) {
+	lc := newL4NetLBServiceController()
+
+	// The informer has observed ResourceVersion 100.
+	store, getter := consistency.NewStoreWithFakeRV(serviceconsistency.GroupResource, "100")
+	lc.serviceConsistencyStore = store
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.ResourceVersion = "100"
+	svc.UID = "test-uid"
+	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
+	// The fake client does not assign ResourceVersions: a write returns the
+	// one the stored object has. Storing 150 stands for the version the
+	// writes of the sync produce, which the informer has not observed yet.
+	written := svc.DeepCopy()
+	written.ResourceVersion = "150"
+	if _, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), written, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Create(%s/%s) = %v, want nil", svc.Namespace, svc.Name, err)
+	}
+	key := getKeyForSvc(svc, t)
+
+	// Nothing is recorded yet, so the first sync proceeds; it records the
+	// writes it performs (finalizer, status, annotations).
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) before any write = %v, want nil", key, err)
+	}
+
+	if err := lc.sync(key, klog.TODO()); !consistency.IsStall(err) {
+		t.Fatalf("sync(%s) before the informer observed the writes = %v, want a consistency stall", key, err)
+	}
+
+	getter.SetRV("150")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the informer observed the writes = %v, want nil", key, err)
+	}
+
+	// The informer observing the deletion drops the record, so a lagging
+	// informer no longer stalls this key.
+	deleteNetLBService(lc, svc)
+	store.Clear(serviceconsistency.Ref(svc.Namespace, svc.Name), svc.UID)
+	getter.SetRV("100")
+	if err := lc.sync(key, klog.TODO()); err != nil {
+		t.Fatalf("sync(%s) after the service was deleted = %v, want nil", key, err)
 	}
 }
