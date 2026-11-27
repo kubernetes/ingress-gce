@@ -1225,6 +1225,79 @@ func TestIPv6OnlyNetLBStaticIPAnnotation(t *testing.T) {
 	}
 }
 
+// TestEnsureFrontendReservesAddressOnlyWhenRulesChange verifies that syncing an unchanged
+// NetLB Service doesn't reserve (and release) its addresses, while creating the load
+// balancer and re-creating a forwarding rule still do.
+func TestEnsureFrontendReservesAddressOnlyWhenRulesChange(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{desc: "ipv4", ipFamilies: []v1.IPFamily{v1.IPv4Protocol}},
+		{desc: "ipv6", ipFamilies: []v1.IPFamily{v1.IPv6Protocol}},
+		{desc: "ipv4 ipv6", ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol}},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			svc := test.NewL4NetLBRBSDualStackService(v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+			l4NetLB := mustSetupNetLBTestHandler(t, svc, nodeNames)
+			am := trackAddressMutations(l4NetLB.cloud)
+			l4NetLB.cloud.Compute().(*cloud.MockGCE).MockForwardingRules.DeleteHook = assertForwardingRuleIPReservedOnDeleteHook(t, l4NetLB.cloud)
+
+			// Creating the load balancer reserves the address(es) to pick the IP.
+			result := l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() on create returned error %v, want nil", result.Error)
+			}
+			if inserts, _ := am.counts(); inserts == 0 {
+				t.Errorf("EnsureFrontend() on create reserved %d addresses, want at least 1", inserts)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+			ipsAfterCreate := result.Status.Ingress
+
+			// Syncing the unchanged Service must not touch addresses at all.
+			am.reset()
+			result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() on resync returned error %v, want nil", result.Error)
+			}
+			if result.GCEResourceUpdate.WereAnyResourcesModified() {
+				t.Errorf("EnsureFrontend() on resync modified resources: %v, want none", result.GCEResourceUpdate.String())
+			}
+			if inserts, deletes := am.counts(); inserts != 0 || deletes != 0 {
+				t.Errorf("EnsureFrontend() on resync made %d address inserts and %d address deletes, want 0 and 0", inserts, deletes)
+			}
+			if !sameIngressIPs(ipsAfterCreate, result.Status.Ingress) {
+				t.Errorf("EnsureFrontend() on resync changed the LoadBalancer IPs from %v to %v", ipsAfterCreate, result.Status.Ingress)
+			}
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+			// Changing the ports re-creates the forwarding rule(s), the IP must be reserved meanwhile.
+			am.reset()
+			svc.Spec.Ports[0].Port = 8081
+			result = l4NetLB.EnsureFrontend(nodeNames, svc, time.Now())
+			if result.Error != nil {
+				t.Fatalf("EnsureFrontend() on update returned error %v, want nil", result.Error)
+			}
+			if inserts, _ := am.counts(); inserts == 0 {
+				t.Errorf("EnsureFrontend() on update reserved %d addresses, want at least 1", inserts)
+			}
+			if !sameIngressIPs(ipsAfterCreate, result.Status.Ingress) {
+				t.Errorf("EnsureFrontend() on update changed the LoadBalancer IPs from %v to %v", ipsAfterCreate, result.Status.Ingress)
+			}
+			svc.Annotations = result.Annotations
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+		})
+	}
+}
+
 func mustSetupNetLBTestHandler(t *testing.T, svc *v1.Service, nodeNames []string) *L4NetLB {
 	t.Helper()
 	return mustSetupNetLBTestHandlerWithClusterSubnet(t, svc, nodeNames, subnetExternalIPv6AccessType)

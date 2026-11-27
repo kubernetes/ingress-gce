@@ -16,6 +16,18 @@ import (
 	"k8s.io/cloud-provider-gcp/providers/gce"
 )
 
+// IPToUse is the IP address that the forwarding rules of a Service should use,
+// together with whether it is protected by an address reservation.
+type IPToUse struct {
+	IP string
+	// Reserved reports whether Manager.HoldAddress succeeded for IP. It is false
+	// when the reservation was skipped because the forwarding rule is up to date,
+	// and in legacy networks, where addresses can't be reserved. Forwarding rules
+	// using IP must only be deleted to be re-created while it is true, see
+	// forwardingrules.IsRecreateAllowed.
+	Reserved bool
+}
+
 // IPv4ToUse determines which IPv4 address needs to be used in the ForwardingRule,
 // address evaluated in the following order:
 //
@@ -120,4 +132,14 @@ func loadBalancerIPOnIPv6OnlyServiceError(lbIP string) error {
 
 func ipv6AddressWithoutRange(ipv6Address string) string {
 	return strings.Split(ipv6Address, "/")[0]
+}
+
+// IsSameIPv6 reports whether ipv6, as returned by IPv6ToUse, is the address used by
+// a forwarding rule. Google Cloud stores the address of IPv6 forwarding rules in CIDR
+// form (with a /96 prefix), so the prefix is ignored on both sides of the comparison.
+func IsSameIPv6(ipv6, forwardingRuleIP string) bool {
+	if ipv6 == "" || forwardingRuleIP == "" {
+		return false
+	}
+	return IsSameIP(ipv6AddressWithoutRange(ipv6), ipv6AddressWithoutRange(forwardingRuleIP))
 }
