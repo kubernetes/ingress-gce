@@ -156,7 +156,7 @@ func (p *Pool) Delete(name string, version meta.Version, scope meta.KeyType, beL
 	beLogger = beLogger.WithValues("backendKey", key)
 	err = composite.DeleteBackendService(p.cloud, key, version, beLogger)
 	if err != nil {
-		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			// key also contains region information.
 			beLogger.Info("DeleteBackendService(): ignorable error", "err", err)
 			return nil
