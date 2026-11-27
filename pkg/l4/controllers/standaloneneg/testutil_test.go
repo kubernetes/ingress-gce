@@ -27,6 +27,8 @@ import (
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/l4/annotations"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 func generateForwardingRuleKey(fr string, num int) string {
@@ -160,6 +162,26 @@ func globalBS(name, hc string) *composite.BackendService {
 	return testBS(name, meta.Global, hc)
 }
 
+// bsWithNEGs sets the backends of the backend service to the given NEGs of the test zone.
+func bsWithNEGs(bs *composite.BackendService, negNames ...string) *composite.BackendService {
+	bs.Backends = nil
+	for _, negName := range negNames {
+		bs.Backends = append(bs.Backends, &composite.Backend{Group: negSelfLink(snegTestProject, snegTestZone, negName)})
+	}
+	return bs
+}
+
+// renamedSvcNegs returns the ServiceNetworkEndpointGroups of the test service after its NEG name changed
+// from oldNEGName to the test NEG name snegTestNEG. As created by the NEG controller, the
+// ServiceNetworkEndpointGroups are named after their NEGs: the one of the new NEG is active, the one of
+// the old NEG is being deleted.
+func renamedSvcNegs(oldNEGName string) []*negv1beta1.ServiceNetworkEndpointGroup {
+	return []*negv1beta1.ServiceNetworkEndpointGroup{
+		testSvcNeg(snegTestNEG, negv1beta1.NegObjectReference{SelfLink: negSelfLink(snegTestProject, snegTestZone, snegTestNEG)}),
+		deletingSvcNeg(testSvcNeg(oldNEGName, negv1beta1.NegObjectReference{SelfLink: negSelfLink(snegTestProject, snegTestZone, oldNEGName)})),
+	}
+}
+
 // bsWithHealthCheckURL sets the health check URL of the backend service.
 func bsWithHealthCheckURL(bs *composite.BackendService, hcURL string) *composite.BackendService {
 	bs.HealthChecks = []string{hcURL}
@@ -225,6 +247,38 @@ func standaloneSvcNegs(name string) []*negv1beta1.ServiceNetworkEndpointGroup {
 			},
 		},
 	}
+}
+
+// vmIPSvcNegOf makes the ServiceNetworkEndpointGroup a GCE_VM_IP
+// ServiceNetworkEndpointGroup controlled by the service, as created by the NEG
+// controller. A service port label set by the test case is kept.
+func vmIPSvcNegOf(svcNeg *negv1beta1.ServiceNetworkEndpointGroup, svc *v1.Service) *negv1beta1.ServiceNetworkEndpointGroup {
+	svcNeg.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(svc, v1.SchemeGroupVersion.WithKind("Service"))})
+	if svcNeg.Labels == nil {
+		svcNeg.Labels = map[string]string{}
+	}
+	svcNeg.Labels[negtypes.NegCRServiceNameKey] = svc.Name
+	if _, ok := svcNeg.Labels[negtypes.NegCRServicePortKey]; !ok {
+		svcNeg.Labels[negtypes.NegCRServicePortKey] = negtypes.NegCRServicePortVmIp
+	}
+	return svcNeg
+}
+
+// testSvcNeg returns a ServiceNetworkEndpointGroup in the default namespace with the given NEG references.
+func testSvcNeg(name string, negRefs ...negv1beta1.NegObjectReference) *negv1beta1.ServiceNetworkEndpointGroup {
+	return &negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Status:     negv1beta1.ServiceNetworkEndpointGroupStatus{NetworkEndpointGroups: negRefs},
+	}
+}
+
+// deletingSvcNeg marks the ServiceNetworkEndpointGroup as being deleted, as done by the NEG controller
+// for the ServiceNetworkEndpointGroup of a previous NEG name.
+func deletingSvcNeg(svcNeg *negv1beta1.ServiceNetworkEndpointGroup) *negv1beta1.ServiceNetworkEndpointGroup {
+	now := metav1.Now()
+	svcNeg.DeletionTimestamp = &now
+	svcNeg.Finalizers = []string{common.NegFinalizerKey}
+	return svcNeg
 }
 
 func frsByName(frs ...*composite.ForwardingRule) map[string]*composite.ForwardingRule {

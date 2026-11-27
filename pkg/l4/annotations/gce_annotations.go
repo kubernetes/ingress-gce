@@ -66,8 +66,28 @@ const (
 	// should use GCE_VM_IP NEGs for L4.
 	StandalonePassthroughNegLoadBalancerClass = "networking.gke.io/standalone-passthrough-lb-neg"
 
-	// StandaloneNegName is the optional customized name for Standalone NEGs.
-	StandaloneNegName = "networking.gke.io/standalone-neg-name"
+	// StandalonePassthroughLBNegNameKey is the optional annotation used to choose the name of the
+	// GCE_VM_IP NEG created for services using the StandalonePassthroughNegLoadBalancerClass.
+	//
+	// If a NEG with the given name already exists, it is only used if its description matches
+	// {"cluster-uid":"<kube-system UID>","namespace":"<service namespace>","service-name":"<service name>"}.
+	// Such NEGs are then managed (and garbage collected) as if they were created by the controller.
+	// NEGs with an empty or non-matching description are never used nor deleted.
+	//
+	// In Multi Subnet Clusters, NEGs for the non-default subnets are named "<name>-<subnet hash>".
+	//
+	// Changing the annotation value creates the NEGs with the new name, while the NEGs with the
+	// previous name are no longer synced and are garbage collected once they are no longer
+	// referenced by a backend service. The load balancer IPs stay programmed while only the
+	// previous NEGs are attached (with a DrainingNEGsAttached warning event), so the backend
+	// services can be switched without disruption: attach the new NEGs, then detach the old ones.
+	// The endpoints of the previous NEGs are not updated anymore, so the switch should be done
+	// promptly.
+	//
+	// An invalid value is reported with an InvalidNEGName event on the service and blocks the
+	// update of its NEG configuration: the NEGs created before keep being synced and the load
+	// balancer IPs stay programmed, while a new service gets no NEGs at all.
+	StandalonePassthroughLBNegNameKey = "networking.gke.io/standalone-passthrough-lb-neg-name"
 )
 
 // GetLoadBalancerAnnotationType returns the type of GCP load balancer which should be assembled.
@@ -98,25 +118,25 @@ func GetLoadBalancerAnnotationType(svc *v1.Service) LoadBalancerType {
 }
 
 // StandaloneNEGName returns the user requested name for the L4 standalone NEG,
-// whether the annotation was present, and a validation error if the value is unusable.
+// or an empty string if the annotation is not set, and a validation error if the value is unusable.
 // The returned name is also used as the ServiceNetworkEndpointGroup CR name.
 func StandaloneNEGName(service *v1.Service) (string, error) {
 	if service == nil {
 		return "", nil
 	}
-	raw, ok := service.Annotations[StandaloneNegName]
+	raw, ok := service.Annotations[StandalonePassthroughLBNegNameKey]
 	if !ok {
 		return "", nil
 	}
 	name := strings.TrimSpace(raw)
 	if name == "" {
-		return "", fmt.Errorf("annotation %q must not be empty", StandaloneNegName)
+		return "", fmt.Errorf("annotation %q must not be empty", StandalonePassthroughLBNegNameKey)
 	}
 	if len(name) > namer.MaxDefaultSubnetNegNameLength {
-		return "", fmt.Errorf("annotation %q: %w", StandaloneNegName, namer.ErrCustomNEGNameTooLong)
+		return "", fmt.Errorf("annotation %q: %w", StandalonePassthroughLBNegNameKey, namer.ErrCustomNEGNameTooLong)
 	}
 	if errs := validation.IsDNS1035Label(name); len(errs) > 0 {
-		return "", fmt.Errorf("annotation %q value %q is not a valid NEG name: %s", StandaloneNegName, name, strings.Join(errs, ", "))
+		return "", fmt.Errorf("annotation %q value %q is not a valid NEG name: %s", StandalonePassthroughLBNegNameKey, name, strings.Join(errs, ", "))
 	}
 	return name, nil
 }

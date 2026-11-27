@@ -656,21 +656,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() (shared.ZonesPerSubnet
 		subnetConfigs = []nodetopologyv1.SubnetConfig{subnetConfig}
 	}
 
-	var expectedNEGDesc utils.NEGDescription
-	if s.NegSyncerKey.IsBindingKey() {
-		expectedNEGDesc = utils.BoundNEGDescription{
-			ClusterURL: s.clusterURL,
-			Namespace:  s.Namespace,
-			BackendRef: s.NegSyncerKey.Name,
-		}
-	} else {
-		expectedNEGDesc = utils.StandardNEGDescription{
-			ClusterUID:  s.kubeSystemUID,
-			Namespace:   s.Namespace,
-			ServiceName: s.Name,
-			Port:        fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
-		}
-	}
+	expectedNEGDesc := s.expectedNEGDescription()
 
 	for _, subnetConfig := range subnetConfigs {
 		zones, ok := zonesPerSubnet[subnetConfig.Name]
@@ -1179,6 +1165,30 @@ func (s *transactionSyncer) computeEPSStaleness(endpointSlices []*discovery.Endp
 		s.negMetrics.PublishNegEPSStalenessMetrics(epsStaleness)
 		s.logger.V(3).Info("Endpoint slice syncs", "Namespace", endpointSlice.Namespace, "Name", endpointSlice.Name, "staleness", epsStaleness)
 	}
+}
+
+// expectedNEGDescription returns the description of the NEGs managed by the syncer,
+// used both to create the NEGs and to verify the ownership of existing ones.
+func (s *transactionSyncer) expectedNEGDescription() utils.NEGDescription {
+	if s.NegSyncerKey.IsBindingKey() {
+		return utils.BoundNEGDescription{
+			ClusterURL: s.clusterURL,
+			Namespace:  s.Namespace,
+			BackendRef: s.NegSyncerKey.Name,
+		}
+	}
+	standardNEGDesc := utils.StandardNEGDescription{
+		ClusterUID:  s.kubeSystemUID,
+		Namespace:   s.Namespace,
+		ServiceName: s.Name,
+		Port:        fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+	}
+	if isCustomNamedVmIpNEG(s.customName, s.NegSyncerKey.NegType) {
+		// Custom named GCE_VM_IP NEGs could have been created outside of the cluster,
+		// the strict description ensures they are only used if owned by the service.
+		return utils.CustomL4PassthroughNEGDescription{Desc: standardNEGDesc}
+	}
+	return standardNEGDesc
 }
 
 // getNEGName returns the name of the NEG for the given subnet.
